@@ -1,16 +1,35 @@
-// Lockstep version bump: `node scripts/release.mjs <version>` sets the SAME
-// version on every packages/* manifest and rewrites every internal dependency
-// range (deps + devDeps naming a workspace package) to that EXACT version.
-// Exact internal pins are load-bearing: they are what guarantees npm dedupes
-// to a single @nola-lang/runtime copy (NOLA3002) — never use ^ or * here.
-// test/publish-manifests.test.ts enforces the invariant; run `npm install`
-// after a bump so the lockfile follows.
+// Version bump: `node scripts/release.mjs <version> [--npm] [--vscode] [--all]`
+//
+//   --npm     (default) LOCKSTEP bump: the SAME version on every packages/*
+//             manifest except nola-vscode, and every internal dependency range
+//             (deps + devDeps naming a workspace package) rewritten to that
+//             EXACT version. Exact internal pins are load-bearing: they are what
+//             guarantees npm dedupes to a single @nola-lang/runtime copy
+//             (NOLA3002) — never use ^ or * here.
+//   --vscode  bump the VS Code extension (packages/vscode) — its version is
+//             NOT lockstep: the Marketplace rejects prerelease suffixes, so it
+//             must be a plain major.minor.patch.
+//   --all     both.
+//
+// test/publish-manifests.test.ts enforces the lockstep invariant; run
+// `npm install` after a bump so the lockfile follows. Tagging/publishing is
+// `node scripts/sync.mjs --release ...` (private repo tooling).
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const version = process.argv[2];
-if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
-  console.error("usage: node scripts/release.mjs <semver>   e.g. node scripts/release.mjs 0.1.0");
+const args = process.argv.slice(2);
+const version = args.find((a) => !a.startsWith("--"));
+const flags = new Set(args.filter((a) => a.startsWith("--")));
+const unknown = [...flags].filter((f) => !["--npm", "--vscode", "--all"].includes(f));
+if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version) || unknown.length) {
+  console.error("usage: node scripts/release.mjs <semver> [--npm] [--vscode] [--all]   e.g. node scripts/release.mjs 0.1.1 --all");
+  if (unknown.length) console.error(`unknown flag(s): ${unknown.join(", ")}`);
+  process.exit(1);
+}
+const doNpm = flags.has("--npm") || flags.has("--all") || !flags.has("--vscode");
+const doVscode = flags.has("--vscode") || flags.has("--all");
+if (doVscode && version.includes("-")) {
+  console.error(`the VS Code Marketplace rejects prerelease versions — ${version} cannot be used for --vscode`);
   process.exit(1);
 }
 
@@ -29,23 +48,38 @@ const manifestPaths = readdirSync(packagesDir)
 const manifests = manifestPaths.map((path) => ({ path, json: JSON.parse(readFileSync(path, "utf8")) }));
 const internalNames = new Set(manifests.map((m) => m.json.name));
 
-// nola-vscode ships to the Marketplace, which rejects prerelease suffixes —
-// it keeps its own plain major.minor.patch version; only its internal pins follow.
-const LOCKSTEP_EXEMPT = new Set(["nola-vscode"]);
+// nola-vscode ships to the Marketplace — own plain version, bumped only with --vscode.
+const VSCODE = "nola-vscode";
 
 for (const { path, json } of manifests) {
-  const exempt = LOCKSTEP_EXEMPT.has(json.name);
-  if (!exempt) json.version = version;
-  for (const section of ["dependencies", "devDependencies"]) {
-    for (const dep of Object.keys(json[section] ?? {})) {
-      if (internalNames.has(dep)) json[section][dep] = version;
+  const isVscode = json.name === VSCODE;
+  let changed = false;
+  if (isVscode ? doVscode : doNpm) {
+    json.version = version;
+    changed = true;
+  }
+  if (doNpm) {
+    for (const section of ["dependencies", "devDependencies"]) {
+      for (const dep of Object.keys(json[section] ?? {})) {
+        if (internalNames.has(dep)) {
+          json[section][dep] = version;
+          changed = true;
+        }
+      }
     }
   }
-  writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
-  console.log(`${json.name} -> ${exempt ? `${json.version} (marketplace, version kept)` : version}`);
+  if (changed) writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+  const note = isVscode
+    ? doVscode
+      ? `${version} (marketplace)`
+      : `${json.version} (marketplace, version kept)`
+    : doNpm
+      ? version
+      : `${json.version} (kept)`;
+  console.log(`${json.name} -> ${note}`);
 }
 
-console.log(`\n${manifests.length} manifests set to ${version}. Now run: npm install`);
-console.log(`\nAfter committing: tag v${version} on github.com/nola-lang/nola — that tag triggers`);
-console.log(".github/workflows/publish-npm.yml (npm publish + GitHub release), and");
-console.log("create-nola-lang fetches example templates from it.");
+console.log(`\nbumped: ${[doNpm && "npm lockstep", doVscode && "vscode"].filter(Boolean).join(" + ")} -> ${version}. Now run: npm install`);
+console.log("Then commit, and publish with: node scripts/sync.mjs --release --push \"release: v<version>\"");
+console.log("(the v<version> tag triggers publish-npm.yml; vscode-v<version> triggers publish-vscode.yml;");
+console.log(" create-nola-lang fetches example templates from the v<version> tag.)");

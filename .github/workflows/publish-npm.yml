@@ -21,7 +21,7 @@ name: publish-npm
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]*"] # NOT "v*": that also matches vscode-v* tags
   workflow_dispatch:
     inputs:
       dry-run:
