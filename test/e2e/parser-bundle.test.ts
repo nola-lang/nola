@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const PARSER_DIST = join(ROOT, "packages", "parser", "dist", "index.js");
@@ -21,7 +20,7 @@ describe("parser dist bundle", () => {
     expect(dist).not.toContain("@nola-lang/babel-parser");
   });
 
-  it("parses an infer function from the built dist", () => {
+  it("parses an infer function from the built dist", async () => {
     // Subprocess with plain node resolution — vitest's src aliases must not
     // paper over a broken bundle.
     const code = [
@@ -30,7 +29,7 @@ describe("parser dist bundle", () => {
       `const { ast, diagnostics } = parseNola(src, "greet.tsi");`,
       `console.log(JSON.stringify({ hasAst: ast !== null, diagnostics }));`,
     ].join("\n");
-    const out = execFileSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    const out = await capture(process.execPath, ["--input-type=module", "-e", code]);
     expect(JSON.parse(out)).toEqual({ hasAst: true, diagnostics: [] });
   });
 });

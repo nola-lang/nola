@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = fileURLToPath(new URL("./fixtures/vite-app/", import.meta.url));
@@ -25,7 +24,7 @@ describe("vite plugin e2e", () => {
       build: { ssr: "src/entry.ts", outDir: "dist", emptyOutDir: true },
       logLevel: "error",
     });
-    const out = execFileSync(process.execPath, [join(FIXTURE, "dist/entry.js")], { encoding: "utf8" });
+    const out = await capture(process.execPath, [join(FIXTURE, "dist/entry.js")]);
     expect(JSON.parse(out.trim())).toEqual({ answer: "hello Ada" });
   });
 

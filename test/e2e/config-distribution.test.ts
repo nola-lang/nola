@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "packages", "nola-lang", "dist", "main.js");
@@ -45,11 +44,11 @@ describe("zero-ceremony production run", () => {
     const scope = join(app, "node_modules", "@nola-lang");
     mkdirSync(scope, { recursive: true });
     symlinkSync(join(ROOT, "packages", "runtime"), join(scope, "runtime"), "junction");
-    execFileSync(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd: app, encoding: "utf8" });
+    await capture(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd: app });
   }, 600_000);
 
-  it("runs the built output under plain node — config auto-applied before the first ask", () => {
-    const out = execFileSync(process.execPath, ["entry.mjs"], { cwd: app, encoding: "utf8" });
+  it("runs the built output under plain node — config auto-applied before the first ask", async () => {
+    const out = await capture(process.execPath, ["entry.mjs"], { cwd: app });
     expect(JSON.parse(out.trim())).toBe("hello from dist");
   });
 });

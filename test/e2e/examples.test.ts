@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { cp, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "packages", "nola-lang", "dist", "main.js");
@@ -109,20 +108,20 @@ beforeAll(async () => {
 describe.each(EXAMPLES)("examples/$dir end-to-end", ({ dir, tsi, expected }) => {
   const cwd = join(ROOT, "examples", dir);
 
-  it("nola run executes the .tsi via the mock provider", { timeout: 120_000 }, () => {
-    const stdout = execFileSync(process.execPath, [CLI, "run", "src/main.ts"], { cwd, encoding: "utf8" });
+  it("nola run executes the .tsi via the mock provider", { timeout: 120_000 }, async () => {
+    const stdout = await capture(process.execPath, [CLI, "run", "src/main.ts"], { cwd });
     expect(JSON.parse(stdout.trim())).toEqual(expected);
   });
 
-  it("nola build emits js + declarations into dist, never into src", { timeout: 120_000 }, () => {
-    execFileSync(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd, encoding: "utf8" });
+  it("nola build emits js + declarations into dist, never into src", { timeout: 120_000 }, async () => {
+    await capture(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd });
     expect(existsSync(join(cwd, "dist", "src", `${tsi}.tsi.js`))).toBe(true);
     expect(existsSync(join(cwd, "dist", "src", `${tsi}.tsi.d.ts`))).toBe(true);
     expect(existsSync(join(cwd, "src", `${tsi}.d.tsi.ts`))).toBe(false);
   });
 
-  it("nola check passes on the example (main.ts included — the vue-tsc role)", { timeout: 120_000 }, () => {
-    const stdout = execFileSync(process.execPath, [CLI, "check", "."], { cwd, encoding: "utf8" });
+  it("nola check passes on the example (main.ts included — the vue-tsc role)", { timeout: 120_000 }, async () => {
+    const stdout = await capture(process.execPath, [CLI, "check", "."], { cwd });
     expect(stdout).toContain("no errors");
   });
 });
@@ -149,7 +148,7 @@ export default defineConfig({ providers: { default: openai() } });
     for (const pkg of ["runtime", "providers"]) {
       symlinkSync(join(ROOT, "packages", pkg), join(scope, pkg), "junction");
     }
-    const stdout = execFileSync(process.execPath, [CLI, "run", "src/main.ts"], { cwd: dir, encoding: "utf8" });
+    const stdout = await capture(process.execPath, [CLI, "run", "src/main.ts"], { cwd: dir });
     const result = JSON.parse(stdout.trim()) as { name: string; age: number; employer: string; job: string };
     expect(result.name.length).toBeGreaterThan(0);
     expect(typeof result.age).toBe("number");

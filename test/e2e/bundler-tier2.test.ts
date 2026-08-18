@@ -1,14 +1,13 @@
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = fileURLToPath(new URL("./fixtures/tier2-app/", import.meta.url));
 
-function runEntry(outFile: string): unknown {
-  const out = execFileSync(process.execPath, [join(FIXTURE, outFile)], { encoding: "utf8" });
+async function runEntry(outFile: string): Promise<unknown> {
+  const out = await capture(process.execPath, [join(FIXTURE, outFile)]);
   return JSON.parse(out.trim());
 }
 
@@ -26,7 +25,7 @@ describe("tier-2 smokes", () => {
     });
     await bundle.write({ file: join(FIXTURE, "dist-rollup/entry.js"), format: "esm" });
     await bundle.close();
-    expect(runEntry("dist-rollup/entry.js")).toEqual({ answer: "hello Ada" });
+    expect(await runEntry("dist-rollup/entry.js")).toEqual({ answer: "hello Ada" });
   });
 
   it("rolldown bundles and the output runs", { timeout: 180_000 }, async () => {
@@ -41,7 +40,7 @@ describe("tier-2 smokes", () => {
     });
     await bundle.write({ file: join(FIXTURE, "dist-rolldown/entry.js"), format: "esm" });
     await bundle.close();
-    expect(runEntry("dist-rolldown/entry.js")).toEqual({ answer: "hello Ada" });
+    expect(await runEntry("dist-rolldown/entry.js")).toEqual({ answer: "hello Ada" });
   });
 
   it("esbuild bundles and the output runs", { timeout: 180_000 }, async () => {
@@ -57,7 +56,7 @@ describe("tier-2 smokes", () => {
       plugins: [nola()],
       logLevel: "silent",
     });
-    expect(runEntry("dist-esbuild/entry.js")).toEqual({ answer: "hello Ada" });
+    expect(await runEntry("dist-esbuild/entry.js")).toEqual({ answer: "hello Ada" });
   });
 
   it("rspack bundles and the output runs", { timeout: 180_000 }, async () => {
@@ -88,6 +87,6 @@ describe("tier-2 smokes", () => {
         },
       );
     });
-    expect(runEntry("dist-rspack/entry.cjs")).toEqual({ answer: "hello Ada" });
+    expect(await runEntry("dist-rspack/entry.cjs")).toEqual({ answer: "hello Ada" });
   });
 });

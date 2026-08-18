@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, symlinkSync } from "node:fs";
 import { cp, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureBuilt } from "./helpers/ensure-built.js";
+import { type CapturedError, capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 // The shipped examples stay free of test scaffolding: these typed consumers
 // used to live in each example's src/main.ts. The suite injects them into a
@@ -135,7 +134,7 @@ describe.each(CASES)("examples/$dir type flow", ({ dir, consumer }) => {
   it("nola check accepts a typed plain-TS consumer of the .tsi exports", { timeout: 120_000 }, async () => {
     const copy = await copyExample(dir);
     await writeFile(join(copy, "src", "typed-consumer.ts"), consumer);
-    const stdout = execFileSync(process.execPath, [CLI, "check", "."], { cwd: copy, encoding: "utf8" });
+    const stdout = await capture(process.execPath, [CLI, "check", "."], { cwd: copy });
     expect(stdout).toContain("no errors");
   });
 });
@@ -157,9 +156,9 @@ export async function typedConsumer(): Promise<string> {
     );
     let stderr = "";
     try {
-      execFileSync(process.execPath, [CLI, "check", "."], { cwd: copy, encoding: "utf8" });
+      await capture(process.execPath, [CLI, "check", "."], { cwd: copy });
     } catch (err) {
-      stderr = (err as { stderr?: string }).stderr ?? "";
+      stderr = (err as CapturedError).stderr ?? "";
     }
     expect(stderr).toContain("typed-consumer.ts");
   });

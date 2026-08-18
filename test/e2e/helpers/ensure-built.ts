@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 const LOCK_DIR = ".nola-e2e-build.lock";
 
@@ -16,6 +17,36 @@ export function run(command: string, cwd: string, env: NodeJS.ProcessEnv = proce
       else reject(new Error(`\`${command}\` exited with ${signal ?? code} (cwd ${cwd})`));
     });
   });
+}
+
+/** Error shape of a failed `capture`/`shell` — same fields execFileSync's error carried. */
+export interface CapturedError extends Error {
+  stdout?: string;
+  stderr?: string;
+  code?: number | string | null;
+}
+
+const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
+const MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
+ * `execFileSync(file, args, { cwd, encoding: "utf8" })` without blocking the
+ * worker's event loop: resolves stdout, rejects with an error carrying
+ * `.stdout` / `.stderr` / `.code` (Node's promisified execFile does this).
+ * Every e2e test MUST use these instead of the sync variants — see the note
+ * on ensureBuilt below; a `nola check` or bundler build under CI load can
+ * exceed vitest's 60s RPC timeout on its own.
+ */
+export async function capture(file: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<string> {
+  const { stdout } = await execFileAsync(file, args, { ...opts, encoding: "utf8", maxBuffer: MAX_BUFFER });
+  return stdout;
+}
+
+/** `execSync(command, { cwd, stdio: "pipe" })` without blocking — see `capture`. */
+export async function shell(command: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<string> {
+  const { stdout } = await execAsync(command, { ...opts, encoding: "utf8", maxBuffer: MAX_BUFFER });
+  return stdout;
 }
 
 /**

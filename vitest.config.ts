@@ -28,5 +28,7 @@ export default defineConfig({
   test: {
     include: ["packages/*/test/**/*.test.ts", "test/**/*.test.ts"],
     testTimeout: 20_000,
+    // names the test that stalled the worker if the 60s RPC timeout ever fires again
+    setupFiles: ["test/setup/event-loop-watchdog.ts"],
   },
 });
