@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/parser",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Nola parser: .tsi source to Nola AST (internal; bundles a vendored @babel/parser fork)",
   "keywords": [
     "nola"
@@ -34,10 +34,10 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
-    "@nola-lang/ast": "0.1.0-alpha.0"
+    "@nola-lang/ast": "0.1.1"
   },
   "devDependencies": {
-    "@nola-lang/babel-parser": "0.1.0-alpha.0",
+    "@nola-lang/babel-parser": "0.1.1",
     "esbuild": "^0.25.0"
   },
   "engines": {

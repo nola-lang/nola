@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/unplugin",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Universal bundler plugin for Nola (.tsi): Vite, webpack, Rollup, esbuild, Rspack via unplugin",
   "keywords": [
     "nola",
@@ -61,10 +61,10 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.0-alpha.0",
-    "@nola-lang/compiler": "0.1.0-alpha.0",
-    "@nola-lang/node-loader": "0.1.0-alpha.0",
-    "nola-lang": "0.1.0-alpha.0",
+    "@nola-lang/ast": "0.1.1",
+    "@nola-lang/compiler": "0.1.1",
+    "@nola-lang/node-loader": "0.1.1",
+    "nola-lang": "0.1.1",
     "unplugin": "^2.1.0"
   },
   "engines": {

@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/ast",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Nola AST node types, visitors, and diagnostic codes (internal)",
   "keywords": [
     "nola"

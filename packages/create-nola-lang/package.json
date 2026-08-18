@@ -1,6 +1,6 @@
 {
   "name": "create-nola-lang",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Scaffold a new Nola project (npm create nola-lang)",
   "keywords": [
     "nola",

@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/next",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Next.js integration for Nola (.tsi): withNola config wrapper, webpack + Turbopack loaders",
   "keywords": [
     "nola",
@@ -41,9 +41,9 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
-    "@nola-lang/ast": "0.1.0-alpha.0",
-    "@nola-lang/node-loader": "0.1.0-alpha.0",
-    "@nola-lang/unplugin": "0.1.0-alpha.0"
+    "@nola-lang/ast": "0.1.1",
+    "@nola-lang/node-loader": "0.1.1",
+    "@nola-lang/unplugin": "0.1.1"
   },
   "engines": {
     "node": ">=22"

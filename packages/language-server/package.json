@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/language-server",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.1",
   "description": "Nola language server (LSP) for editors beyond VS Code",
   "keywords": [
     "nola",
@@ -37,11 +37,11 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
-    "@nola-lang/ast": "0.1.0-alpha.0",
-    "@nola-lang/compiler": "0.1.0-alpha.0",
-    "@nola-lang/language-core": "0.1.0-alpha.0",
-    "@nola-lang/node-loader": "0.1.0-alpha.0",
-    "@nola-lang/typescript-plugin": "0.1.0-alpha.0",
+    "@nola-lang/ast": "0.1.1",
+    "@nola-lang/compiler": "0.1.1",
+    "@nola-lang/language-core": "0.1.1",
+    "@nola-lang/node-loader": "0.1.1",
+    "@nola-lang/typescript-plugin": "0.1.1",
     "@volar/language-server": "2.4.28",
     "volar-service-typescript": "0.0.71",
     "vscode-uri": "^3.1.0"
