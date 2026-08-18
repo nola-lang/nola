@@ -1,0 +1,29 @@
+# Standard VS Code extension ignore list. scripts/package.mjs copies this into
+# the .vsix-staging whitelist dir (where vsce actually runs), so it mostly
+# documents intent there — but it also keeps a bare `vsce package` in this
+# directory sane. media/*.svg is NOT ignored: media/nola.svg is the file icon
+# referenced from package.json (contributes.languages[].icon).
+.vscode/**
+.vscode-test/**
+.vsix-staging/**
+.github/**
+out/**
+dist-vsix/**
+src/**
+docs/**
+scripts/**
+test/**
+.gitignore
+.yarnrc
+esbuild.js
+CLAUDE.md
+DEVELOPMENT.md
+media/*.gif
+test-output.log
+package-lock.json
+*.vsix
+**/tsconfig.json
+**/eslint.config.mjs
+**/*.map
+**/*.ts
+**/.vscode-test.*

@@ -31,7 +31,7 @@ delete manifest.devDependencies;
 manifest.dependencies = { "@nola-lang/typescript-plugin": "*" };
 writeFileSync(join(staging, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
-for (const file of ["README.md", "LICENSE", "CHANGELOG.md"]) {
+for (const file of ["README.md", "LICENSE", "CHANGELOG.md", ".vscodeignore"]) {
   cpSync(join(pkgDir, file), join(staging, file));
 }
 for (const dir of ["language", "media"]) {
