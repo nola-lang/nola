@@ -1,0 +1,38 @@
+{
+  "name": "nola-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @nola-lang/babel-parser && tsc -b && npm run bundle -w @nola-lang/parser && npm run bundle -w @nola-lang/typescript-plugin && npm run bundle -w @nola-lang/language-server && npm run bundle -w nola-vscode && npm run bundle -w create-nola-lang && npm run bundle -w @nola-lang/next",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "clean": "tsc -b --clean"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@rspack/core": "^1.7.12",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.2.18",
+    "@volar/test-utils": "^2.4.28",
+    "esbuild-loader": "^4.5.0",
+    "next": "^15.5.23",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "rolldown": "^1.2.4",
+    "rollup": "^4.62.4",
+    "typescript": "^5.6.0",
+    "typescript-vnext": "npm:typescript@6.0.3",
+    "vite": "^7.3.6",
+    "vitest": "^3.0.0",
+    "webpack": "^5.109.2",
+    "webpack-cli": "^7.2.2"
+  }
+}

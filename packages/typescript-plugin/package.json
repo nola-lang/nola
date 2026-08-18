@@ -1,0 +1,51 @@
+{
+  "name": "@nola-lang/typescript-plugin",
+  "version": "0.1.0-alpha.0",
+  "description": "tsserver plugin serving .tsi to TypeScript editors (internal editor layer)",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/typescript-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/plugin.cjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/plugin.cjs",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@nola-lang/compiler": "0.1.0-alpha.0",
+    "@nola-lang/language-core": "0.1.0-alpha.0",
+    "@nola-lang/node-loader": "0.1.0-alpha.0",
+    "@volar/typescript": "2.4.28"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,17 @@
+
+type User = {
+  id: string;
+  name: string;
+}
+
+export infer function getUserById`get user from this userData`(.userData: string) {
+  const userInfer = ask ..`get user from`<User>
+  console.log(userInfer)
+  return userInfer
+}
+
+export infer function getUserById1`get user from this userData`(.userData: string) {
+  const userInfer = ask ..`get user from`<User>
+  console.log(userInfer)
+  return userInfer
+}

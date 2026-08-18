@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": false,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "declaration": false,
+    "sourceMap": true,
+    "noEmitOnError": false,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

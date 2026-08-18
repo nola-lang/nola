@@ -1,0 +1,17 @@
+export type { AddResult } from "./add.js";
+export { addNola } from "./add.js";
+export type { AgentId, AgentSetupResult } from "./agents.js";
+export { AGENT_IDS, AGENT_OPTIONS, defaultAgents, detectAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
+export { collectExampleFromDisk, devExamplesDir, rewriteExamplePackageJson } from "./examples.js";
+export type { FlowInput, FlowOutcome, Prompter, PrompterOption, RunFlowArgs, RunFlowOptions } from "./flow.js";
+export { plainPrompter, resolveScaffoldOptions, runFlow } from "./flow.js";
+export type { FetchLike } from "./github.js";
+export { ExampleFetchError, fetchExampleFromGitHub } from "./github.js";
+export type { IdeSetupResult } from "./ide.js";
+export { writeVscodeSetup } from "./ide.js";
+export type { TemplateDef } from "./registry.js";
+export { TEMPLATES, templateByName, templateNames } from "./registry.js";
+export type { ScaffoldOptions, ScaffoldResult } from "./scaffold.js";
+export { ownVersion, scaffold } from "./scaffold.js";
+export type { SkillInstallArgs, SkillInstallOptions } from "./skill-install.js";
+export { runSkillInstall } from "./skill-install.js";

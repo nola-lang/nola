@@ -1,0 +1,51 @@
+{
+  "name": "@nola-lang/next",
+  "version": "0.1.0-alpha.0",
+  "description": "Next.js integration for Nola (.tsi): withNola config wrapper, webpack + Turbopack loaders",
+  "keywords": [
+    "nola",
+    "next",
+    "nextjs",
+    "turbopack",
+    "llm",
+    "ai"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/next"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./turbopack-loader": "./dist/turbopack-loader.cjs",
+    "./client-error-loader": "./dist/client-error-loader.cjs"
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/node-loader": "0.1.0-alpha.0",
+    "@nola-lang/unplugin": "0.1.0-alpha.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

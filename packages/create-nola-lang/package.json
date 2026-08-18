@@ -1,0 +1,52 @@
+{
+  "name": "create-nola-lang",
+  "version": "0.1.0-alpha.0",
+  "description": "Scaffold a new Nola project (npm create nola-lang)",
+  "keywords": [
+    "nola",
+    "create",
+    "scaffold",
+    "starter",
+    "llm",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/create-nola-lang"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "create-nola-lang": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "templates"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@clack/prompts": "^1.7.0",
+    "esbuild": "^0.28.2"
+  }
+}

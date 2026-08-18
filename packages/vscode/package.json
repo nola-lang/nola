@@ -1,0 +1,144 @@
+{
+  "name": "nola-vscode",
+  "displayName": "Nola",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "nola",
+  "description": "Nola language support: highlighting, diagnostics, hover, completion, go-to-definition, and debugging for .tsi files — plus .tsi imports from plain TypeScript.",
+  "categories": [
+    "Programming Languages",
+    "Debuggers"
+  ],
+  "keywords": [
+    "nola",
+    "tsi",
+    "typescript",
+    "llm",
+    "ai"
+  ],
+  "icon": "media/icon.png",
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://nola.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "galleryBanner": {
+    "color": "#121c1c",
+    "theme": "dark"
+  },
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.tsi"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "package": "node scripts/package.mjs",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json"
+  },
+  "contributes": {
+    "breakpoints": [
+      {
+        "language": "nola"
+      }
+    ],
+    "languages": [
+      {
+        "id": "nola",
+        "extensions": [
+          ".tsi"
+        ],
+        "aliases": [
+          "Nola",
+          "nola",
+          "NOLA"
+        ],
+        "configuration": "./language/configuration.json",
+        "icon": {
+          "light": "media/nola.svg",
+          "dark": "media/nola.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nola",
+        "scopeName": "source.tsi",
+        "path": "./language/nola.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.tsi.nola-keywords",
+        "path": "./language/nola.injection.tmLanguage.json",
+        "injectTo": [
+          "source.tsi"
+        ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "nola",
+        "path": "./language/nola.snippets.json"
+      }
+    ],
+    "typescriptServerPlugins": [
+      {
+        "name": "@nola-lang/typescript-plugin",
+        "enableForWorkspaceTypeScriptVersions": true
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "nola",
+        "label": "Nola",
+        "configurationSnippets": [
+          {
+            "label": "Nola: Launch File",
+            "description": "Debug a .tsi entry with the Nola loader",
+            "body": {
+              "type": "node",
+              "request": "launch",
+              "name": "Nola: Launch ${1:src/main.tsi}",
+              "program": "^\"\\${workspaceFolder}/${1:src/main.tsi}\"",
+              "console": "integratedTerminal",
+              "runtimeArgs": [
+                "--import",
+                "nola-lang/register",
+                "--enable-source-maps"
+              ],
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "resolveSourceMapLocations": [
+                "^\"\\${workspaceFolder}/**\"",
+                "!**/node_modules/**"
+              ],
+              "skipFiles": [
+                "<node_internals>/**",
+                "**/node_modules/**"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "@nola-lang/language-server": "0.1.0-alpha.0",
+    "@nola-lang/typescript-plugin": "0.1.0-alpha.0",
+    "vscode-languageclient": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

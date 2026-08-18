@@ -1,0 +1,11 @@
+// Recursive types are legal since emit contract 5: TreeNode serializes with
+// $defs/$ref and validates recursively at run time.
+export type TreeNode = {
+  label: string;
+  children?: TreeNode[];
+};
+
+export infer function parseTree(input: string) {
+  const tree = ask ..`the tree structure described in: ${input}`<TreeNode>;
+  return tree;
+}

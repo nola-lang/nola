@@ -1,0 +1,45 @@
+{
+  "name": "@nola-lang/language-core",
+  "version": "0.1.0-alpha.0",
+  "description": "Volar language plugin for Nola (internal editor layer)",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/language-core"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/compiler": "0.1.0-alpha.0",
+    "@volar/language-core": "2.4.28",
+    "@volar/typescript": "2.4.28"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "@nola-lang/compiler",
+  "version": "0.1.0-alpha.0",
+  "description": "Nola compiler: lowers .tsi to plain TypeScript with source maps (internal)",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/compiler"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@jridgewell/sourcemap-codec": "^1.5.0",
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/core": "0.1.0-alpha.0",
+    "@nola-lang/parser": "0.1.0-alpha.0",
+    "magic-string": "^0.30.0"
+  },
+  "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.25"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

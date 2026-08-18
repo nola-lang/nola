@@ -1,0 +1,80 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			// Vendored Babel fork — excluded from the root project references,
+			// builds with its own `tsc -p . --noCheck`. Rarely changes (only
+			// src/plugins/nola/** is edited), but watch keeps dist fresh for the CLI/loader.
+			"label": "tsc: babel-parser",
+			"type": "shell",
+			"command": "npx tsc -p . --noCheck --watch",
+			"options": {
+				"cwd": "${workspaceFolder}/packages/babel-parser"
+			},
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"group": "build"
+		},
+		{
+			// Incremental build of every referenced package (ast → core → parser →
+			// compiler → runtime → node-loader → cli → nola-lang) in dependency order.
+			"label": "tsc: build (project references)",
+			"type": "shell",
+			"command": "npx tsc -b --watch",
+			"options": {
+				"cwd": "${workspaceFolder:root}"
+			},
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"group": "build"
+		},
+		{
+			"label": "tsc: watch-all",
+			"dependsOn": [
+				"tsc: babel-parser",
+				"tsc: build (project references)"
+			],
+			"dependsOrder": "parallel",
+			"group": "build",
+			"runOptions": {
+				"runOn": "folderOpen"
+			},
+			"problemMatcher": []
+		},
+		{
+			// Fast F5 prep: only the three esbuild CJS bundles the extension host
+			// loads (tsserver plugin, LSP server, extension). tsc watch keeps the
+			// dist/ they inline fresh, so no tsc -b / babel-parser build here.
+			"label": "bundle: editor",
+			"type": "shell",
+			// --sourcemap is dev-only: F5 breakpoints in src/ bind through the
+			// .cjs.map files; the production `npm run build` bundles without them.
+			"command": "npm run bundle -w @nola-lang/typescript-plugin -w @nola-lang/language-server -w nola-vscode -- --sourcemap",
+			"options": {
+				"cwd": "${workspaceFolder:root}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			// One-shot full build: babel-parser first, then `tsc -b`. Default build task (Ctrl+Shift+B).
+			"label": "build: all",
+			"type": "shell",
+			"command": "npm run build",
+			"options": {
+				"cwd": "${workspaceFolder:root}"
+			},
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+	]
+}

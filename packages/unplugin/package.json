@@ -1,0 +1,73 @@
+{
+  "name": "@nola-lang/unplugin",
+  "version": "0.1.0-alpha.0",
+  "description": "Universal bundler plugin for Nola (.tsi): Vite, webpack, Rollup, esbuild, Rspack via unplugin",
+  "keywords": [
+    "nola",
+    "unplugin",
+    "vite",
+    "webpack",
+    "rollup",
+    "esbuild",
+    "rspack"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/unplugin"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    },
+    "./webpack": {
+      "types": "./dist/webpack.d.ts",
+      "default": "./dist/webpack.js"
+    },
+    "./rollup": {
+      "types": "./dist/rollup.d.ts",
+      "default": "./dist/rollup.js"
+    },
+    "./rolldown": {
+      "types": "./dist/rolldown.d.ts",
+      "default": "./dist/rolldown.js"
+    },
+    "./esbuild": {
+      "types": "./dist/esbuild.d.ts",
+      "default": "./dist/esbuild.js"
+    },
+    "./rspack": {
+      "types": "./dist/rspack.d.ts",
+      "default": "./dist/rspack.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/compiler": "0.1.0-alpha.0",
+    "@nola-lang/node-loader": "0.1.0-alpha.0",
+    "nola-lang": "0.1.0-alpha.0",
+    "unplugin": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

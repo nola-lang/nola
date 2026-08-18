@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "composite": true,
+    // Inside outDir on purpose: deleting a package's dist also deletes the
+    // incremental state, so the next `tsc -b` rebuilds it. With the default
+    // location (next to tsconfig) a deleted dist stays "up to date" forever.
+    "tsBuildInfoFile": "${configDir}/dist/.tsbuildinfo",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": []
+  }
+}

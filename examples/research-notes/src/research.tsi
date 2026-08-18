@@ -1,0 +1,14 @@
+export infer function nextQuery(.question: string, .notes: string[]) {
+  const query = ask ..`the single best search query to advance the research; keywords only`<string>;
+  return query;
+}
+
+export interface Conclusion {
+  answer: string;
+  /** the collected notes that directly support the answer */
+  evidence: string[];
+}
+
+export infer function conclude(.question: string, .notes: string[]) {
+  return ask ..`answer the research question using only the collected notes`<Conclusion>;
+}

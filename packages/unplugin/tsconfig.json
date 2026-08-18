@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../ast" },
+    { "path": "../compiler" },
+    { "path": "../node-loader" },
+    { "path": "../nola-lang" }
+  ]
+}

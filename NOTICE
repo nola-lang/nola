@@ -1,0 +1,7 @@
+Nola
+Copyright 2026 Evgen Mykhailenko
+
+This product includes a vendored fork of @babel/parser
+(https://github.com/babel/babel), used under the MIT license:
+Copyright (c) 2014-present Sebastian McKenzie and other contributors.
+See packages/babel-parser/LICENSE for the full notice.

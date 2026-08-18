@@ -1,0 +1,46 @@
+{
+  "name": "@nola-lang/parser",
+  "version": "0.1.0-alpha.0",
+  "description": "Nola parser: .tsi source to Nola AST (internal; bundles a vendored @babel/parser fork)",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/parser"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0"
+  },
+  "devDependencies": {
+    "@nola-lang/babel-parser": "0.1.0-alpha.0",
+    "esbuild": "^0.25.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

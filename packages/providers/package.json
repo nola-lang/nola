@@ -1,0 +1,44 @@
+{
+  "name": "@nola-lang/providers",
+  "version": "0.1.0-alpha.0",
+  "description": "Nola LLM providers: openai, mock, resilience combinators, record/replay",
+  "keywords": [
+    "nola",
+    "llm",
+    "ai",
+    "openai",
+    "providers"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/providers"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/core": "0.1.0-alpha.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

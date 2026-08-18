@@ -1,0 +1,9 @@
+export type Issue = { id: string; description: string };
+
+// `.issue` is a contextual parameter: its value becomes part of the LM
+// context for every `ask` in this scope. `fallback` stays a plain JS argument
+// (name + type reach the LM, the value does not).
+export infer function classifyIssue(.issue: Issue, fallback: string) {
+  const kind = ask ..`the kind of this issue`<string>;
+  return kind || fallback;
+}

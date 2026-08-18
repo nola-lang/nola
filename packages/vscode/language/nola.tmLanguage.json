@@ -1,0 +1,19 @@
+{
+  "name": "Nola",
+  "scopeName": "source.tsi",
+  "patterns": [
+    { "match": "\\bask\\b", "name": "keyword.control.nola" },
+    { "match": "\\.\\.(?=`)", "name": "keyword.operator.intent.nola" },
+    {
+      "begin": "(\\.\\.)(`)",
+      "beginCaptures": {
+        "1": { "name": "keyword.operator.intent.nola" },
+        "2": { "name": "string.template.nola" }
+      },
+      "end": "`",
+      "endCaptures": { "0": { "name": "string.template.nola" } },
+      "contentName": "string.template.prompt.nola"
+    },
+    { "include": "source.ts" }
+  ]
+}

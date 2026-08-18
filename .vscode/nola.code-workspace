@@ -1,0 +1,105 @@
+{
+	"folders": [
+		{
+			"name": "root",
+			"path": ".."
+		},
+		{
+			"name": "DOCS",
+			"path": "<not exists7>"
+		},
+		{
+			"name": " - docs",
+			"path": "../docs"
+		},
+		{
+			"name": " - examples",
+			"path": "../examples"
+		},
+		{
+			"name": "CLI",
+			"path": "<not exists8>"
+		},
+		{
+			"name": " - nola-lang",
+			"path": "../packages/nola-lang"
+		},
+		{
+			"name": " - create-nola-lang",
+			"path": "../packages/create-nola-lang"
+		},
+		{
+			"name": " - unplugin",
+			"path": "../packages/unplugin"
+		},
+		{
+			"name": "PARSING",
+			"path": "<not exists1>",
+		},
+		{
+			"name": " - ast",
+			"path": "../packages/ast"
+		},
+		{
+			"name": " - babel-parser",
+			"path": "../packages/babel-parser"
+		},
+		{
+			"name": " - parser",
+			"path": "../packages/parser"
+		},
+		{
+			"name": "COMPILING",
+			"path": "<not exists2>",
+		},
+		{
+			"name": " - core",
+			"path": "../packages/core"
+		},
+		{
+			"name": " - compiler",
+			"path": "../packages/compiler"
+		},
+		{
+			"name": "RUNTIME",
+			"path": "<not exists3>",
+		},
+		{
+			"name": " - runtime",
+			"path": "../packages/runtime"
+		},
+		{
+			"name": " - node-loader",
+			"path": "../packages/node-loader"
+		},
+		{
+			"name": " - providers",
+			"path": "../packages/providers"
+		},
+		{
+			"name": "IDE",
+			"path": "<not exists4>"
+		},
+		{
+			"name": " - language-core",
+			"path": "../packages/language-core"
+		},
+		{
+			"name": " - typescript-plugin",
+			"path": "../packages/typescript-plugin"
+		},
+		{
+			"name": " - language-server",
+			"path": "../packages/language-server"
+		},
+		{
+			"name": " - vscode",
+			"path": "../packages/vscode"
+		},
+	],
+	"settings": {
+		"js/ts.tsdk.path": "root\\node_modules\\typescript\\lib",
+		"powershell.cwd": "root",
+		"mochaExplorer.files": []
+	},
+}

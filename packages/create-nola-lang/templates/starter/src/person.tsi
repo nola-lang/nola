@@ -1,0 +1,11 @@
+export interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+export infer function extractPerson(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return person;
+}

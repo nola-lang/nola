@@ -1,0 +1,14 @@
+export type Category = "billing" | "refund" | "fraud" | "other";
+
+export enum Sentiment {
+  Positive = "positive",
+  Neutral = "neutral",
+  Negative = "negative",
+}
+
+export infer function classifyMessage(.message: string) {
+  const category = ask ..`the category of the customer message`<Category>;
+  const sentiment = ask ..`the overall sentiment of the message`<Sentiment>;
+  const urgent = ask ..`does the message need urgent attention`<"yes" | "no">;
+  return { category, sentiment, urgent: urgent === "yes" };
+}

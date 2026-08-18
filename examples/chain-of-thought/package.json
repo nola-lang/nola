@@ -1,0 +1,19 @@
+{
+  "name": "nola-example-chain-of-thought",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "nola run src/main.ts",
+    "build": "nola build",
+    "check": "nola check"
+  },
+  "dependencies": {
+    "@nola-lang/providers": "*",
+    "@nola-lang/runtime": "*"
+  },
+  "devDependencies": {
+    "nola-lang": "*",
+    "typescript": "^5.6.0"
+  }
+}

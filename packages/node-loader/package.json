@@ -1,0 +1,50 @@
+{
+  "name": "@nola-lang/node-loader",
+  "version": "0.1.0-alpha.0",
+  "description": "Node module hooks that compile .tsi on the fly (internal; powers nola run and nola-lang/register)",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/node-loader"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./hooks": "./dist/hooks.js",
+    "./register": "./dist/register.js"
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/compiler": "0.1.0-alpha.0",
+    "@nola-lang/parser": "0.1.0-alpha.0",
+    "@nola-lang/runtime": "0.1.0-alpha.0",
+    "@ampproject/remapping": "^2.3.0",
+    "@jridgewell/sourcemap-codec": "^1.5.0",
+    "esbuild": "^0.25.0"
+  },
+  "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.25"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@nola-lang/runtime",
+  "version": "0.1.0-alpha.0",
+  "description": "The Nola runtime apps depend on: intent resolution, ask boundary, defineConfig",
+  "keywords": [
+    "nola",
+    "llm",
+    "ai",
+    "runtime",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.0-alpha.0",
+    "@nola-lang/core": "0.1.0-alpha.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

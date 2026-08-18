@@ -1,0 +1,26 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/ast" },
+    { "path": "packages/core" },
+    { "path": "packages/parser" },
+    { "path": "packages/providers" },
+    { "path": "packages/compiler" },
+    { "path": "packages/runtime" },
+    { "path": "packages/language-core" },
+    { "path": "packages/node-loader" },
+    { "path": "packages/typescript-plugin" },
+    { "path": "packages/language-server" },
+    { "path": "packages/create-nola-lang" },
+    { "path": "packages/nola-lang" },
+    { "path": "packages/unplugin" },
+    { "path": "packages/next" },
+    { "path": "packages/vite" },
+    { "path": "packages/webpack" },
+    { "path": "packages/rollup" },
+    { "path": "packages/rolldown" },
+    { "path": "packages/esbuild" },
+    { "path": "packages/rspack" },
+    { "path": "packages/vscode" }
+  ]
+}

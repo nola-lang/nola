@@ -1,0 +1,7 @@
+import type { Person } from "./person-types.js";
+
+export infer function extractPerson(text: string) {
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+  const person = ask ..`the person described in: ${text}`<Person>;
+  return person;
+}

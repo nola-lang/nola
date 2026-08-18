@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-*/
+*.tsbuildinfo
+coverage/
+*.d.tsi.ts
+.env
+.vsix-staging/
+*.vsix
+.next/
+next-env.d.ts
+# session worktrees
+.claude/worktrees/
+# public-mirror sync clone (scripts/sync-public.mjs)
+.public-sync/

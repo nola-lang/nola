@@ -1,0 +1,52 @@
+{
+  "scopeName": "source.tsi.nola-keywords",
+  "injectionSelector": "L:source.tsi -comment -string",
+  "patterns": [
+    {
+      "begin": "(?:\\b(export)\\s+)?\\b(infer)\\s+(function)\\s+([_$[:alpha:]][_$[:alnum:]]*)\\s*(`)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.export.ts" },
+        "2": { "name": "storage.modifier.async.nola" },
+        "3": { "name": "meta.function.ts storage.type.function.ts" },
+        "4": { "name": "meta.function.ts meta.definition.function.ts entity.name.function.ts" },
+        "5": { "name": "string.template.ts punctuation.definition.string.template.begin.ts" }
+      },
+      "end": "`",
+      "endCaptures": {
+        "0": { "name": "string.template.ts punctuation.definition.string.template.end.ts" }
+      },
+      "contentName": "string.template.ts",
+      "patterns": [{ "include": "source.ts#template-substitution-element" }]
+    },
+    {
+      "match": "(?:\\b(export)\\s+)?\\b(infer)\\b(?=\\s+function\\b)",
+      "captures": {
+        "1": { "name": "keyword.control.export.ts" },
+        "2": { "name": "storage.modifier.async.nola" }
+      }
+    },
+    {
+      "comment": "`ask with <alias>` — one match with captures, not three rules: a provider alias may be a JS keyword (`default`, `new` are legal config keys), and separate rules would let the TypeScript grammar claim those first. Must precede the bare `ask` rule below.",
+      "match": "(?<![_$[:alnum:].])(ask)\\s+(with)\\s+([_$[:alpha:]][_$[:alnum:]]*)(?![_$[:alnum:]])",
+      "captures": {
+        "1": { "name": "keyword.control.flow.nola" },
+        "2": { "name": "keyword.control.with.nola" },
+        "3": { "name": "variable.other.enummember.nola" }
+      }
+    },
+    { "match": "(?<![_$[:alnum:].])ask(?![_$[:alnum:]])(?!\\s*:)", "name": "keyword.control.flow.nola" },
+    { "match": "\\.\\.(?=`)", "name": "keyword.operator.intent.nola" },
+    {
+      "begin": "(?<=`)(<)",
+      "beginCaptures": {
+        "1": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.begin.ts" }
+      },
+      "end": ">",
+      "endCaptures": {
+        "0": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.end.ts" }
+      },
+      "contentName": "meta.type.parameters.ts",
+      "patterns": [{ "include": "source.ts#type" }]
+    }
+  ]
+}

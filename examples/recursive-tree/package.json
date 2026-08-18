@@ -1,0 +1,13 @@
+{
+  "name": "nola-example-recursive-tree",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@nola-lang/providers": "*",
+    "@nola-lang/runtime": "*"
+  },
+  "devDependencies": {
+    "nola-lang": "*"
+  }
+}

@@ -1,0 +1,79 @@
+# Publishes every public workspace package to npm. Trigger by pushing a
+# `v<version>` tag (must equal the lockstep version — bump with
+# `node scripts/release.mjs <version>`), or manually via workflow_dispatch
+# (dry-run by default). Runs ONLY in the public repository (nola-lang/nola):
+# the private mirror source carries this file too but the job guard skips it.
+#
+# Auth: npm TRUSTED PUBLISHING (OIDC) — no token anywhere. Each package on
+# npmjs.com has a trusted publisher: GitHub Actions, org `nola-lang`, repo
+# `nola`, workflow filename `publish-npm.yml` (the filename IS the credential —
+# renaming this file revokes publishing until every package is reconfigured).
+# Trusted publishing needs npm CLI >= 11.5.1 (Node 22 bundles npm 10, hence the
+# upgrade step) and `id-token: write`; provenance is attested automatically.
+# A package must EXIST before a trusted publisher can be added to it, so a
+# brand-new package's first version is published once by hand
+# (`node scripts/publish-npm.mjs` after `npm login`; it skips what exists).
+#
+# Prerelease versions (0.1.0-alpha.0) publish under dist-tag `next`, releases
+# under `latest` — scripts/publish-npm.mjs decides. The same tag is what
+# create-nola-lang fetches example templates from, so tag → publish is one step.
+name: publish-npm
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "npm publish --dry-run (no upload)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # GitHub release for the tag
+  id-token: write # OIDC token for npm trusted publishing (+ provenance)
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'nola-lang/nola'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm >= 11.5.1 (trusted publishing)
+        run: npm install -g npm@latest && npm --version
+      - run: npm ci
+      - run: npm run build
+      - name: Tag must match the lockstep version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node -e '
+            const { version } = require("./packages/runtime/package.json");
+            const tag = process.env.GITHUB_REF_NAME;
+            if (tag !== `v${version}`) {
+              console.error(`tag ${tag} does not match lockstep version ${version}`);
+              process.exit(1);
+            }'
+      - name: Test (unit + e2e; the OpenAI smoke self-skips without a key)
+        run: npx vitest run
+      - name: Publish (dry-run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry-run
+        run: node scripts/publish-npm.mjs --dry-run
+      - name: Publish (OIDC trusted publishing)
+        if: startsWith(github.ref, 'refs/tags/v') || !inputs.dry-run
+        run: node scripts/publish-npm.mjs --provenance
+      - name: GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes \
+                 $(case "$GITHUB_REF_NAME" in *-*) echo --prerelease;; esac)
+        env:
+          GH_TOKEN: ${{ github.token }}

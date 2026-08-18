@@ -1,0 +1,72 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			// F5 dogfood: launches an Extension Development Host with the Nola
+			// extension (LSP + tsserver plugin). preLaunchTask only re-bundles the
+			// three CJS bundles the host loads — tsc watch keeps dist/ fresh.
+			"type": "extensionHost",
+			"request": "launch",
+			"name": "Run Nola Extension",
+			// "preLaunchTask": "bundle: editor",
+			"sourceMaps": true,
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}/packages/vscode",
+				"${workspaceFolder}/examples/_playground"
+			],
+			"outFiles": ["${workspaceFolder}/packages/vscode/dist/**/*.cjs"]
+		},
+		// {
+		// 	// F5 to run examples/hello through the Nola CLI loader.
+		// 	// `nola run` registers the .tsi loader in-process (module.register) and
+		// 	// imports the entry, so this is a single Node process — no child to attach to.
+		// 	// The loader emits an inline source map whose `sources` point back to the
+		// 	// absolute .tsi path, so breakpoints set directly in src/analyze.tsi bind.
+		// 	"type": "node",
+		// 	"request": "launch",
+		// 	"name": "Debug example-hello (mock provider)",
+		// 	"program": "${workspaceFolder}/packages/nola-lang/dist/main.js",
+		// 	"args": ["run", "src/main.js"],
+		// 	"cwd": "${workspaceFolder}/examples/hello",
+		// 	"console": "integratedTerminal",
+		// 	// --enable-source-maps makes thrown-error stack traces point at .tsi lines too.
+		// 	"runtimeArgs": ["--enable-source-maps"],
+		// 	"sourceMaps": true,
+		// 	"resolveSourceMapLocations": [
+		// 		"${workspaceFolder}/packages/**",
+		// 		"${workspaceFolder}/examples/**",
+		// 		"!**/node_modules/**"
+		// 	],
+		// 	"outFiles": [
+		// 		"${workspaceFolder}/packages/*/dist/**/*.js",
+		// 		"${workspaceFolder}/examples/**/*.js"
+		// 	],
+		// 	"skipFiles": ["<node_internals>/**"]
+		// },
+		{
+			// Same, but hits the real OpenAI provider (nola.config.ts branches on
+			// NOLA_E2E_OPENAI). Needs OPENAI_API_KEY in your environment.
+			"type": "node",
+			"request": "launch",
+			"name": "Debug Playground",
+			"program": "${workspaceFolder}/packages/nola-lang/dist/main.js",
+			"args": ["run", "src/main.js"],
+			"cwd": "${workspaceFolder}/examples/_playground",
+			"console": "integratedTerminal",
+			"runtimeArgs": ["--enable-source-maps"],
+			"sourceMaps": true,
+			// Include packages/** so stepping into the compiler/runtime/loader lands in
+			// their .ts source (their dist/*.js.map files live there), not the lowered JS.
+			"resolveSourceMapLocations": [
+				"${workspaceFolder}/packages/**",
+				"${workspaceFolder}/examples/**",
+				"!**/node_modules/**"
+			],
+			"outFiles": [
+				"${workspaceFolder}/packages/*/dist/**/*.js",
+				"${workspaceFolder}/examples/**/*.js"
+			],
+			"skipFiles": ["<node_internals>/**"]
+		}
+	]
+}

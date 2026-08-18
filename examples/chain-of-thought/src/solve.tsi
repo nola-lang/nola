@@ -1,0 +1,7 @@
+export infer function solve(.problem: string) {
+  // The untyped ask returns free text and lands in this invocation's context
+  // history, so the second ask answers with the reasoning in view.
+  const reasoning = ask ..`think step by step about the problem before answering`;
+  const answer = ask ..`the final numeric answer`<number>;
+  return { reasoning, answer };
+}

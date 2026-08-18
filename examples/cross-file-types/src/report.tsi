@@ -1,0 +1,21 @@
+import { getUserById } from "./test2.tsi";
+import { Person } from "./models.js";
+
+export infer function extractPerson(text: string) {
+  const person = ask ..`the person described in: ${text}`<Person>;
+  return person;
+}
+
+type User = {
+  name: string;
+  age: number;
+}
+
+export infer function extractPerson3`dsad`(text: string) {
+  
+  const user = ask ..`get user from: ${text}`<User>
+  const person = ask getUserById(user.name)
+
+  return user;
+}
+

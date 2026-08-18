@@ -1,0 +1,26 @@
+{
+  "name": "@nola-lang/babel-parser",
+  "version": "0.1.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p . --noCheck"
+  },
+  "dependencies": {
+    "@babel/helper-string-parser": "8.0.0-rc.6",
+    "@babel/helper-validator-identifier": "8.0.0-rc.6",
+    "@babel/types": "8.0.0-rc.6",
+    "charcodes": "^0.2.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

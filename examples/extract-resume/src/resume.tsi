@@ -1,0 +1,19 @@
+export interface Education {
+  school: string;
+  degree: string;
+  /** graduation year */
+  year: number;
+}
+
+export interface Resume {
+  name: string;
+  email: string;
+  /** one entry per position, most recent first */
+  experience: string[];
+  skills: string[];
+  education: Education[];
+}
+
+export infer function extractResume(.message: string) {
+  return ask ..`the candidate's resume data`<Resume>;
+}

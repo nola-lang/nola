@@ -1,0 +1,20 @@
+export interface LineItem {
+  description: string;
+  quantity: number;
+  /** price per unit in USD */
+  unitPrice: number;
+}
+
+export interface Invoice {
+  invoiceNumber: string;
+  issuedTo: string;
+  lineItems: LineItem[];
+  /** grand total in USD */
+  total: number;
+  /** ISO date; omit when the document has none */
+  dueDate?: string;
+}
+
+export infer function extractInvoice(.document: string) {
+  return ask ..`the invoice data from the document`<Invoice>;
+}

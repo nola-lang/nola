@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../ast" },
+    { "path": "../compiler" },
+    { "path": "../language-core" },
+    { "path": "../node-loader" },
+    { "path": "../typescript-plugin" }
+  ]
+}

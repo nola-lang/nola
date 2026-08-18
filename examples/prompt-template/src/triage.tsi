@@ -1,0 +1,12 @@
+// `${.default}` is the built-in CONTEXT block for this function (signature,
+// file, arguments); the text after it is appended verbatim. Because the marker
+// contains a `${.member}` hole it is a template: it REPLACES the block instead
+// of landing as `Purpose:` inside it. `${.next}` is not read, so the rest of
+// the prompt (the extractor's TASK block) is appended after the template.
+export infer function triage`${.default}
+Rules: answer only from the arguments above; never invent ids.`(.ticket: string) {
+  // An extractor template: `${.type}` is the target's native type text
+  // ("string" here). The JSON response rules are appended automatically.
+  const id = ask ..`ticket id, comply with ${.type}`<string>;
+  return id;
+}
