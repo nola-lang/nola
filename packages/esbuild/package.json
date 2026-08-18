@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/esbuild",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "esbuild plugin for Nola (.tsi) — also covers tsup",
   "keywords": [
     "nola",
@@ -36,7 +36,7 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/unplugin": "0.1.1"
+    "@nola-lang/unplugin": "0.1.2"
   },
   "engines": {
     "node": ">=22"

@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/language-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Volar language plugin for Nola (internal editor layer)",
   "keywords": [
     "nola"
@@ -31,8 +31,8 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.1",
-    "@nola-lang/compiler": "0.1.1",
+    "@nola-lang/ast": "0.1.2",
+    "@nola-lang/compiler": "0.1.2",
     "@volar/language-core": "2.4.28",
     "@volar/typescript": "2.4.28"
   },

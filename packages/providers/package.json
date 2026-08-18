@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/providers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Nola LLM providers: openai, mock, resilience combinators, record/replay",
   "keywords": [
     "nola",
@@ -35,8 +35,8 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.1",
-    "@nola-lang/core": "0.1.1"
+    "@nola-lang/ast": "0.1.2",
+    "@nola-lang/core": "0.1.2"
   },
   "engines": {
     "node": ">=22"
