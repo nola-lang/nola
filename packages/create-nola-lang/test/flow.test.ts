@@ -28,6 +28,9 @@ function scripted(script: {
     note: (m) => {
       notes.push(m);
     },
+    outro: (m) => {
+      notes.push(m);
+    },
   };
 }
 
@@ -402,6 +405,35 @@ describe("runFlow — agents step", () => {
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
+  });
+});
+
+describe("runFlow — next steps follow the invoking package manager", () => {
+  it("defaults to npm", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({});
+    await runFlow({ dir, template: "starter" }, { interactive: false, prompter: p });
+    expect(p.notes.join("\n")).toContain("npm install\n  npm start");
+  });
+
+  it("spells pnpm/yarn/bun when that manager ran the scaffolder", async () => {
+    for (const pm of ["pnpm", "yarn", "bun"] as const) {
+      const dir = join(await tmp(), "app");
+      const p = scripted({});
+      await runFlow({ dir, template: "empty" }, { interactive: false, prompter: p, packageManager: pm });
+      const text = p.notes.join("\n");
+      expect(text).toContain(`${pm} install\n  ${pm} start`);
+      expect(text).not.toMatch(/\bnpm /);
+    }
+  });
+
+  it("add mode follows the manager too", async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "package.json"), '{"name":"existing-api"}\n');
+    const p = scripted({});
+    await runFlow({ dir, add: true }, { interactive: false, prompter: p, packageManager: "pnpm" });
+    expect(p.notes.join("\n")).toContain("pnpm install");
+    expect(p.notes.join("\n")).not.toMatch(/\bnpm /);
   });
 });
 

@@ -1,7 +1,7 @@
 {
   "name": "create-nola-lang",
-  "version": "0.1.2",
-  "description": "Scaffold a new Nola project (npm create nola-lang)",
+  "version": "0.1.3",
+  "description": "Scaffold a new Nola project (npm create nola, or npm create nola-lang)",
   "keywords": [
     "nola",
     "create",
@@ -26,13 +26,14 @@
   },
   "type": "module",
   "bin": {
-    "create-nola-lang": "./dist/main.js"
+    "create-nola-lang": "dist/main.js"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./main": "./dist/main.js"
   },
   "files": [
     "dist",

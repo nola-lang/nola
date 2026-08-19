@@ -66,6 +66,7 @@ approach Vue and Svelte take.
 |---|---|
 | `nola-lang` | The dev tool users install (devDependency): `nola init` / `build` / `run` / `check` bin + `nola-lang/register` loader hook |
 | `create-nola-lang` | `npm create nola-lang` — interactive scaffolding (templates + the prompt flow live here; `nola init` reuses both) |
+| `create-nola` | `npm create nola` — short alias; its bin forwards to `create-nola-lang` |
 | `@nola-lang/core` | `Intent<T>`, `JsonSchema`, provider/config/hook/middleware types (dependency-free) |
 | `@nola-lang/ast` | Nola AST node types, visitors, diagnostic codes |
 | `@nola-lang/parser` | `.tsi` source → Nola AST with structured diagnostics |
@@ -82,8 +83,8 @@ Requires **Node ≥ 22**. Start a new project (no API key needed — the starter
 runs offline from a committed replay ledger):
 
 ```bash
-npm create nola-lang                                       # prompts for a name and a template
-npm create nola-lang my-app -- --template extract-resume   # non-interactive
+npm create nola                                       # prompts for a name and a template
+npm create nola my-app -- --template extract-resume   # non-interactive
 cd my-app
 npm install
 npm start          # extracts typed data from prose, offline
@@ -92,9 +93,11 @@ npm start          # extracts typed data from prose, offline
 Templates: `starter` (the default — typed extraction, runs offline), `empty`
 (nola.config + tsconfig only), and the curated examples (`extract-resume`,
 `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`)
-fetched from this repo. (`nola init` runs the same flow.)
+fetched from this repo. (`npm create nola-lang` is the same command under its
+full name — `create-nola` is a thin alias of `create-nola-lang` — and `nola init`
+runs the same flow.)
 
-Already have a project? `npm create nola-lang -- --add` (or `nola init --add`)
+Already have a project? `npm create nola -- --add` (or `nola init --add`)
 writes `nola.config.ts` and adds the packages to your existing `package.json`
 — a bare interactive run offers this automatically when it finds a
 `package.json`.
@@ -147,7 +150,7 @@ extension offers this via "Add Configuration…" as **Nola: Launch File**):
 }
 ```
 
-`npm create nola-lang` (or `nola init`) writes this configuration to `.vscode/launch.json`
+`npm create nola` (or `nola init`) writes this configuration to `.vscode/launch.json`
 when you accept the editor setup step. This is the debug path, not a production one —
 build with `nola build` for deployment.
 

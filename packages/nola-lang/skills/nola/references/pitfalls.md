@@ -271,6 +271,14 @@ A `${.member}` template must produce text. An empty result usually means the
 template only read members that were undefined; a throw is a bug in the
 template's own JS. Fixed at the template — there is no retry.
 
+## NOLA3015 — running `.tsi` under Bun or Deno
+
+The loader is Node's module-hooks API; Bun and Deno do not run it. Any package
+manager is fine (`bun install`, `bun run start`, `pnpm start`, `yarn start` —
+the `nola` bin is a Node script), but `bun --bun`, `bun src/main.ts` and
+`deno run` cannot load `.tsi`. Run on Node: `nola run` or
+`node --import nola-lang/register src/main.ts`.
+
 ## Other things that will not parse
 
 - `async infer function f(...)` — an infer function is never `async` in source;

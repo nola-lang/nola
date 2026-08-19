@@ -11,6 +11,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * it can ship — this test fails until it is.
  */
 const PUBLIC = [
+  "create-nola",
   "create-nola-lang",
   "nola-lang",
   "@nola-lang/ast",

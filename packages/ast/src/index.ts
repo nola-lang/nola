@@ -348,6 +348,7 @@ export const Codes = {
   ConfigImportsTsi: "NOLA3012",
   BrowserExecutionUnsupported: "NOLA3013",
   PromptTemplateFailed: "NOLA3014",
+  LoaderHooksUnsupported: "NOLA3015",
   // NOLA4xxx: bundler-integration errors (build-time, raised by @nola-lang/unplugin and friends)
   TsiInClientBundle: "NOLA4001",
 } as const;

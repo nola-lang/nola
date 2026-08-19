@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/typescript-plugin",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "tsserver plugin serving .tsi to TypeScript editors (internal editor layer)",
   "keywords": [
     "nola"
@@ -36,9 +36,9 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
-    "@nola-lang/compiler": "0.1.2",
-    "@nola-lang/language-core": "0.1.2",
-    "@nola-lang/node-loader": "0.1.2",
+    "@nola-lang/compiler": "0.1.3",
+    "@nola-lang/language-core": "0.1.3",
+    "@nola-lang/node-loader": "0.1.3",
     "@volar/typescript": "2.4.28"
   },
   "devDependencies": {

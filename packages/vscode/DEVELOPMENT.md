@@ -77,6 +77,6 @@ can't):
 The F5 host resolves through the monorepo's hoisted node_modules; an installed
 VSIX must stand alone. After `npm run package`, install the `.vsix` via
 "Install from VSIX…" in a window whose workspace is OUTSIDE this repo (e.g. a
-fresh `npm create nola-lang` scaffold) and re-run items 1–7 and 10 above —
+fresh `npm create nola` scaffold) and re-run items 1–7 and 10 above —
 that exercises the copied `dist/server.cjs`, the workspace-or-builtin tsdk
 fallback, and the plugin under the extension's own `node_modules`.

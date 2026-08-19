@@ -120,7 +120,9 @@ owns the builtin templates (`templates/starter` + `templates/empty`), the
 static template registry (`src/registry.ts` — the menu; extract-person is
 deliberately absent, the starter IS it), and the shared interactive flow
 (`runFlow`; args fill prompts, non-TTY or dir+`--template` means zero
-prompts). `npm create nola-lang` runs its bin; `nola init` delegates to the
+prompts). `npm create nola-lang` runs its bin (`create-nola` is a bin-only ALIAS package —
+`npm create nola` — whose bin imports `create-nola-lang/main`; never put
+logic there); `nola init` delegates to the
 same `runFlow`. Add mode (spec 2026-08-12-add-to-existing-project-design.md):
 `--add`, the bare-run cwd `package.json` detection, and the non-empty-target
 select all resolve to `addNola` (`src/add.ts`) — writes the empty template's

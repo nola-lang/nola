@@ -5,6 +5,7 @@ import { addNola } from "./add.js";
 import { AGENT_OPTIONS, type AgentId, defaultAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
 import { ExampleFetchError } from "./github.js";
 import { writeVscodeSetup } from "./ide.js";
+import { detectPackageManager, type PackageManager, packageManagerCommands } from "./package-manager.js";
 import { TEMPLATES, type TemplateDef, templateByName, templateNames } from "./registry.js";
 import { ownVersion, scaffold } from "./scaffold.js";
 
@@ -212,14 +213,21 @@ export interface RunFlowOptions {
   interactive?: boolean;
   /** bare-run detection root; default "." — tests pass a tmp dir */
   cwd?: string;
+  /** the manager that invoked us; default: detected from npm_config_user_agent */
+  packageManager?: PackageManager;
 }
 
-function nextSteps(outcome: { dir: string; template: string }, fileCount: number, name: string): string {
+function nextSteps(
+  outcome: { dir: string; template: string },
+  fileCount: number,
+  name: string,
+  pm: PackageManager,
+): string {
+  const cmd = packageManagerCommands(pm);
+  const start = cmd.start.padEnd(16);
   const keyless =
-    outcome.template === "empty"
-      ? "npm start        # set OPENAI_API_KEY first"
-      : "npm start        # runs offline — no API key needed";
-  const lines = outcome.dir === "." ? ["npm install", keyless] : [`cd ${outcome.dir}`, "npm install", keyless];
+    outcome.template === "empty" ? `${start} # set OPENAI_API_KEY first` : `${start} # runs offline — no API key needed`;
+  const lines = outcome.dir === "." ? [cmd.install, keyless] : [`cd ${outcome.dir}`, cmd.install, keyless];
   return `Scaffolded ${name} (${fileCount} files).\n\nNext steps:\n  ${lines.join("\n  ")}`;
 }
 
@@ -236,6 +244,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
     }
   }
   if (interactive) prompter.intro?.(opts.intro ?? `create-nola-lang v${await ownVersion()}`);
+  const pm = opts.packageManager ?? detectPackageManager();
 
   const input: FlowInput = {
     dir: args.dir,
@@ -265,7 +274,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
         return 0;
       }
       const lines = [
-        "npm install",
+        packageManagerCommands(pm).install,
         'optional start script:  "start": "nola run src/main.ts"',
         'tsconfig tip: directory-style include (e.g. ["src"]) lets the editor see .tsi files',
       ];
@@ -292,6 +301,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
         outcome,
         files.length + ideWrote.length + agWrote.length,
         basename(resolve(outcome.dir)),
+        pm,
       );
       if (prompter.outro) prompter.outro(message);
       else console.log(message);

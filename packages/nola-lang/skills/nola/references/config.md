@@ -142,7 +142,7 @@ the providers package:
 ```
 
 `nola-lang`, `@nola-lang/runtime` and `@nola-lang/providers` are released in
-LOCKSTEP — give all three the same version (`npm create nola-lang` pins them
+LOCKSTEP — give all three the same version (`npm create nola` pins them
 for you). Do not mix versions.
 
 - `nola run <entry>` runs a `.ts`/`.tsi` entry through the loader with
@@ -154,7 +154,7 @@ for you). Do not mix versions.
   the process.
 - `nola check [dir]` type-checks `.tsi` and `.ts` together with diagnostics
   mapped back to `.tsi` positions. Plain `tsc` over `src` is NOT a check path.
-- Scaffold a project with `npm create nola-lang my-app` (or `npx nola init`).
+- Scaffold a project with `npm create nola my-app` (or `npx nola init`).
 
 ## tsconfig.json
 

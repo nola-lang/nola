@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Publish every public workspace package to npm, in dependency order.
 //
-//   node scripts/publish-npm.mjs [--dry-run] [--provenance] [--dist-tag <tag>]
+//   node scripts/publish-npm.mjs [--dry-run] [--provenance] [--dist-tag <tag>] [--skip-build]
 //
 // - Public = every packages/* manifest without `private: true`
 //   (test/publish-manifests.test.ts is the authority on that partition).
@@ -14,9 +14,15 @@
 //   resolves to.
 // - --provenance adds `--provenance` (GitHub Actions OIDC; needs
 //   `id-token: write` and a public repo). Used by .github/workflows/publish-npm.yml.
-// Requires `npm run build` to have run first (packages ship dist/ only).
+// - Builds CLEAN by default: every packages/*/dist is deleted and `npm run build`
+//   re-run before anything is packed. Packages ship dist/ as-is, and a stale
+//   artifact survives `tsc -b` — a renamed module keeps its OLD file next to the
+//   new one, and on a case-insensitive FS a case-only rename keeps the old
+//   CASING (dist/lower/Lowerer.js for src/lower/lowerer.ts), which ships a
+//   tarball that breaks on Linux and under yarn PnP. --skip-build trusts the
+//   existing dist (CI: fresh checkout, already built and tested).
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +35,7 @@ const value = (name) => {
 };
 const dryRun = flag("dry-run");
 const provenance = flag("provenance");
+const skipBuild = flag("skip-build");
 
 const packagesDir = join(ROOT, "packages");
 const manifests = readdirSync(packagesDir)
@@ -66,6 +73,15 @@ function visit(name, chain = []) {
   order.push(name);
 }
 for (const m of publicPkgs) visit(m.name);
+
+if (!skipBuild) {
+  console.log("clean build: removing packages/*/dist, then `npm run build`");
+  for (const d of readdirSync(packagesDir)) {
+    const dist = join(packagesDir, d, "dist");
+    if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
+  }
+  execFileSync("npm", ["run", "build"], { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" });
+}
 
 console.log(`publishing ${order.length} packages @ ${ver} (dist-tag ${distTag})${dryRun ? " [dry-run]" : ""}`);
 

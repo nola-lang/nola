@@ -10,7 +10,7 @@ Install as a **devDependency** — your app depends on
 instead (the scaffold sets all of this up):
 
 ```bash
-npm create nola-lang my-app     # or: npx nola init
+npm create nola my-app          # or: npx nola init
 ```
 
 ## Commands

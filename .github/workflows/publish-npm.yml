@@ -65,10 +65,10 @@ jobs:
         run: npx vitest run
       - name: Publish (dry-run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry-run
-        run: node scripts/publish-npm.mjs --dry-run
+        run: node scripts/publish-npm.mjs --dry-run --skip-build
       - name: Publish (OIDC trusted publishing)
         if: startsWith(github.ref, 'refs/tags/v') || !inputs.dry-run
-        run: node scripts/publish-npm.mjs --provenance
+        run: node scripts/publish-npm.mjs --provenance --skip-build
       - name: GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
