@@ -1,0 +1,149 @@
+---
+title: Typed extraction
+description: Pull structured data out of text, step by step — a flat object, nested arrays with JSDoc descriptions, optional fields, and types imported from another file.
+sidebar:
+  order: 10
+---
+
+Extraction is the hello world of Nola: declare the type, ask for it. This guide walks from a flat object to cross-file types, each step one real example from the repository.
+
+## 1. A flat object
+
+```tsi
+// src/person.tsi
+export interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+export infer function extractPerson(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return person;
+}
+```
+
+```ts
+// src/main.ts
+import { extractPerson } from "./person.tsi";
+
+const person = await extractPerson(
+  "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.",
+);
+console.log(JSON.stringify(person));
+// {"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}
+```
+
+The JSON Schema the model fills is derived from `Person` at compile time; the extraction is one typed expression. No runtime type-to-schema library, no re-declared model class — `person` is a `Person`.
+
+## 2. Nested arrays and descriptions
+
+```tsi
+// src/resume.tsi
+export interface Education {
+  school: string;
+  degree: string;
+  /** graduation year */
+  year: number;
+}
+
+export interface Resume {
+  name: string;
+  email: string;
+  /** one entry per position, most recent first */
+  experience: string[];
+  skills: string[];
+  education: Education[];
+}
+
+export infer function extractResume(.message: string) {
+  return ask ..`the candidate's resume data`<Resume>;
+}
+```
+
+Arrays of objects nest freely (`Education[]`), and a JSDoc comment on a member becomes that field's description in the schema the model reads — that is where "most recent first" goes, not in the instruction.
+
+## 3. Optional fields and same-file references
+
+```tsi
+// src/invoice.tsi
+export interface LineItem {
+  description: string;
+  quantity: number;
+  /** price per unit in USD */
+  unitPrice: number;
+}
+
+export interface Invoice {
+  invoiceNumber: string;
+  issuedTo: string;
+  lineItems: LineItem[];
+  /** grand total in USD */
+  total: number;
+  /** ISO date; omit when the document has none */
+  dueDate?: string;
+}
+
+export infer function extractInvoice(.document: string) {
+  return ask ..`the invoice data from the document`<Invoice>;
+}
+```
+
+An optional member (`dueDate?`) is left out of the schema's `required` list, so the model may omit it; say *when* to omit it in JSDoc. `Invoice` referencing `LineItem` in the same file needs nothing special.
+
+## 4. Types from another file
+
+Keep shared types in a plain `.ts` module and import them with a type-only import and the NodeNext `.js` specifier; the toolchain carries the schema across for you.
+
+```ts
+// src/models.ts
+export interface Person {
+  name: string;
+  age: number;
+}
+```
+
+```tsi
+// src/report.tsi
+import type { Person } from "./models.js";
+
+export infer function extractPerson(.text: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+How that works (companion modules) and the rules around it are on [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file).
+
+## Mixing in plain TypeScript
+
+Post-processing after the ask is ordinary TypeScript — value-import a helper from a `.ts` file with the `./x.js` specifier:
+
+```ts
+// src/format.ts
+import type { Person } from "./person.tsi";
+
+export function normalizePerson(person: Person): Person {
+  return { ...person, name: person.name.trim(), employer: person.employer.trim() };
+}
+```
+
+```tsi
+// src/person-normalized.tsi
+import { normalizePerson } from "./format.js";
+import type { Person } from "./person.tsi";
+
+export infer function extractPersonNormalized(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return normalizePerson(person);
+}
+```
+
+## Instruction wording tips
+
+- **Name the thing, not the action.** `the invoice data from the document` — the extractor is already a request; `extract …` adds nothing.
+- **Keep the contract in the type.** Optional fields, label sets, nesting: say it in `<T>` and the model gets it as schema, validated on the way back.
+- **Put format constraints in JSDoc**, next to the field they constrain (`/** ISO date */`), rather than in the instruction.
+- **One extractor per concept** when the parts are independent — several small, individually typed asks in one invocation share the same context and are easier to test than one giant object. Closed label sets are their own guide: [Classification](/docs/guides/classification/).
+
+Next: [Classification](/docs/guides/classification/)

@@ -1,0 +1,39 @@
+---
+title: The Node loader
+description: node --import nola-lang/register — lowers .tsi in memory with inline source maps, loads nola.config.ts and .env, falls back .js to .ts. The dev and debug path.
+sidebar:
+  order: 20
+---
+
+The loader is what runs `.tsi` under plain `node` without a build step — the `tsx` model. `nola run` is a shortcut for it.
+
+## Usage
+
+```sh
+node --import nola-lang/register src/main.ts     # a plain-TS entry that imports .tsi
+node --import nola-lang/register src/main.tsi    # or a .tsi entry directly
+nola run src/main.ts                             # the same, registered for the entry's directory
+```
+
+## What the loader does
+
+- **Registers Node module hooks** (`module.register`) for the project and lowers every imported `.tsi` in memory — nothing is written to disk.
+- **Inlines source maps** that point at the on-disk `.tsi` files, so breakpoints bind in `.tsi` source and, with `--enable-source-maps`, stack traces report `.tsi` positions.
+- **Loads `nola.config.ts`** — bundled and evaluated before your entry runs — and configures the process. The config itself cannot import `.tsi` ([`NOLA3012`](/docs/reference/error-codes/#nola3012)): it is evaluated before the hooks register.
+- **Applies a project-root `.env`** first, dotenv-style: a variable already present in the real environment wins over the file.
+- **Falls back from `./x.js` to `x.ts`** for a missing relative specifier (a real on-disk `.js` always wins) — which is why `.tsi` files import plain TS with the NodeNext `.js` form.
+- **Serves companion modules** for types imported from other files, so cross-file schemas work without any generated files on disk.
+
+## Debugging
+
+Because the loader is `--import`-able, any `.tsi` or `.ts` entry debugs under the ordinary Node debugger. The VS Code launch configuration on [Editor setup](/docs/start/editor-setup/#debugging-with-f5) is exactly `node --import nola-lang/register --enable-source-maps` with two extra keys that let VS Code trust the inline maps and skip the runtime.
+
+## Not for production
+
+The loader is the development and debugging path. For deployment, `nola build` writes plain JS with a wired config, and the output runs under `node` with no `--import` at all — see [Deploying](/docs/guides/deploying/).
+
+## Runtimes
+
+The hooks are Node's module-hooks API (Node ≥ 22). Bun and Deno do not run them: `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine — `bun run start` / `pnpm start` / `yarn start` all launch the `nola` bin, which is a Node script.
+
+Next: [VS Code extension](/docs/tooling/vscode/)

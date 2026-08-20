@@ -3,6 +3,8 @@ dist/
 dist-*/
 *.tsbuildinfo
 coverage/
+# docs fence-check workspace (scripts/check-docs.mjs)
+.tsi-check/
 *.d.tsi.ts
 .env
 .vsix-staging/

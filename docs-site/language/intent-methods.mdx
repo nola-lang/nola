@@ -1,0 +1,61 @@
+---
+title: Intent methods
+description: .withRetry, .withProvider and .withParams on every intent; .withTimeout and .detached on an infer function's result. Clone semantics, single-shot resolution.
+sidebar:
+  order: 80
+---
+
+Every intent carries a few fluent methods. Which ones depends on the tier:
+
+| Tier | What it is | Methods |
+| --- | --- | --- |
+| `Askable<T>` | a raw extractor or call intent — resolvable only through `ask` | `.withRetry(n)` · `.withProvider(nameOrProvider)` · `.withParams({…})` |
+| `Intent<T>` | what calling an infer function returns — also `PromiseLike<T>` | the three above, plus `.withTimeout(ms)` · `.detached()` |
+
+## On any intent
+
+```tsi
+// tuned.tsi
+export infer function tuned(.text: string) {
+  const a = ask (..`the title`<string>).withRetry(2);
+  const b = ask (..`the body`<string>).withProvider("careful");
+  const c = ask (..`a creative tagline`<string>).withParams({ temperature: 0.9, maxOutputTokens: 200 });
+  return { a, b, c };
+}
+```
+
+- **`.withRetry(n)`** — `n` extra whole-ask attempts, flat, no backoff. Unrelated to the provider-level `withRetry` combinator, which retries the wire call — see [Resilience](/docs/config/resilience/). On a call intent the callee runs again on every attempt, so only use it on idempotent targets.
+- **`.withProvider(nameOrProvider)`** — the dynamic form of `ask with`; accepts a configured name or a `NolaProvider` object.
+- **`.withParams({ temperature, maxOutputTokens, providerOptions })`** — wire knobs, shallow-merged per field over anything already set on the intent; `providerOptions` merges per key. Params are part of the ask fingerprint, so two asks that differ only in params never share a replay entry — see [Record and replay](/docs/config/record-and-replay/).
+
+## On the intent an infer function returns
+
+These two act when the intent *roots* an invocation, which is why they are typically used from plain TypeScript:
+
+```tsi
+// person.tsi
+export interface Person { name: string; age: number }
+
+export infer function extractPerson(.message: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+```ts
+// main.ts
+import { extractPerson } from "./person.tsi";
+
+const text = "Alice Smith, 32, is a staff engineer at Acme Corp.";
+const person = await extractPerson(text).withTimeout(30_000);
+const loose = await extractPerson(text).detached();   // do not inherit the caller frame's context
+console.log(person, loose);
+```
+
+- **`.withTimeout(ms)`** — the per-invocation timeout when this intent roots the invocation; overrides `ask.timeoutMs` from the config; `0` disables. It bounds provider round trips only — see [Ask options](/docs/config/ask-options/).
+- **`.detached()`** — resolve without inheriting the caller frame's context. Useful when one infer function asks another and you do *not* want the caller's contextual parameters composed into the callee's prompts.
+
+## Clone semantics
+
+Every method returns a clone — the original intent stays unstarted — and an intent resolves at most once. Chain what you need, then resolve the result.
+
+Next: [TypeScript interop](/docs/language/typescript-interop/)

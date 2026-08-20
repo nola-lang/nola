@@ -1,0 +1,109 @@
+---
+title: The ask operator
+description: ask resolves an extractor, a call intent or another infer function's intent to its value — like await, with the same precedence. Plus ask with <provider>.
+sidebar:
+  order: 50
+---
+
+`ask` is a unary prefix operator with `await`'s precedence. It resolves any *askable* to its value. Because it binds like `await`, a method chain on the operand needs parentheses: `` ask (..`x`<string>).withRetry(2) ``.
+
+## What ask accepts
+
+An askable is one of three things: an extractor, a call intent, or the `Intent` returned by calling an infer function.
+
+```tsi
+// users.tsi
+export infer function getUserById(.name: string) {
+  return ask ..`the user record for the named person`<{ name: string; id: string }>;
+}
+```
+
+```tsi
+// report.tsi
+import { getUserById } from "./users.tsi";
+
+type User = { name: string };
+
+export infer function report(.text: string) {
+  const user = ask ..`the user named in the text`<User>;   // extractor
+  const record = ask getUserById(user.name);               // another infer function
+  return record;
+}
+```
+
+Call intents are the third kind — see [Call intents](/docs/language/call-intents/).
+
+## ask vs await
+
+| You are in… | Use | On |
+| --- | --- | --- |
+| an infer function body | `ask` | any askable |
+| an infer function body | `await` | ordinary promises (fetch, a database, any library) |
+| plain TypeScript | `await` | the intent an infer function returned — this opens an *invocation* |
+
+A raw extractor or call intent is never bare-`await`ed. It carries no context of its own; it borrows the frame of the `ask` that resolves it, so awaiting one directly throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time:
+
+```ts
+// not-checked — WRONG: nothing supplies the inference context
+import { nameIntent } from "./person.tsi";
+const name = await nameIntent;
+```
+
+```tsi
+// person.tsi
+export const nameIntent = ..`the user's full name`<string>;
+
+// RIGHT — resolve it with `ask` inside an infer function
+export infer function whoIsIt(.text: string) {
+  return ask nameIntent;
+}
+```
+
+```ts
+// main.ts
+// RIGHT — from plain TS, await the INFER FUNCTION's result
+import { whoIsIt } from "./person.tsi";
+
+const name = await whoIsIt("Alice Smith, 32, works at Acme Corp.");
+console.log(name);
+```
+
+## `ask with <name>`
+
+`ask with <name>` resolves one ask through a named provider from `nola.config.ts`:
+
+```tsi
+// summarize.tsi
+export infer function summarize(.text: string) {
+  const draft = ask with fast ..`a rough summary`<string>;
+  const final = ask with careful ..`a polished summary of: ${draft}`<string>;
+  return final;
+}
+```
+
+```ts
+// nola.config.ts
+import { anthropic, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: openai({ model: "gpt-5-mini" }),
+    fast: openai({ model: "gpt-5-nano" }),
+    careful: anthropic({ model: "claude-sonnet-4-5" }),
+  },
+});
+```
+
+- `<name>` must be a **static identifier** naming a key of the `providers` map. A string literal, a member expression or a parenthesized expression after `with` is [`NOLA1009`](/docs/reference/error-codes/#nola1009).
+- The name is matched against the config at ask time, not compile time; an unknown name fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
+- For a *dynamic* choice use the intent method instead: `` ask (..`a rough summary`<string>).withProvider(useFast ? "fast" : "careful") `` — see [Intent methods](/docs/language/intent-methods/).
+- `ask without` is a plain ask of an identifier named `without`, not a pin.
+
+Routing precedence, highest first: `forceProvider` in the config → the ask-site pin (`ask with` / `.withProvider`) → `providers.default`. See [Providers](/docs/config/providers/).
+
+## Where ask is legal
+
+Directly inside an infer function body — not at module level, and not inside a nested closure, even one written inside the infer function ([`NOLA2001`](/docs/reference/error-codes/#nola2001)). `ask` is a reserved word in `.tsi` files (still legal as a member or property name, `obj.ask`); using it as an identifier is [`NOLA1003`](/docs/reference/error-codes/#nola1003).
+
+Next: [Call intents](/docs/language/call-intents/)

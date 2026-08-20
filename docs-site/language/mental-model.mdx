@@ -1,0 +1,57 @@
+---
+title: The mental model
+description: Intents are lazy values, ask resolves them like await, infer functions return Intent<T>, and .tsi lowers to plain TypeScript. Learn this first.
+sidebar:
+  order: 10
+---
+
+Five ideas carry the whole language. Everything on the following pages is a consequence of them.
+
+## 1. A .tsi file is TypeScript plus two constructs
+
+Everything you know about TypeScript applies inside a `.tsi` file. Nola adds `infer function` and `ask` — nothing else changes.
+
+```tsi
+// analyze.tsi
+export infer function analyzeUserRequest(userId: string, .message: string) {
+  const ticketId = ask ..`ticket id mentioned in the message`<string>;
+  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  return { userId, ticketId, isFraud };
+}
+```
+
+## 2. Intents are lazy values
+
+Calling an infer function runs nothing. It returns an `Intent<T>` — a lazy, thenable value that describes the work. The same is true of the smaller pieces: an extractor `` ..`…`<T> `` is a value you can construct anywhere, module level included, and it stays inert until something resolves it. *Construction* (building the intent) and *resolution* (running it) are two separate moments, and the language keeps them apart on purpose.
+
+## 3. ask is to intents what await is to promises
+
+`ask` resolves any *askable* — an extractor, a call intent, or the intent another infer function returned — to its value. It has `await`'s precedence and sits in the same position in your code. Two rules follow:
+
+- `ask` is legal only directly inside an `infer function` body — not at module level, not inside a nested closure ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
+- From plain TypeScript you do not `ask`; you `await` the intent an infer function returns. A raw extractor or call intent is never bare-`await`ed — it has no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010).
+
+## 4. One dot in, two dots out
+
+A parameter with one leading dot — `.message` — is a **contextual parameter**: its value flows *into* the model's context for every `ask` in that invocation. A plain parameter (`userId`) is an ordinary argument; the model sees its name and type, never its value. Two dots — `` ..`instruction` `` — is an **extractor**: a value comes *out* of the model. One dot in, two dots out.
+
+## 5. Lowering: the JSX model
+
+`.tsi` is not valid TypeScript, and nothing downstream ever has to know. The Nola toolchain *lowers* a `.tsi` file to plain TypeScript before `tsc`, bundlers, Node or your editor see it — the way JSX is compiled away — and `nola build`, `nola run`, `nola check` and the editor all share that one lowering. That is what makes the type the schema and lets the editor see every `ask`: at every stage it is ordinary TypeScript.
+
+## Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| **infer function** | `infer function name(…) { … }` — an LLM-backed function; calling it returns an `Intent<T>` |
+| **contextual parameter** | `.name: T` — a parameter whose value is shown to the model |
+| **intent** | the lazy value `ask` (or `await`, from plain TS) resolves |
+| **askable** | anything `ask` accepts: an extractor, a call intent, an infer function's intent |
+| **extractor** | `` ..`instruction`<T> `` — a request to pull a `T` from context |
+| **call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument — the model fills the arguments, then the function runs |
+| **instruction** | the backtick text you write (marker, extractor, call hint) |
+| **prompt** | the composed provider-facing text; you see it in receipts |
+| **invocation** | one execution of an infer function — the scope every `ask` inside it shares |
+| **provider** | an entry of the `providers` map in `nola.config.ts`; a model is one of its options |
+
+Next: [infer functions](/docs/language/infer-functions/)

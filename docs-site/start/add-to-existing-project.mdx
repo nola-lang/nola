@@ -1,0 +1,82 @@
+---
+title: Add Nola to an existing project
+description: Retrofit Nola into a project you already have with npm create nola -- --add — what is written, what is merged, what is left alone, and what tsconfig needs.
+sidebar:
+  order: 20
+---
+
+You have a TypeScript project; this adds `.tsi` support to it without scaffolding a new one.
+
+## Run the retrofit
+
+```sh
+npm create nola -- --add      # or: npx nola init --add
+```
+
+A bare interactive `npm create nola` offers the same thing when it finds a `package.json` in the current directory ("Add Nola to this project"). `--add` and `--template` are mutually exclusive — the first retrofits, the second scaffolds.
+
+Optional flags, both also offered interactively:
+
+- `--ide vscode` writes `.vscode/launch.json` (F5 debugging of `.tsi` files) and `.vscode/extensions.json` (recommends the Nola extension) — see [Editor setup](/docs/start/editor-setup/).
+- `--agents claude,cursor,copilot,agents-md` writes pointer files so your coding assistant reads the Nola skill that ships inside `node_modules/nola-lang` (always matching the installed version). `nola skill install` does the same later.
+
+## What it writes, merges, and leaves alone
+
+| | Files | Detail |
+| --- | --- | --- |
+| **Written** | `nola.config.ts` | The minimal config (`providers.default: openai({ model: "gpt-5-mini" })`, with an offline `mockProvider` alternative in a comment). Skipped — and left untouched — if one already exists. |
+| **Merged** | `package.json` | Adds `@nola-lang/runtime` and `@nola-lang/providers` to `dependencies`, `nola-lang` and `typescript` to `devDependencies`. The Nola packages get the same lockstep version; `typescript` gets `^5.6.0`. Existing entries are never rewritten, and the file is only touched when something was added. |
+| **Suggested, not touched** | `package.json` scripts, `tsconfig.json`, `.env`, `.gitignore` | The command prints its next steps: install the packages, an optional `"start": "nola run src/main.ts"` script, and the tsconfig tip below. |
+
+Then run your package manager's install.
+
+## tsconfig requirements
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowArbitraryExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
+
+Three settings matter for Nola:
+
+- **`module` / `moduleResolution`: `NodeNext`** — plain-TS imports use the `./x.js` specifier (even though the file on disk is `x.ts`); `.tsi` imports keep their literal extension.
+- **`allowArbitraryExtensions: true`** — required so TypeScript accepts the declaration pairs Nola emits for `.tsi` modules.
+- **`include` is directory-style** — `["src"]`, never `["src/**/*.ts"]`. The directory form lets the editor tooling admit `.tsi` files into the program while plain `tsc` ignores them; under the glob form `.tsi` files fall out of the program and auto-import stops offering your infer functions.
+
+## First .tsi file
+
+```tsi
+// src/hello.tsi
+export infer function summarize(.text: string) {
+  return ask ..`a one-sentence summary`<string>;
+}
+```
+
+```ts
+// src/main.ts
+import { summarize } from "./hello.tsi";
+
+console.log(await summarize("Nola is a TypeScript superset where asking an LLM is part of the language."));
+```
+
+```sh
+npx nola run src/main.ts    # run with the loader and nola.config.ts applied
+npx nola check              # type-check .tsi and .ts together
+```
+
+## Existing build pipelines
+
+Plain `tsc` cannot parse `.tsi`; `nola check` is the type-check path and `nola build` the compile path. If a `tsc` or framework build must *resolve* `.tsi` imports (for example `next build` or `tsc --noEmit` in CI), keep `allowArbitraryExtensions` on and run `nola declarations` to write adjacent `<name>.d.tsi.ts` files (gitignore them — the editor hides them next to a live `.tsi`, and `nola check` ignores them). The bundler plugins (`@nola-lang/vite`, `webpack`, `rollup`, `rolldown`, `esbuild`, `rspack`) and `@nola-lang/next` do the lowering inside the bundler instead — see [The nola CLI](/docs/tooling/cli/).
+
+Next: [Editor setup](/docs/start/editor-setup/)

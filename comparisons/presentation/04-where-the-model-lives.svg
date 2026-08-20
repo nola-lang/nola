@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect id="background" width="1920" height="1080" fill="#FAFBFC"/>
+  <text x="100" y="98" font-family="Roboto Mono" font-size="20" font-weight="500" letter-spacing="2.5" fill="#0E7C86">WHERE THE MODEL LIVES</text>
+  <text x="100" y="158" font-family="Inter" font-size="54" font-weight="700" fill="#161C24">One expression vs. a second declaration</text>
+  <text x="100" y="204" font-family="Inter" font-size="23" fill="#5B6573">Extracting a typed OrderRequest &#8212; nested objects, a union, and a real Date &#8212; from a customer email.</text>
+  <rect x="100" y="280" width="554" height="640" rx="14" fill="#F2F9F9" stroke="#0E7C86" stroke-width="2"/>
+  <text x="128" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#0A5A62">Nola</text>
+  <text x="128" y="362" font-family="Inter" font-size="18" fill="#437A80">one file &#183; no codegen &#183; no second schema</text>
+  <text x="128" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// types.ts &#8212; the types you already have</text>
+  <text x="128" y="442" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">export interface OrderRequest {</text>
+  <text x="128" y="464" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  customer: Customer;</text>
+  <text x="128" y="486" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  shipTo: Address;</text>
+  <text x="128" y="508" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  items: LineItem[];</text>
+  <text x="128" y="530" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  needBy?: Date;</text>
+  <text x="128" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority: "standard" | "rush";</text>
+  <text x="128" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
+  <text x="128" y="618" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// triage.tsi &#8212; the whole LLM seam</text>
+  <text x="128" y="640" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">const order =</text>
+  <text x="128" y="662" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">  ask ..`the order request`&lt;OrderRequest&gt;;</text>
+  <text x="128" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">placeOrder(order);</text>
+  <text x="128" y="728" font-family="Roboto Mono" font-size="14.5" fill="#1E7A3C">// needBy is already a real Date</text>
+  <rect x="683" y="280" width="554" height="640" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
+  <text x="711" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#161C24">BAML</text>
+  <text x="711" y="362" font-family="Inter" font-size="18" fill="#5B6573">a second language &#183; a codegen step</text>
+  <text x="711" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// baml_src/triage.baml &#8212; declare it again</text>
+  <text x="711" y="442" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">class OrderRequest {</text>
+  <text x="711" y="464" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  customer Customer</text>
+  <text x="711" y="486" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  shipTo Address</text>
+  <text x="711" y="508" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  items LineItem[]</text>
+  <text x="711" y="530" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  needBy string?</text>
+  <text x="711" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority Priority</text>
+  <text x="711" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
+  <text x="711" y="596" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">function ExtractOrder(email: string)</text>
+  <text x="711" y="618" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    -&gt; OrderRequest {</text>
+  <text x="711" y="640" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  client Default</text>
+  <text x="711" y="662" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  prompt #"</text>
+  <text x="711" y="684" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    Extract the order request.</text>
+  <text x="711" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    {{ ctx.output_format }}</text>
+  <text x="711" y="728" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  "#</text>
+  <text x="711" y="750" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
+  <text x="711" y="794" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">$ npx baml-cli generate &#8594; 14 files</text>
+  <text x="711" y="816" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const order = await b.ExtractOrder(email);</text>
+  <text x="711" y="838" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">new Date(order.needBy!)  // by hand</text>
+  <rect x="1266" y="280" width="554" height="640" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
+  <text x="1294" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#161C24">Ax</text>
+  <text x="1294" y="362" font-family="Inter" font-size="18" fill="#5B6573">terse &#8212; but the model is a string</text>
+  <text x="1294" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// signatures.ts &#8212; the model, as a string</text>
+  <text x="1294" y="442" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">export const orderExtractor = ax(`</text>
+  <text x="1294" y="464" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  emailText:string -&gt;</text>
+  <text x="1294" y="486" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  order:object{</text>
+  <text x="1294" y="508" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    customer:object{ name:string,</text>
+  <text x="1294" y="530" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">                     company?:string },</text>
+  <text x="1294" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    shipTo:object{ street:string,</text>
+  <text x="1294" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">                   city:string, zip:string },</text>
+  <text x="1294" y="596" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    items:object{ description:string,</text>
+  <text x="1294" y="618" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">                  quantity:number }[],</text>
+  <text x="1294" y="640" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    needBy?:datetime,</text>
+  <text x="1294" y="662" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    priority:class "standard, rush"</text>
+  <text x="1294" y="684" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  }</text>
+  <text x="1294" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">`);</text>
+  <text x="1294" y="750" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// main.ts</text>
+  <text x="1294" y="772" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const { order } = await orderExtractor</text>
+  <text x="1294" y="794" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  .forward(llm, { emailText });</text>
+  <text x="1294" y="816" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const domainOrder: OrderRequest = order;</text>
+  <text x="1294" y="838" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">// typed, dates revived &#8212; but nothing ties</text>
+  <text x="1294" y="860" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">// the string above to types.ts</text>
+  <text x="100" y="985" font-family="Inter" font-size="24" font-weight="500" fill="#2A323C">Ax ties Nola on line count. The difference is that Nola's schema IS the type &#8212; Ax's is a string the compiler never reads.</text>
+</svg>

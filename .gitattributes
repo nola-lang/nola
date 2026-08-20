@@ -1,0 +1,4 @@
+# docs-site/ is byte-copied into nola-website by its scripts/sync-docs.mjs, whose
+# --check compares bytes. Pin LF on disk so the copy is deterministic across
+# platforms and checkouts and the guard never false-positives on line endings.
+docs-site/** text eol=lf

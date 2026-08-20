@@ -1,0 +1,54 @@
+---
+title: Config schema
+description: Every nola.config.ts key — type, default, the code that rejects a bad value, and whether the runtime reads it at 0.1.x (cache and middleware validate only).
+sidebar:
+  order: 60
+---
+
+`defineConfig(config)` is an identity function for typing; the shape is validated and frozen when the config is loaded. One row per top-level key.
+
+| Key | Type | Default | Invalid → | Read by |
+| --- | --- | --- | --- | --- |
+| `providers` | `{ default: NolaProvider } & Record<string, NolaProvider>` | — (required) | [`NOLA3003`](/docs/reference/error-codes/#nola3003) — not an object, missing `default`, or an entry without `name` + `complete()` | runtime — every ask |
+| `forceProvider` | `string` naming a key of `providers` | unset | [`NOLA3004`](/docs/reference/error-codes/#nola3004) | runtime — overrides every ask-site pin |
+| `observability.logLevel` | `"silent" \| "error" \| "warn" \| "info" \| "debug"` | `"warn"` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | built-in logger; `NOLA_LOG` env overrides |
+| `hooks` | `NolaHook[]` — objects with any of `onAskStart`, `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`, `onAskEnd`, `onInvocationEnd` | `[]` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | runtime — all hooks get all events |
+| `middleware` | `NolaMiddleware[]` (functions) | `[]` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | **validates only — not wired at 0.1.x**; the ask path calls the provider directly |
+| `cache` | `{}` or `{ store: NolaCacheStore }` | unset (`{}` → in-memory store) | [`NOLA3006`](/docs/reference/error-codes/#nola3006) | **validates only — not wired at 0.1.x** |
+| `system.message` | `string` | unset | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | runtime — appended to the system prompt of every ask |
+| `ask.timeoutMs` | non-negative finite `number` (ms); `0` disables | `60000` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) — also for unknown keys under `ask` | runtime — per-invocation timeout |
+| `compiler.underivableContextType` | `"error" \| "prune" \| "omit"` — keep it a literal | `"error"` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | `nola build` / `nola check` / the loader / the editor — never the runtime |
+| `build.target` | `"app" \| "lib"` | `"app"` | [`NOLA3003`](/docs/reference/error-codes/#nola3003) | `nola build` only |
+| `plugins` | reserved | — | [`NOLA3005`](/docs/reference/error-codes/#nola3005) — rejected at load | — |
+
+Also rejected with [`NOLA3003`](/docs/reference/error-codes/#nola3003): any unknown top-level key (the message lists the allowed ones); a `provider` (singular) key — the message tells you to write `providers: { default: … }`; a config that is not an object; and reconfiguring after the first ask ("configuration is frozen" — call `nolaRuntime.reset()` before `configure()` in tests).
+
+## Resolved shape
+
+After loading, the runtime holds a frozen `ResolvedNolaConfig`: `providers` (frozen map), `forceProvider?`, `observability.logLevel`, `hooks` (frozen array), `middleware` (frozen array), `cache?` (with a concrete store), `system?`, `ask.timeoutMs` (defaulted), `compiler.underivableContextType` (defaulted), `build.target` (defaulted).
+
+## Types
+
+`NolaConfig`, `NolaHook`, `NolaMiddleware`, `NolaCacheStore`, `NolaLogLevel` and `NolaProvider` are exported from `@nola-lang/runtime`; `defineConfig`, `resolveNolaConfig`, `resolveCompilerConfig` and `resolveBuildConfig` too.
+
+```ts
+// nola.config.ts
+import { mockProvider, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: openai({ model: "gpt-5-mini" }),
+    mock: mockProvider(() => ({ ok: true })),
+  },
+  forceProvider: process.env.CI ? "mock" : undefined,
+  observability: { logLevel: "info" },
+  hooks: [{ name: "audit", onAskEnd: ({ receipt }) => console.log(receipt.site, receipt.servedBy) }],
+  system: { message: "Answer in British English." },
+  ask: { timeoutMs: 60_000 },
+  compiler: { underivableContextType: "error" },
+  build: { target: "app" },
+});
+```
+
+Next: [Error codes](/docs/reference/error-codes/)

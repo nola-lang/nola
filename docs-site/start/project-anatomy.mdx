@@ -1,0 +1,140 @@
+---
+title: Project anatomy
+description: What every file in a scaffolded Nola project is for — nola.config.ts, src/*.tsi, the plain-TS entry, tsconfig, package.json, .env and the replay ledger.
+sidebar:
+  order: 40
+---
+
+This is the project `npm create nola` lays down, file by file. Every Nola project has the same shape: `.tsi` files hold the infer functions, a plain `.ts` entry calls them, and `nola.config.ts` says which provider answers.
+
+```
+my-app/
+  nola.config.ts        # providers and runtime options
+  nola.replay.jsonl     # the starter's recorded answers (offline first run)
+  package.json          # runtime + providers as dependencies, nola-lang as a devDependency
+  tsconfig.json         # NodeNext, allowArbitraryExtensions, include: ["src"]
+  .env                  # dev-time secrets — never committed
+  src/
+    person.tsi          # Nola source: types + infer functions
+    main.ts             # plain TypeScript entry point
+```
+
+## nola.config.ts
+
+```ts
+// nola.config.ts
+import { replay } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    // The starter runs offline: answers replay from the committed ledger
+    // (nola.replay.jsonl), so the first `npm start` needs no API key. The
+    // ledger is keyed by the exact prompt — once you edit the .tsi or add
+    // asks, switch to a real provider:
+    //   import { openai } from "@nola-lang/providers";
+    //   default: openai({ model: "gpt-5-mini" }),   // reads OPENAI_API_KEY
+    default: replay("./nola.replay.jsonl"),
+  },
+});
+```
+
+The config lives at the project root and default-exports a `defineConfig` call. `providers.default` is required; every other key of `providers` becomes an `ask with <name>` target. The import surface is exactly two specifiers — `defineConfig` from `@nola-lang/runtime`, everything provider-shaped from `@nola-lang/providers`. Full reference: [nola.config.ts](/docs/config/nola-config/).
+
+## src/person.tsi
+
+```tsi
+// src/person.tsi
+export interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+export infer function extractPerson(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return person;
+}
+```
+
+The type and the infer function live together. `Person` is both the TypeScript type of the result and the schema the model is asked to fill; `.message` is a contextual parameter whose value is shown to the model; `ask` resolves the extractor.
+
+## src/main.ts
+
+```ts
+// src/main.ts
+import { extractPerson } from "./person.tsi";
+
+const person = await extractPerson(
+  "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.",
+);
+console.log(JSON.stringify(person));
+```
+
+Plain TypeScript. The import keeps the literal `.tsi` extension, and `await` on the returned intent is what runs the inference. `nola run src/main.ts` executes it with the loader and the config in place.
+
+## tsconfig.json
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",            // hence ./x.js specifiers for plain-TS imports
+    "moduleResolution": "NodeNext",
+    "allowArbitraryExtensions": true, // required for the .tsi declaration pairs
+    "noEmit": true,                   // nola build emits; tsc only checks
+    "skipLibCheck": true
+  },
+  "include": ["src"]                  // directory-style, so the editor can admit .tsi files
+}
+```
+
+## package.json
+
+```json
+{
+  "name": "my-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "nola run src/main.ts",
+    "build": "nola build",
+    "check": "nola check"
+  },
+  "dependencies": {
+    "@nola-lang/providers": "0.1.3",
+    "@nola-lang/runtime": "0.1.3"
+  },
+  "devDependencies": {
+    "nola-lang": "0.1.3",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
+```
+
+The split is deliberate: the app depends on the **runtime** and the **providers**; `nola-lang` — compiler, CLI and the loader — is a **devDependency** and never ships to production. The three Nola packages are released in lockstep: keep them on the same version (the scaffold pins them for you). The scaffold sets `"type": "module"`: the loader and `nola build` output are ESM.
+
+## .env
+
+```sh
+OPENAI_API_KEY=sk-...
+```
+
+A dev-time convenience: `nola run` and `node --import nola-lang/register` apply a project-root `.env` before evaluating the config (values already set in the real environment win). Production reads the real environment — nothing loads `.env` there. The starter's `.gitignore` lists `.env` beside `node_modules/` and `dist/`; keep it that way, and add it yourself in a retrofitted project.
+
+## nola.replay.jsonl
+
+The starter's *ledger*: one JSON line per recorded exchange, keyed by a fingerprint of the exact request. `replay("./nola.replay.jsonl")` serves answers from it, which is why the first run needs no key. Replay is strict — a request with no matching entry fails with `NOLA3008` rather than quietly calling the network, so after editing `person.tsi` you either switch to a live provider or re-record. See [Record and replay](/docs/config/record-and-replay/).
+
+## Built output
+
+`nola build` writes `dist/`, mirroring the source tree: `dist/src/person.tsi.js` plus `dist/src/person.tsi.js.map` and `dist/src/person.tsi.d.ts`, and `dist/nola.config.js` — the bundled config every built module imports, so the output runs under plain `node` with no loader. `nola build` compiles `.tsi` files only; a plain `.ts` entry such as `src/main.ts` is not part of its output. The production recipe is in [Deploying](/docs/guides/deploying/).
+
+Next: [The mental model](/docs/language/mental-model/)

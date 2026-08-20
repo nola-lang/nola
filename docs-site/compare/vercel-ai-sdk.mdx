@@ -1,0 +1,80 @@
+---
+title: Nola vs Vercel AI SDK
+description: generateText with Output.object and Zod versus extractors — the same classify-then-reply task in both, where the SDK is stronger, and where a language wins.
+sidebar:
+  order: 50
+---
+
+## What the AI SDK is
+
+The Vercel AI SDK (`ai` plus `@ai-sdk/*` provider packages) is the most widely used TypeScript library for calling models: a unified provider API, text and object generation, streaming, tool calling, and UI hooks for React and other frameworks. Structured output is `generateText` with `output: Output.object({ schema })` — a Zod schema that is converted to JSON Schema for the model and used to validate the reply (`generateObject` is the older form, now deprecated in favour of the `output` setting).
+
+{/* API names verified against the AI SDK docs on 2026-08-20: `generateText` + `Output.object({ schema })` is current, `generateObject` is marked deprecated, and the system-prompt option is `instructions` (renamed from `system` in AI SDK 7, which remains as a deprecated fallback). */}
+
+## The same task, side by side
+
+Classify a support message, then write a reply that depends on the category.
+
+**AI SDK:**
+
+```ts
+// not-checked — triage.ts
+import { generateText, Output } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+const Triage = z.object({
+  category: z.enum(["billing", "refund", "fraud", "other"]),
+  orderIds: z.array(z.string()),
+});
+
+const { output: triage } = await generateText({
+  model: openai("gpt-5-mini"),
+  instructions: "You are a support classifier.",
+  prompt: message,
+  output: Output.object({ schema: Triage }),
+});
+
+const { text: reply } = await generateText({
+  model: openai("gpt-5-mini"),
+  instructions: "You are a support agent.",
+  prompt: `Reply to this ${triage.category} case: ${message}`,
+});
+```
+
+**Nola:**
+
+```tsi
+// classify.tsi
+export type Triage = {
+  category: "billing" | "refund" | "fraud" | "other";
+  orderIds: string[];
+};
+
+export infer function classifyMessage(.message: string) {
+  const triage = ask ..`triage the customer message`<Triage>;
+  const reply = ask ..`a reply for a ${triage.category} case`<string>;
+  return { ...triage, reply };
+}
+```
+
+## Where the AI SDK is stronger
+
+- **Streaming and UI.** `streamText`, partial object streaming and the React hooks are a complete front-end story; Nola has no streaming primitive and is server-only in v0.
+- **Breadth and maturity.** Official adapters for many providers, tool calling, middleware, and a very large user base; Nola supports OpenAI, Anthropic, Google and Chat-Completions-compatible endpoints, and is 0.1.x.
+- **Runtimes.** The SDK runs in Node, edge runtimes and the browser; Nola needs Node ≥ 22 on the server.
+
+## Where Nola is stronger
+
+- **The contract is the TypeScript type.** `Triage` is a type, not a Zod object you `z.infer` from (or maintain alongside); its schema is derived at compile time and the editor sees it in `.ts` consumers too.
+- **Context belongs to the function.** Both asks in `classifyMessage` see `.message`; the reply chains with a `${}`. With the SDK each call is its own request, so the second one re-threads the category and the original message by hand.
+- **Call intents.** `` ask createTicket(..`a short title`<string>, 2) `` lets the model fill a plain function's arguments — no tool schema to declare; see [Function calling](/docs/guides/function-calling/).
+- **Editor and type-check integration.** `nola check` type-checks the asks with the rest of the program; diagnostics point at the `.tsi` line.
+
+## When to pick which
+
+- A product UI that streams tokens, or anything that runs in the browser or at the edge → the AI SDK.
+- Server-side TypeScript where typed extraction, classification and function calling should read like language features, with the type as the only contract → Nola.
+- Mixing is fine: the SDK for streaming chat, Nola for the typed back-end steps.
+
+Next: [Examples](/docs/examples/)

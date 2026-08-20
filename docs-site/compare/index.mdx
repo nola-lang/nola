@@ -1,0 +1,34 @@
+---
+title: Nola compared
+description: How Nola relates to BAML, the Vercel AI SDK, LangGraph, DSPy and LMQL — a one-screen matrix and the bet behind Nola, syntax rather than a library.
+sidebar:
+  order: 0
+---
+
+Nola's bet is that talking to a model belongs in the **language**, not in a library: one typed expression that the compiler, the editor and the runtime all understand. The TypeScript type *is* the schema, `ask` has `await`'s ergonomics, and context belongs to the function — a second `ask` still sees the same `.message` — while everything downstream keeps seeing ordinary TypeScript because `.tsi` lowers to it.
+
+Every tool below is good at what it set out to do. The pages in this section compare on one identical task (classify a support message, then write a reply that depends on the category), with working code on both sides, and say plainly where each is stronger.
+
+## The matrix
+
+{/* Non-Nola cells checked against each project's current documentation on 2026-08-20. */}
+
+| | Nola | BAML | Vercel AI SDK | LangGraph (JS) | DSPy | LMQL |
+| --- | --- | --- | --- | --- | --- | --- |
+| **What it is** | a TypeScript superset (`.tsi`) | a prompt DSL with generated clients | a TypeScript library | a graph-orchestration library | a Python framework with prompt optimizers | a query language embedded in Python |
+| **Level** | language (new syntax, lowered to TS) | language, behind a codegen boundary | library | library | library / compiler | language |
+| **Typed output** | the TS type; schema derived at compile time | BAML `class` → generated TS/Python types | Zod schema → `z.infer` type | Zod schema via `withStructuredOutput` | Pydantic / signatures | constraints on decoding |
+| **Editor support** | VS Code extension + tsserver plugin (types in `.ts` consumers) | VS Code extension, playground | plain TypeScript | plain TypeScript | Python tooling | Python tooling |
+| **Runtime / host** | Node ≥ 22, server-only in v0 | TS, Python, Ruby, … clients | Node, edge, browser | Node, Python | Python | Python |
+| **Provider breadth** | OpenAI, Anthropic, Google + any Chat-Completions endpoint | broad | very broad, official adapters | via LangChain integrations | broad | broad |
+| **Maturity** | 0.1.x — early | established | established, widely used | established, widely used | established | research project |
+
+## Reading the rest
+
+- [Nola vs BAML](/docs/compare/baml/) — the closest cousin: typed prompts as functions, but a second language behind `baml-cli generate`.
+- [Nola vs LangGraph](/docs/compare/langgraph/) — orchestration graphs vs TypeScript control flow; complementary for orchestration, a replacement for the typed-call layer.
+- [Nola vs Vercel AI SDK](/docs/compare/vercel-ai-sdk/) — `generateText` + `Output.object` with Zod vs extractors.
+
+DSPy and LMQL sit on a different axis (Python, optimization and constrained decoding respectively); pages for them follow.
+
+Next: [Nola vs BAML](/docs/compare/baml/)

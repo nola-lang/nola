@@ -162,6 +162,19 @@ supported by npm.) When you add a package, give it the current lockstep version,
 add it to root `tsconfig.json` `references`, classify it in the publish-partition
 test, AND (if the CLI/loader import it at runtime) rebuild.
 
+`comparisons/` is the public marketing proof: the same scenario implemented in Nola
+and in each competitor (BAML, LangChain.js, Ax, Vercel AI SDK, plain OpenAI SDK),
+plus Figma-editable SVG slides of the numbers. It is deliberately OUTSIDE every
+repo-wide mechanism — `workspaces` globs only `packages/*`/`examples/*`, biome's
+`includes` and vitest's `include` are allowlists that omit it, and it has no
+`tsconfig.json` reference — so root `npm install`, `npm run build`, `npm test`, and
+`npm run lint` never touch it. Each project installs on demand in its own folder.
+The Nola one depends on the PUBLISHED `@nola-lang/*` from npm (not the workspace
+copies) because its whole claim is that it reproduces an outside user's experience;
+do not convert it to a workspace or to `file:` links. That also means language
+changes do not reach it until you publish — when you do, re-run it and recount the
+numbers in `comparisons/inbox-triage/README.md`, which the slides quote.
+
 ## Working in the vendored parser (`packages/babel-parser/`)
 
 This is upstream Babel source, pinned. Treat it as read-only **except**:
@@ -725,11 +738,15 @@ plugin expects, adapt the *plugin*, never the test expectations.
   the consuming app's process. `.env` stays a dev-loader convenience; prod
   reads the real environment.
 - **Agent skill content is part of the language surface.**
-  `packages/nola-lang/skills/nola/**` (SKILL.md + references) teaches coding
-  agents to write Nola; `nola skill install` / the init flow write POINTER
-  adapters into user projects that read it from `node_modules`, so it must
-  stay correct for the version it ships with: any change to user-facing
-  language or config surface updates the skill content in the same commit.
+  `packages/create-nola-lang/skills/nola/**` (SKILL.md + references) teaches
+  coding agents to write Nola; `nola skill install` / the init flow write
+  SELF-CONTAINED, version-stamped copies into user projects (claude gets the
+  whole directory; cursor/copilot/AGENTS.md embed SKILL.md's body inline —
+  the pointer-into-node_modules form was reversed 2026-08-20). It lives in
+  create-nola-lang because that package has zero deps and is the only one
+  present on both the scaffold and `nola skill install` paths. Any change to
+  user-facing language or config surface updates the skill content in the
+  same commit; `nola skill install --force` re-stamps existing projects.
   Spec: docs/superpowers/specs/2026-08-14-agent-skill-distribution-design.md.
 - **`Intent` is a class internally; the PUBLIC types are two interfaces.** The
   runtime classes (lazy + thenable + single-shot) stay rich, but the
@@ -779,6 +796,22 @@ plugin expects, adapt the *plugin*, never the test expectations.
   the runtime default is callable — import via the typed-cast pattern already in
   `transform.ts`/`build.ts`, and chain the two source maps with a one-shot loader
   (both maps share the same source filename, so name-matching would recurse forever).
+- **User-facing documentation lives in `docs-site/` and is PUBLIC.** It is the
+  source for nola.sh/docs; nola-website consumes it through its
+  `scripts/sync-docs.mjs`, which copies it **verbatim** — the copy there is
+  generated and must never be edited. Because the sync performs no transform,
+  these files are exactly what Starlight builds: keep them that way. The
+  contract is `docs-site/README.md` — frontmatter exactly
+  `title`/`description` (50–160 chars)/`sidebar.order`, internal links
+  site-absolute with a trailing slash (`/docs/language/ask/#anchor`), component
+  imports only from `@astrojs/starlight/components`, error-code headings the
+  bare code. Because it ships to the public mirror it must never cite `docs/` —
+  the specs, plans and internal notes there are withheld.
+  `test/docs-site.test.ts` enforces the contract and resolves every internal
+  link, `test/docs-error-codes.test.ts` pins code coverage, and
+  `node scripts/check-docs.mjs` compiles every `tsi` fence against the workspace
+  build. A change to user-facing language or config surface updates `docs-site/`
+  in the same commit, exactly as it updates the agent skill.
 
 ## TDD workflow
 

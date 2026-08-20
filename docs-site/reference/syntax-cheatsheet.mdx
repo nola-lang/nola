@@ -1,0 +1,111 @@
+---
+title: Syntax cheatsheet
+description: Every Nola construct on one screen — infer function forms, contextual parameters, extractors, ask and ask with, call intents, prompt templates, intent methods.
+sidebar:
+  order: 10
+---
+
+Everything valid in TypeScript is valid in a `.tsi` file. This page lists only the additions, one line each, with a link to the page that explains it.
+
+## Declarations
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| infer function | `infer function f(.text: string) { … }` | [infer functions](/docs/language/infer-functions/) |
+| exported | `export infer function f(.text: string) { … }` | [infer functions](/docs/language/infer-functions/) |
+| with an instruction marker | `` export infer function f`triage like a support lead`(.ticket: string) { … } `` | [infer functions](/docs/language/infer-functions/) |
+| annotated return type | `export infer function f(.m: string): Intent<User> { … }` — never `Promise<T>` | [infer functions](/docs/language/infer-functions/#return-type) |
+
+## Parameters
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| contextual parameter (value shown to the model) | `.message: string` | [Contextual parameters](/docs/language/contextual-parameters/) |
+| plain parameter (name and type only) | `userId: string` | [Contextual parameters](/docs/language/contextual-parameters/) |
+
+## Extractors
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| typed | `` ask ..`the ticket id`<string> `` | [Extractors](/docs/language/extractors/) |
+| untyped (free text, static `any`) | `` ask ..`think step by step` `` | [Extractors](/docs/language/extractors/) |
+| interpolation | `` ask ..`the person described in: ${text}`<Person> `` | [Extractors](/docs/language/extractors/#interpolation) |
+| constructed, not yet resolved | `` export const nameIntent = ..`the user's full name`<string>; `` | [Extractors](/docs/language/extractors/#construction-anywhere-resolution-only-with-ask) |
+
+## ask
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| resolve an askable | `const x = ask intent;` | [The ask operator](/docs/language/ask/) |
+| another infer function | `const r = ask otherFn(arg);` | [The ask operator](/docs/language/ask/) |
+| pin a provider | `` ask with fast ..`a rough summary`<string> `` | [The ask operator](/docs/language/ask/#ask-with-name) |
+| chain a method (precedence like `await`) | `` ask (..`x`<string>).withRetry(2) `` | [Intent methods](/docs/language/intent-methods/) |
+| from plain TS | `const v = await f("…");` — never bare-`await` a raw extractor | [The ask operator](/docs/language/ask/#ask-vs-await) |
+
+## Call intents
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| sigil-less | `` ask createTicket(..`a short title`<string>, 2) `` | [Call intents](/docs/language/call-intents/) |
+| empty marker | `` ask createTicket``("title", 3) `` | [Call intents](/docs/language/call-intents/) |
+| hint marker | `` ask createTicket`file the ticket`(..`a short title`<string>, ..`priority 1-5`<number>) `` | [Call intents](/docs/language/call-intents/) |
+
+## Prompt templates
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| reshape the CONTEXT block | `` infer function f`${.default}\nRules: …`(.t: string) `` | [Prompt templates](/docs/language/prompt-templates/) |
+| reshape the TASK block | `` ask ..`ticket id, comply with ${.type}`<string> `` | [Prompt templates](/docs/language/prompt-templates/) |
+
+## Intent methods
+
+| Method | On | Page |
+| --- | --- | --- |
+| `.withRetry(n)` · `.withProvider(nameOrProvider)` · `.withParams({…})` | every intent | [Intent methods](/docs/language/intent-methods/) |
+| `.withTimeout(ms)` · `.detached()` | the intent an infer function returns | [Intent methods](/docs/language/intent-methods/) |
+
+## Imports
+
+| Construct | Example | Page |
+| --- | --- | --- |
+| `.ts` importing `.tsi` | `import { f } from "./x.tsi";` — literal extension | [TypeScript interop](/docs/language/typescript-interop/) |
+| `.tsi` importing plain TS | `import { g } from "./y.js";` — NodeNext specifier, file is `y.ts` | [TypeScript interop](/docs/language/typescript-interop/) |
+| types from another file | `import type { Person } from "./models.js";` | [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file) |
+
+## All of it in one file
+
+```tsi
+// cheatsheet.tsi
+import { createTicket } from "./tickets.js";
+
+export type Severity = "low" | "medium" | "high";
+export interface Person {
+  name: string;
+  /** age in years */
+  age: number;
+}
+
+export const nameIntent = ..`the user's full name`<string>;
+
+export infer function triage`${.default}
+Rules: never invent ticket ids.`(.ticket: string, fallback: Severity) {
+  const person = ask ..`the person described in the ticket`<Person>;
+  const severity = ask with careful ..`the severity of the ticket`<Severity>;
+  const id = ask createTicket(..`a short ticket title for ${person.name}`<string>, 2);
+  const name = ask nameIntent;
+  return { person, severity: severity || fallback, id, name };
+}
+```
+
+```ts
+// tickets.ts
+export async function createTicket(title: string, priority: number): Promise<string> {
+  return `${title}:${priority}`;
+}
+```
+
+## Not valid
+
+`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `const .x = …`, `..name` on a parameter, `__nola*` identifiers, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/).
+
+Next: [Intent API](/docs/reference/intent-api/)

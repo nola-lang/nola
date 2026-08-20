@@ -1,6 +1,6 @@
 {
   "name": "create-nola-lang",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Scaffold a new Nola project (npm create nola, or npm create nola-lang)",
   "keywords": [
     "nola",
@@ -38,7 +38,8 @@
   "files": [
     "dist",
     "!dist/.tsbuildinfo",
-    "templates"
+    "templates",
+    "skills"
   ],
   "scripts": {
     "bundle": "node scripts/bundle.mjs"

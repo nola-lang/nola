@@ -11,7 +11,7 @@ const HELP = `nola <command>
 
 Commands:
   init [dir] [--template <t>|--add] [--ide vscode] [--agents <list>]  scaffold or retrofit a Nola project
-  skill install [--agents <list>]  write agent skill files (Claude Code, Cursor, Copilot, AGENTS.md) into the project
+  skill install [--agents <list>] [--force]  write agent skill files (Claude Code, Cursor, Copilot, AGENTS.md) into the project
   build [dir] [--out <dir>]   compile all .tsi files (js+map+d.ts to --out)
   run <entry>                 run a .tsi/.js entry with the Nola loader + nola.config.ts
   check [dir]                 type-check lowered .tsi files AND the project's .ts files, positions mapped back
@@ -28,6 +28,7 @@ async function main(): Promise<number> {
       ide: { type: "string" },
       watch: { type: "boolean" },
       agents: { type: "string" },
+      force: { type: "boolean" },
     },
   });
   const [command, arg] = positionals;
@@ -77,7 +78,7 @@ async function main(): Promise<number> {
     case "init":
       return cmdInit(arg, { template: values.template, add: values.add, ide: values.ide, agents: values.agents });
     case "skill":
-      return cmdSkill(arg, { agents: values.agents });
+      return cmdSkill(arg, { agents: values.agents, force: values.force });
     default:
       console.log(HELP);
       return command ? 1 : 0;

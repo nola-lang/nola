@@ -1,0 +1,51 @@
+---
+title: extract-person
+description: The hello world of Nola — typed extraction of a Person object, with a plain-TS helper imported into the .tsi via the NodeNext ./format.js specifier.
+sidebar:
+  order: 10
+---
+
+Typed extraction of a nested object — the "hello world" of Nola. The JSON Schema is derived from the `Person` interface at compile time and the extraction is one typed expression: no runtime type-to-schema library, no re-declared model class. `src/format.ts` is plain TypeScript, value-imported from the `.tsi` with the standard NodeNext `./format.js` specifier — existing TS code mixes into a nola module with no extra setup.
+
+```tsi
+// src/person.tsi
+import { normalizePerson } from "./format.js";
+
+export interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+export infer function extractPerson(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return normalizePerson(person);
+}
+```
+
+```ts
+// src/format.ts
+// Plain TypeScript, imported from person.tsi with the standard NodeNext
+// `./format.js` specifier — mixing existing TS code into a nola module
+// needs no special setup.
+import type { Person } from "./person.tsi";
+
+export function normalizePerson(person: Person): Person {
+  return { ...person, name: person.name.trim(), employer: person.employer.trim() };
+}
+```
+
+## Run it
+
+```sh
+npx nola run src/main.ts                      # mock provider (deterministic)
+# real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
+```
+
+Prints `{"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}`.
+
+**Scaffold:** `npm create nola my-app` — the starter template is this example (without the `format.ts` helper).
+**Source:** [examples/extract-person](https://github.com/nola-lang/nola/tree/main/examples/extract-person) on GitHub.
+
+Next: [extract-resume](/docs/examples/extract-resume/)

@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect id="background" width="1920" height="1080" fill="#FAFBFC"/>
+  <text x="100" y="98" font-family="Roboto Mono" font-size="20" font-weight="500" letter-spacing="2.5" fill="#0E7C86">CAPABILITY MATRIX &#183; THE TYPESCRIPT FIELD</text>
+  <text x="100" y="158" font-family="Inter" font-size="54" font-weight="700" fill="#161C24">Where Nola sits</text>
+  <text x="100" y="204" font-family="Inter" font-size="23" fill="#5B6573">Four rows are Nola-only. Five are gaps worth naming out loud.</text>
+  <rect id="nola-column-highlight" x="700" y="250" width="186.7" height="696" rx="10" fill="#E6F2F3" stroke="#0E7C86" stroke-width="2"/>
+  <text x="793.3" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#0A5A62">Nola</text>
+  <text x="980.0" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#161C24">BAML</text>
+  <text x="1166.7" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#161C24">LangChain</text>
+  <text x="1353.3" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#161C24">Ax</text>
+  <text x="1540.0" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#161C24">Vercel AI</text>
+  <text x="1726.7" y="295" text-anchor="middle" font-family="Inter" font-size="25" font-weight="700" fill="#161C24">OpenAI SDK</text>
+  <line x1="100" y1="330" x2="1820" y2="330" stroke="#C9CFD8" stroke-width="1.5"/>
+  <text x="120" y="366" font-family="Inter" font-size="20" fill="#2A323C">Schema derived from your existing types</text>
+  <text x="793.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1353.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1540.0" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1726.7" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="386" x2="1820" y2="386" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="422" font-family="Inter" font-size="20" fill="#2A323C">Compile-time drift detection</text>
+  <text x="793.3" y="424" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1353.3" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1540.0" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1726.7" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="442" x2="1820" y2="442" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="478" font-family="Inter" font-size="20" fill="#2A323C">Breakpoints inside the LLM function</text>
+  <text x="793.3" y="480" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1353.3" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1540.0" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1726.7" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="498" x2="1820" y2="498" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="534" font-family="Inter" font-size="20" fill="#2A323C">Keyless first run</text>
+  <text x="793.3" y="536" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="536" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="536" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1353.3" y="536" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1540.0" y="536" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1726.7" y="536" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="554" x2="1820" y2="554" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="590" font-family="Inter" font-size="20" fill="#2A323C">One-line extraction at the point of use</text>
+  <text x="793.3" y="592" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="592" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="592" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1353.3" y="592" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1540.0" y="592" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1726.7" y="592" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="610" x2="1820" y2="610" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="646" font-family="Inter" font-size="20" fill="#2A323C">Editor support where the schema lives</text>
+  <text x="793.3" y="648" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
+  <text x="980.0" y="648" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1166.7" y="648" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1353.3" y="648" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1540.0" y="648" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1726.7" y="648" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <line x1="100" y1="666" x2="1820" y2="666" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="702" font-family="Inter" font-size="20" fill="#2A323C">Rendered-prompt preview / playground</text>
+  <text x="793.3" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="980.0" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1166.7" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1353.3" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1540.0" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1726.7" y="704" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <line x1="100" y1="722" x2="1820" y2="722" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="758" font-family="Inter" font-size="20" fill="#2A323C">Typed streaming partials</text>
+  <text x="793.3" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="980.0" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1166.7" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1353.3" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1540.0" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1726.7" y="760" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <line x1="100" y1="778" x2="1820" y2="778" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="814" font-family="Inter" font-size="20" fill="#2A323C">Managed agent loop</text>
+  <text x="793.3" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="980.0" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="1166.7" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1353.3" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1540.0" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1726.7" y="816" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <line x1="100" y1="834" x2="1820" y2="834" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="870" font-family="Inter" font-size="20" fill="#2A323C">Prompt optimization against metrics</text>
+  <text x="793.3" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="980.0" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1166.7" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1353.3" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1540.0" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <text x="1726.7" y="872" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
+  <line x1="100" y1="890" x2="1820" y2="890" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="120" y="926" font-family="Inter" font-size="20" fill="#2A323C">Actively shipping today</text>
+  <text x="793.3" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#B06A14">~</text>
+  <text x="980.0" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1166.7" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1353.3" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1540.0" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="1726.7" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#1E7A3C">&#10003;</text>
+  <text x="100" y="992" font-family="Roboto Mono" font-size="18" fill="#8A929C">&#10003;  shipped        ~  partial or adjacent        &#8212;  absent        Nola is pre-release; everything else ships today.</text>
+</svg>

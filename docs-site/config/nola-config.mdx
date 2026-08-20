@@ -1,0 +1,65 @@
+---
+title: nola.config.ts
+description: The config file — defineConfig, the frozen two-specifier import surface, validation and freezing, and how the config reaches nola run, nola build and bundlers.
+sidebar:
+  order: 10
+---
+
+`nola.config.ts` lives at the project root and default-exports a `defineConfig` call. `providers.default` is required; everything else is optional.
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    // Reads OPENAI_API_KEY from the environment at the first ask.
+    default: openai({ model: "gpt-5-mini" }),
+  },
+});
+```
+
+## The import surface is frozen
+
+Use exactly these two specifiers:
+
+```ts
+import { defineConfig } from "@nola-lang/runtime";
+import { openai, mockProvider, withRetry } from "@nola-lang/providers";
+```
+
+`defineConfig` and everything app-facing come from `@nola-lang/runtime`. Everything provider-shaped — provider factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
+
+Never import providers from the runtime, never import `defineConfig` from the providers package, and never reach for a subpath (`@nola-lang/runtime/config`, `@nola-lang/runtime/providers`, `nola-lang/runtime`) — those do not exist. `@nola-lang/providers` deliberately does not depend on the runtime, which is what keeps a second copy of the runtime out of the install tree.
+
+## Validated and frozen
+
+The config is loaded once, validated, and frozen. An unknown top-level key, a `provider` (singular) key, or a `providers` map without `default` is rejected with [`NOLA3003`](/docs/reference/error-codes/#nola3003), naming the file and the field; the reserved `plugins` key is [`NOLA3005`](/docs/reference/error-codes/#nola3005). There is no runtime mutation API: the resolved config latches on the first ask, and reconfiguring after that is an error (`nolaRuntime.reset()` exists for tests). Every key, its type, default and whether the runtime reads it: [Config schema](/docs/reference/config-schema/).
+
+## How it reaches run time
+
+- **`nola run` / `node --import nola-lang/register`** — the loader bundles and evaluates `nola.config.ts` for the project, applies a project-root `.env` first, and configures the process before your entry runs.
+- **`nola build`** — for app projects (the default) it bundles the config into `dist/nola.config.js` with a self-configuring wrapper and appends an import of it to every built `.tsi.js` module, so the built modules run under plain `node` with no loader and no manual configuration. (`nola build` compiles `.tsi` only — see [Deploying](/docs/guides/deploying/) for the entry-point recipe.)
+- **`build.target: "lib"`** opts out of that wiring: pure lowered JS, and the consuming app's process supplies the config.
+- **Bundler plugins** (`@nola-lang/vite`, `webpack`, `rollup`, `rolldown`, `esbuild`, `rspack`, and `@nola-lang/next`) wire the config into the server bundle themselves — see [The nola CLI](/docs/tooling/cli/) and the plugin READMEs on npm.
+
+## Rules
+
+- The config cannot import `.tsi` modules — it is evaluated before the Nola loader registers ([`NOLA3012`](/docs/reference/error-codes/#nola3012)).
+- Keep `compiler.underivableContextType` a **literal** value: the editor reads it statically and cannot execute your config.
+- Secrets come from the environment (`.env` in development, the real environment in production) — never inline keys. See [Environments and secrets](/docs/config/environments-and-secrets/).
+
+## Section map
+
+| Key | What it does | Page |
+| --- | --- | --- |
+| `providers` | the named provider map; `default` required | [Providers](/docs/config/providers/) |
+| `forceProvider` | hermetic override — every ask goes here | [Providers](/docs/config/providers/) |
+| `observability`, `hooks` | logging level, event hooks, receipts | [Observability](/docs/config/observability/) |
+| `ask`, `system` | per-invocation timeout, extra system text | [Ask options](/docs/config/ask-options/) |
+| `compiler`, `build` | `underivableContextType`; `build.target` | [Config schema](/docs/reference/config-schema/) |
+| `middleware`, `cache` | validate but are **not wired** at 0.1.x | [Config schema](/docs/reference/config-schema/) |
+| `plugins` | reserved — rejected at load | — |
+
+Next: [Providers](/docs/config/providers/)

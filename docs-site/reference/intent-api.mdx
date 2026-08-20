@@ -1,0 +1,70 @@
+---
+title: Intent API
+description: Askable<T> and Intent<T> method signatures, which tier has which, ProviderRef and ProviderParams, and isIntent — the typed surface behind ask and await.
+sidebar:
+  order: 30
+---
+
+Two interfaces describe every intent. Both are exported as types from `@nola-lang/runtime`.
+
+```ts
+// types.ts
+import type { Askable, Intent } from "@nola-lang/runtime";
+
+export type Extracted = Askable<string>;
+export type Result = Intent<{ name: string }>;
+```
+
+## Askable&lt;T&gt;
+
+The narrow tier: an intent resolvable ONLY through `ask` — what a raw `` ..`…`<T> `` extractor or a call intent is. It is deliberately **not thenable**: a bare `await` on one throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time, so the type does not offer `then`. `T` is phantom — it appears only in the fluent return types, which keeps editor completion to exactly these members.
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `withRetry(retries: number)` | `Askable<T>` | extra whole-ask attempts, flat, no backoff — unrelated to the provider-level `withRetry` combinator |
+| `withProvider(provider: ProviderRef)` | `Askable<T>` | route this ask through a configured name or a provider object |
+| `withParams(params: ProviderParams)` | `Askable<T>` | wire-tuning knobs, shallow-merged over any params already on the intent |
+
+## Intent&lt;T&gt; extends Askable&lt;T&gt;, PromiseLike&lt;T&gt;
+
+What calling an infer function returns: lazy, thenable, and the only tier with root-only knobs (they act when the intent roots an invocation).
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `withRetry(retries: number)` | `Intent<T>` | as above |
+| `withProvider(provider: ProviderRef)` | `Intent<T>` | as above |
+| `withParams(params: ProviderParams)` | `Intent<T>` | as above |
+| `withTimeout(timeout: number)` | `Intent<T>` | per-invocation timeout in ms when this intent roots the invocation; `0` disables |
+| `detached()` | `Intent<T>` | resolve without inheriting the caller frame's context |
+| `then(…)` | — | `PromiseLike<T>`: `await` it from plain TypeScript |
+
+Every method **clones** — the original stays unstarted — and an intent resolves at most once. `Intent<T>` is `PromiseLike<T>`, not a `Promise`: annotate infer functions with `Intent<T>`, never `Promise<T>` (`TS2739`).
+
+## Types
+
+```ts
+// not-checked — shapes as exported from @nola-lang/runtime
+type ProviderRef = NolaProvider | string;
+
+interface ProviderParams {
+  temperature?: number;
+  maxOutputTokens?: number;
+  /** opaque provider-specific knobs, passed through untouched; JSON-serializable */
+  providerOptions?: Record<string, unknown>;
+}
+```
+
+Merge rule for `ProviderParams` (used by `.withParams()` chaining and by frame-chain resolution): patch fields win per field, and `providerOptions` merges per key rather than being replaced wholesale. Params are part of the ask fingerprint.
+
+## isIntent
+
+```ts
+// guard.ts
+import { isIntent } from "@nola-lang/runtime";
+
+export const describe = (v: unknown) => (isIntent(v) ? "an intent" : "a plain value");
+```
+
+`isIntent(v: unknown): v is Askable` — a runtime type guard for any intent object (extractor, call intent, or infer-function result).
+
+Next: [Providers API](/docs/reference/providers-api/)

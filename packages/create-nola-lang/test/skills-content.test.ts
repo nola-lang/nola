@@ -34,6 +34,16 @@ describe("agent skill content", () => {
     }
   });
 
+  // Every inline adapter embeds the text before this heading, so the split
+  // point is a contract, not a formatting choice (spec §2).
+  it("SKILL.md splits at ## References, with real body text before it", () => {
+    const text = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8").replaceAll("\r\n", "\n");
+    const afterFm = text.slice(/^---\n[\s\S]*?\n---\n/.exec(text)?.[0].length ?? 0);
+    const refsAt = afterFm.indexOf("\n## References");
+    expect(refsAt, "SKILL.md has a ## References section").toBeGreaterThan(0);
+    expect(afterFm.slice(0, refsAt)).toContain("Where Nola diverges from TypeScript");
+  });
+
   it("the tarball ships skills/", () => {
     const manifest = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")) as { files: string[] };
     expect(manifest.files).toContain("skills");

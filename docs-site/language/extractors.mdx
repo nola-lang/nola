@@ -1,0 +1,137 @@
+---
+title: Extractors
+description: The ..instruction<T> expression — typed vs untyped, ${} interpolation, where it can be built, and every TypeScript type that derives to a schema.
+sidebar:
+  order: 40
+---
+
+An extractor is the request itself: instruction text in backticks plus an optional type argument. `ask` resolves it to a `T`.
+
+## Typed and untyped
+
+```tsi
+// parse.tsi
+export infer function parse(.doc: string) {
+  const id = ask ..`the ticket id`<string>;             // typed
+  const count = ask ..`how many line items`<number>;
+  const free = ask ..`think step by step about the document`;  // untyped
+  return { id, count, free };
+}
+```
+
+With no `<T>` the extractor asks for free text: the wire schema is a plain string and the static TypeScript type is `any`. Give every extractor an explicit `<T>` unless you deliberately want unconstrained prose.
+
+## Interpolation
+
+`${expr}` is legal inside the backticks and is evaluated when the intent is constructed. Strings splice as-is; anything else is JSON-stringified.
+
+```tsi
+// lookup.tsi
+interface Person {
+  name: string;
+  age: number;
+}
+
+export infer function lookup(text: string) {
+  return ask ..`the person described in: ${text}`<Person>;
+}
+```
+
+One exception: a hole that starts with a single dot — `${.type}` — is *not* a lexical value. It reads the extractor's prompt scope and turns the backticks into a prompt template. See [Prompt templates](/docs/language/prompt-templates/).
+
+## Construction anywhere, resolution only with ask
+
+An extractor may be constructed anywhere in a `.tsi` file, module level included — construction needs no context:
+
+```tsi
+// intents.tsi
+export const nameIntent = ..`the user's full name`<string>;   // legal, inert
+
+export infer function whoIsIt(.text: string) {
+  return ask nameIntent;                                       // resolved here
+}
+```
+
+Only `ask` is position-restricted: it must sit directly inside an infer function body ([`NOLA2001`](/docs/reference/error-codes/#nola2001)). A raw extractor is never bare-`await`ed — it carries no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time.
+
+## Derivable types
+
+The compiler derives a JSON Schema from `<T>` at compile time. What it accepts:
+
+| TypeScript | Wire schema · notes |
+| --- | --- |
+| `string`, `number`, `boolean` | JSON scalars |
+| `Date` | a string with `format: "date-time"`, revived to a real `Date` on the way back |
+| `T[]` | arrays of any derivable `T` |
+| `{ a: string; b?: number }` | inline object literals; optional members are not required |
+| named `interface` / `type` aliases | same file or imported (`import type { Person } from "./models.js"`) |
+| recursive types (`TreeNode` → `children?: TreeNode[]`) | via `$defs` / `$ref`, validated recursively |
+| `"a" \| "b"` string-literal unions, string `enum`s | a JSON Schema `enum` — closed label sets |
+| JSDoc comments on members | become schema descriptions the model reads |
+
+```tsi
+// types.tsi
+export interface Conclusion {
+  answer: string;
+  /** the collected notes that directly support the answer */
+  evidence: string[];
+}
+
+export type CalendarEvent = { title: string; at: Date };
+
+export type TreeNode = {
+  label: string;
+  children?: TreeNode[];
+};
+
+export infer function conclude(.question: string, .notes: string[]) {
+  return ask ..`answer the research question using only the collected notes`<Conclusion>;
+}
+
+export infer function nextEvent(.calendar: string) {
+  const event = ask ..`the next event on the calendar`<CalendarEvent>;
+  const when: Date = event.at;   // a Date, not a string
+  return when;
+}
+
+export infer function parseTree(.input: string) {
+  return ask ..`the tree structure described in the input`<TreeNode>;
+}
+```
+
+Types from another file work through a type-only import with the NodeNext `.js` specifier; the toolchain carries the schema across for you (see [TypeScript interop](/docs/language/typescript-interop/)):
+
+```ts
+// models.ts
+export interface Person {
+  name: string;
+  age: number;
+}
+```
+
+```tsi
+// report.tsi
+import type { Person } from "./models.js";
+
+export infer function extractPerson(.text: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+**Not derivable:** `Map`, `Set`, `RegExp`, functions, generics, class instances and other ambient library types — [`NOLA2002`](/docs/reference/error-codes/#nola2002). Ask for a JSON-shaped type and convert afterwards in plain TypeScript:
+
+```tsi
+// tally.tsi
+export infer function tally(.doc: string) {
+  const counts = ask ..`counts per label`<{ label: string; count: number }[]>;
+  return new Map(counts.map((c) => [c.label, c.count]));
+}
+```
+
+## Writing the instruction
+
+- **Name the thing, not the action.** `the person described in the text` reads better than `extract the person` — the extractor is already a request.
+- **Put the contract in the type, not the prose.** Optional fields, label sets, dates: say it in `<T>` and JSDoc, and the model gets it as schema.
+- **Prefer a named, exported type** over an inline literal: it documents the contract, it is reusable from plain TS, and its JSDoc becomes descriptions.
+
+Next: [The ask operator](/docs/language/ask/)

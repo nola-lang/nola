@@ -1,0 +1,117 @@
+---
+title: Call intents
+description: Let the model fill a function's arguments — the hint, empty-marker and sigil-less spellings, the detection rule, typed slots, and what the result is.
+sidebar:
+  order: 60
+---
+
+A call intent lets the model fill some of a function's arguments, then calls the function with them. All slots of one call intent resolve in ONE provider call.
+
+## Three spellings
+
+```tsi
+// file.tsi
+declare function createTicket(title: string, priority: number): Promise<string>;
+
+export infer function file(.request: string) {
+  // 1. sigil-less — a plain call whose arguments contain an extractor
+  const a = ask createTicket(..`a short ticket title`<string>, 2);
+
+  // 2. empty marker — identical lowering; the only spelling for a call
+  //    intent whose arguments are all plain
+  const b = ask createTicket``("fallback title", 3);
+
+  // 3. hint marker — the ONLY carrier of instruction text for the call
+  const c = ask createTicket`file the ticket the customer asked for`(
+    ..`a short ticket title`<string>,
+    ..`priority 1-5, 1 is most urgent`<number>,
+  );
+
+  return { a, b, c };
+}
+```
+
+Use the sigil-less form by default; reach for the hint marker when the call needs its own instruction, and for the empty marker when every argument is plain but you still want the model to *decide to call*.
+
+## The detection rule
+
+A plain call becomes a call intent when BOTH hold:
+
+- the callee is an identifier or a member expression (any nesting, computed included), and
+- at least one well-formed extractor appears in a slot position — a direct argument, or nested at any depth inside plain object or array literals.
+
+```tsi
+// place.tsi
+declare const api: { save(order: { qty: number; note: string }): Promise<string> };
+
+export infer function place(.request: string) {
+  // member callee + extractor nested in an object literal → call intent
+  return ask api.save({ qty: 1, note: ..`a one-line note for the warehouse`<string> });
+}
+```
+
+## What stays a plain call
+
+These are ordinary calls, and the extractor is just a value argument: an extractor inside a ternary, a logical expression, a spread element or a template substitution; a nested call — in `` outer(inner(..`x`<T>)) `` the *inner* call is the intent and `outer` receives an `Askable`; `new Foo(…)`, `super(…)`, `import(…)`, optional calls (`fn?.(…)`, `a?.b(…)`); and exotic callees (`getFn()(…)`, IIFEs). Use the marker form if you want a call intent on one of those.
+
+Parenthesizing an extractor does NOT opt out. To pass an intent as a plain value, bind it to a variable first:
+
+```tsi
+// plain-value.tsi
+declare function helper(x: unknown): void;
+
+export infer function demo(.text: string) {
+  const i = ..`a short title`<string>;
+  helper(i);                       // plain call — helper receives the Askable
+  return ask i;
+}
+```
+
+## Typed slots
+
+Every extractor used as a call-intent slot must carry an explicit `<T>` — [`NOLA2004`](/docs/reference/error-codes/#nola2004). The bare derive-all form `fn(..)` is reserved ([`NOLA1004`](/docs/reference/error-codes/#nola1004)).
+
+## The result is the settled value
+
+`ask fn(…)` yields the callee's SETTLED value, exactly like `await fn(…)` would: if the function returns a promise (or any thenable), the intent awaits it before resolving. Its static type is `Awaited<ReturnType<typeof fn>>`. Never write `await ask fn(…)` — the extra `await` is a no-op.
+
+Two consequences:
+
+- The callee runs INSIDE the ask. A rejected promise fails the ask at the call site (a `NolaResolutionError` carrying the intent's location), and `.withRetry(n)` re-runs the WHOLE ask, callee included. Do not put `.withRetry` on a call intent whose target is not idempotent.
+- The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider round trips only. Once the arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
+
+## A real helper
+
+`tickets.ts` is ordinary TypeScript; the `.tsi` imports it with the NodeNext `.js` specifier and makes the call an intent:
+
+```ts
+// tickets.ts
+export async function createTicket(title: string, priority: number): Promise<string> {
+  const res = await fetch("https://example.test/tickets", {
+    method: "POST",
+    body: JSON.stringify({ title, priority }),
+  });
+  return (await res.json()).id as string;
+}
+```
+
+```tsi
+// file-ticket.tsi
+import { createTicket } from "./tickets.js";
+
+export infer function fileTicket(.request: string) {
+  // Sigil-less: the extractor argument makes this call an intent. `2` is a
+  // plain argument and is passed through untouched.
+  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  return id;   // a string, not a Promise<string>
+}
+
+export infer function fileTicketCarefully(.request: string) {
+  return ask createTicket`file the ticket exactly as the customer described it`(
+    ..`a short ticket title`<string>,
+    ..`priority 1-5, where 1 is most urgent`<number>,
+  );
+}
+```
+
+Next: [Prompt templates](/docs/language/prompt-templates/)

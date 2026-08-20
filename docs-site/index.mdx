@@ -1,0 +1,55 @@
+---
+title: Introduction
+description: What Nola is in 30 seconds — a TypeScript superset where asking an LLM for a typed value is part of the language.
+sidebar:
+  order: 0
+---
+
+Nola is a **TypeScript superset**. Files end in `.tsi`, and everything you know about TypeScript applies inside them — plus two constructs that make talking to a language model part of the language rather than a library call. The Nola toolchain *lowers* `.tsi` to plain TypeScript before `tsc`, bundlers, Node, or your editor ever see it, the same way JSX is compiled away.
+
+```tsi
+// analyze.tsi
+export infer function analyzeUserRequest(userId: string, .message: string) {
+  const ticketId = ask ..`ticket id mentioned in the message`<string>;
+  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  return { userId, ticketId, isFraud };
+}
+```
+
+Plain TypeScript imports the `.tsi` file directly and awaits the result:
+
+```ts
+// main.ts
+import { analyzeUserRequest } from "./analyze.tsi";
+
+const result = await analyzeUserRequest("user-1", "Ticket TCK-4711: customer reports suspicious activity.");
+// → { userId: "user-1", ticketId: "TCK-4711", isFraud: true }
+```
+
+`.message` is a **contextual parameter** — its value is shown to the model in every `ask` of that invocation. `userId` is a plain argument the model never sees.
+
+## The two constructs
+
+- **`infer function`** declares an LLM-backed function. It lowers to an ordinary function that returns a lazy, thenable `Intent<T>`; awaiting the result runs the inference.
+  Parameters that start with a dot (`.message`) are **contextual**: their values are shown to the model. Plain parameters are ordinary values the model never sees. *One dot in, two dots out.*
+- **`ask`** resolves an intent the way `await` resolves a promise.
+  `` ask ..`instruction`<T> `` is an **extractor** — ask the model for a `T`. `` ask fn`hint`(...) `` is a **call intent** — the model fills the extractor-shaped arguments and the function runs. `ask with <provider> …` routes one ask through a named provider from `nola.config.ts`.
+
+## Why a language, not a library
+
+A library puts the contract in a schema object and the request in a string, hands you a value you still have to type, and makes you re-thread the context into every call. Nola puts all of it in the one place the compiler, the editor and the runtime already understand: the TypeScript type *is* the schema, `ask` has `await`'s ergonomics, and context belongs to the function — a second `ask` still sees `.message`. Because `.tsi` lowers to plain TypeScript, nothing downstream changes: `tsc`, bundlers, Node and your editor see ordinary TS. See [how Nola compares](/docs/compare/) with BAML, the Vercel AI SDK and LangGraph.
+
+## What ships
+
+| Piece | Package |
+| --- | --- |
+| CLI — `nola init` / `build` / `run` / `check` / `declarations` / `skill` and the Node loader (`node --import nola-lang/register`) | `nola-lang` |
+| Runtime — `Intent<T>`, `defineConfig`, hooks and receipts | `@nola-lang/runtime` |
+| Providers — `openai`, `anthropic`, `google`, `mockProvider`, `withRetry`, `fallback`, `roundRobin`, record/replay | `@nola-lang/providers` |
+| Scaffolder | `create-nola-lang` (alias `create-nola`) |
+| Bundler plugins — Vite, webpack, Rollup, Rolldown, esbuild, Rspack, Next.js | `@nola-lang/vite`, `@nola-lang/webpack`, … |
+| Editor — tsserver plugin, language server, VS Code extension | `nola.nola-vscode` |
+
+Diagnostics are numbered `NOLA1xxx` (parse), `NOLA2xxx` (compile), `NOLA3xxx` (runtime) and `NOLA4xxx` (bundler).
+
+Next: [Quick start](/docs/start/quick-start/) — scaffold a project and run your first `.tsi` file offline.

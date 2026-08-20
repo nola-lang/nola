@@ -1,0 +1,8 @@
+node_modules/
+dist/
+baml_client/
+package-lock.json
+.env
+
+# @ax-llm/ax postinstall writes agent skills into the consuming project
+.claude/

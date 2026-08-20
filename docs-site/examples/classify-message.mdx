@@ -1,0 +1,38 @@
+---
+title: classify-message
+description: Classification over closed label sets in all three native TypeScript forms — a string-literal union alias, a string enum, and an inline union.
+sidebar:
+  order: 40
+---
+
+Classification against closed label sets, in all three native TS forms: a **string-literal union alias** (`Category`), a **string enum** (`Sentiment` — a runtime value too, so consumers compare with `Sentiment.Negative`), and an **inline union** (`<"yes" | "no">`) mapped to a boolean in plain TS. Each lowers to a JSON Schema `enum`, is enforced by the provider's structured outputs *and* re-validated by the runtime — a wrong label triggers a correction retry that lists the allowed values. The label set is the TypeScript type you already have; per-label descriptions (a hint attached to each variant) have no Nola equivalent yet.
+
+```tsi
+// src/classify.tsi
+export type Category = "billing" | "refund" | "fraud" | "other";
+
+export enum Sentiment {
+  Positive = "positive",
+  Neutral = "neutral",
+  Negative = "negative",
+}
+
+export infer function classifyMessage(.message: string) {
+  const category = ask ..`the category of the customer message`<Category>;
+  const sentiment = ask ..`the overall sentiment of the message`<Sentiment>;
+  const urgent = ask ..`does the message need urgent attention`<"yes" | "no">;
+  return { category, sentiment, urgent: urgent === "yes" };
+}
+```
+
+## Run it
+
+```sh
+npx nola run src/main.ts                      # mock provider (deterministic)
+# real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
+```
+
+**Scaffold:** `npm create nola my-app -- --template classify-message`
+**Source:** [examples/classify-message](https://github.com/nola-lang/nola/tree/main/examples/classify-message) on GitHub. The full walkthrough is [Classification](/docs/guides/classification/).
+
+Next: [Introduction](/docs/) — back to the start.

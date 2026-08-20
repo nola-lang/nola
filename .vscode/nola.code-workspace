@@ -13,6 +13,10 @@
 			"path": "../docs"
 		},
 		{
+			"name": " - docs-site",
+			"path": "../docs-site"
+		},
+		{
 			"name": " - examples",
 			"path": "../examples"
 		},

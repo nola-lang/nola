@@ -1,0 +1,89 @@
+---
+title: Contextual parameters
+description: .name parameters put a value in front of the model; plain parameters do not. Which types are derivable, and what to do when one is not.
+sidebar:
+  order: 30
+---
+
+A parameter written with one leading dot is a **contextual parameter**: its name, type and run-time value are composed into the prompt of every `ask` in that invocation. A plain parameter is an ordinary argument — the model sees its name and type, never its value.
+
+## What the model sees
+
+| Parameter | In the prompt |
+| --- | --- |
+| `.issue: Issue` (contextual) | name, type **and value** |
+| `fallback: string` (plain) | name and type only |
+
+```tsi
+// classify-issue.tsi
+export type Issue = { id: string; description: string };
+
+// `issue` is visible to the model; `fallback` is a normal JS value only.
+export infer function classifyIssue(.issue: Issue, fallback: string) {
+  const kind = ask ..`the kind of this issue`<string>;
+  return kind || fallback;
+}
+```
+
+The mnemonic is *one dot in, two dots out*: `.name` sends a value into the model, `` ..`instruction` `` brings one out.
+
+## Several compose into one block
+
+Any number of contextual parameters is fine; they compose into one context block that every `ask` in the invocation shares:
+
+```tsi
+// research.tsi
+export infer function nextQuery(.question: string, .notes: string[]) {
+  return ask ..`the single best search query to advance the research`<string>;
+}
+```
+
+## Derivable types
+
+Because a contextual value is serialized into the prompt, its type must be *derivable* to an inference schema — the same rule extractors follow: strings, numbers, booleans, `Date`, arrays, plain object / interface / type-alias shapes, string-literal unions, string enums, and same-file or imported references to those. The full table lives on [Extractors](/docs/language/extractors/#derivable-types).
+
+`Map`, `Set`, `RegExp`, functions, generics and other ambient library types are not derivable. Under the default policy a contextual parameter with such a type is a compile error, [`NOLA2008`](/docs/reference/error-codes/#nola2008).
+
+## When a type is not derivable
+
+Three ways out, in order of preference:
+
+```tsi
+// top-label.tsi
+// 1. Pass a JSON-shaped view as the contextual parameter.
+export infer function topLabel(.index: { label: string; count: number }[]) {
+  return ask ..`the label with the highest count`<string>;
+}
+
+// 2. Keep the exotic value, but as a PLAIN parameter — the model never sees
+//    its value, so nothing needs deriving.
+export infer function topLabelFrom(.summary: string, index: Map<string, number>) {
+  const label = ask ..`the label with the highest count`<string>;
+  return { label, count: index.get(label) ?? 0 };
+}
+```
+
+3. Relax the policy in `nola.config.ts`: `"prune"` drops just the underivable members and keeps the rest of the type; `"omit"` drops the whole type silently.
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: { default: openai({ model: "gpt-5-mini" }) },
+  compiler: { underivableContextType: "prune" },   // "error" (default) | "prune" | "omit"
+});
+```
+
+Keep that value a literal — the editor reads it statically and cannot execute your config, so a computed value is invisible to it.
+
+## Errors
+
+- [`NOLA1010`](/docs/reference/error-codes/#nola1010) — `.` on a parameter of a plain (non-infer) function. Drop the dot; the parameter is an ordinary argument.
+- [`NOLA1013`](/docs/reference/error-codes/#nola1013) — `..name`: contextual parameters take one dot; two dots is the extractor sigil.
+- [`NOLA1012`](/docs/reference/error-codes/#nola1012) — an incomplete `.` with no name after it.
+- [`NOLA1011`](/docs/reference/error-codes/#nola1011) — `.` on a destructuring pattern or a parameter with a default value; reserved — use a plain identifier parameter.
+- [`NOLA1014`](/docs/reference/error-codes/#nola1014) — `const .x = …` inside the body: contextual *bindings* are reserved for a later version.
+
+Next: [Extractors](/docs/language/extractors/)

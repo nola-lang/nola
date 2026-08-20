@@ -1,0 +1,62 @@
+---
+title: Deploying
+description: Ship a Nola app — what nola build emits (dist/src/<name>.tsi.js and a wired nola.config.js), how to run it under plain node, build.target lib, what never ships.
+sidebar:
+  order: 100
+---
+
+Production runs plain JavaScript under plain `node` — no loader, no `nola-lang`. `nola build` produces it.
+
+## What nola build emits
+
+From the starter layout, `npx nola build --out dist` writes:
+
+```
+dist/
+  nola.config.js           # your config, bundled with a self-configuring wrapper
+  src/
+    person.tsi.js          # the lowered module
+    person.tsi.js.map      # source map back to src/person.tsi
+    person.tsi.d.ts        # types for consumers
+```
+
+- The output **mirrors the source tree** — `src/person.tsi` becomes `dist/src/person.tsi.js`. Companion modules for cross-file types are emitted as real files beside it.
+- For app projects (`build.target: "app"`, the default) the config is bundled **first** into `dist/nola.config.js` and every lowered module gets an import of it appended, so importing any built module configures the process. `nola build` refuses to overwrite a `dist/nola.config.js` it did not generate.
+- **`nola build` compiles `.tsi` files only.** A plain `.ts` entry such as `src/main.ts` is not part of its output — your production entry is a JavaScript (or separately compiled TypeScript) file that imports the built module.
+
+## Running it
+
+The recipe, verified against a fresh starter project:
+
+```js
+// entry.mjs — plain JavaScript, next to dist/
+import { extractPerson } from "./dist/src/person.tsi.js";
+
+console.log(JSON.stringify(await extractPerson("Alice Smith, 32, is a staff engineer at Acme Corp.")));
+```
+
+```sh
+npx nola build --out dist
+node entry.mjs        # no --import, no loader: prints the extraction
+```
+
+There is nothing to configure by hand — importing `./dist/src/person.tsi.js` pulls in `dist/nola.config.js`. Provider keys come from the real environment of the process (`OPENAI_API_KEY`, …); nothing reads `.env` in production. A relative ledger or file path in the config (`replay("./nola.replay.jsonl")`) resolves against the working directory, so run from the project root or use absolute paths.
+
+If you prefer a TypeScript entry, compile it separately (`tsc`) and have it import the built path `./dist/src/person.tsi.js` — the `.tsi.d.ts` beside it supplies the types. An entry that imports `./person.tsi` directly only runs under the loader; use `nola run` for that in development.
+
+## Libraries
+
+Set `build: { target: "lib" }` in `nola.config.ts` to emit pure lowered JS with no config wiring: the consuming application's process supplies the configuration (through its own `nola.config.ts` under `nola run`, its bundler plugin, or its own `nola build` output). Ship the `.tsi.js` + `.tsi.d.ts` pairs so consumers get types, and declare `@nola-lang/runtime` (and any providers you reference) as dependencies — all on one lockstep version.
+
+## Bundlers and frameworks
+
+If an application is bundled, the plugins lower `.tsi` inside the bundler and wire the config into the **server** bundle: `@nola-lang/vite`, `@nola-lang/webpack`, `@nola-lang/rollup`, `@nola-lang/rolldown`, `@nola-lang/esbuild`, `@nola-lang/rspack` (one shared core) and `@nola-lang/next` (`withNola`, webpack and Turbopack). Nola is server-only in v0: a client bundle that imports `.tsi` fails the build with [`NOLA4001`](/docs/reference/error-codes/#nola4001). See the package READMEs on npm, e.g. [@nola-lang/vite](https://www.npmjs.com/package/@nola-lang/vite) and [@nola-lang/next](https://www.npmjs.com/package/@nola-lang/next).
+
+## What never ships
+
+- **`nola-lang`** stays a devDependency: it holds the compiler, the CLI and TypeScript. Production needs only `@nola-lang/runtime` and `@nola-lang/providers`.
+- **The loader** is a development and debugging tool; built output does not use it.
+- **Bun and Deno** cannot run the loader ([`NOLA3015`](/docs/reference/error-codes/#nola3015)); built output runs anywhere Node does.
+- **Mixed versions**: keep every Nola package on one lockstep version, or the runtime refuses to start ([`NOLA3001`](/docs/reference/error-codes/#nola3001), [`NOLA3002`](/docs/reference/error-codes/#nola3002)).
+
+Next: [Nola compared](/docs/compare/)

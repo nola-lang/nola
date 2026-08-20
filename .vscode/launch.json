@@ -67,6 +67,21 @@
 				"${workspaceFolder}/examples/**/*.js"
 			],
 			"skipFiles": ["<node_internals>/**"]
+		},
+		{
+			// The public inbox-triage comparison (comparisons/inbox-triage/nola).
+			// It installs @nola-lang from npm ON PURPOSE — it must behave exactly like
+			// an outside user's project, so it is not an npm workspace and does not use
+			// packages/*/dist. Run `npm install` in that folder first.
+			"type": "node",
+			"request": "launch",
+			"name": "Nola: inbox-triage comparison",
+			"program": "${workspaceFolder}/comparisons/inbox-triage/nola/src/main.ts",
+			"runtimeArgs": ["--import", "nola-lang/register", "--enable-source-maps"],
+			"console": "integratedTerminal",
+			"cwd": "${workspaceFolder}/comparisons/inbox-triage/nola",
+			"resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
+			"skipFiles": ["<node_internals>/**", "**/node_modules/**"]
 		}
 	]
 }

@@ -1,0 +1,79 @@
+---
+title: Error handling
+description: What fails and how — the built-in correction retry, NolaResolutionError with site and trace, definitive vs retryable errors, and timeouts.
+sidebar:
+  order: 90
+---
+
+Everything that can go wrong in an ask surfaces as one of a small family of error classes, all exported from `@nola-lang/runtime`, and it surfaces at the `await` in your plain TypeScript.
+
+| Class | When | Carries |
+| --- | --- | --- |
+| `NolaResolutionError` | an ask could not produce a valid value — after the correction retry, on a rejected call-intent callee, on a value that fails the type contract | `details.site`, `details.prompt`, `details.raw`, `trace` |
+| `NolaProviderError` | the provider call failed (HTTP error, network, malformed reply) | `status?`, `definitive?`, `retryAfterMs?` |
+| `NolaConfigError` | the config did not validate, names an unknown provider, or is frozen | `code?` (`NOLA3003`–`NOLA3008`, `NOLA3012`) |
+| `NolaIntentError` | an intent was used outside `ask` or in a browser, or a prompt template failed | `code` (`NOLA3010`, `NOLA3013`, `NOLA3014`) — definitive |
+| `NolaSchemaError` | an underivable type reached an ask | `code` (`NOLA3009`) — definitive |
+| `NolaVersionError` | emit-contract mismatch or two runtimes loaded | `code` (`NOLA3001`, `NOLA3002`), `details` |
+
+## Validation failures retry themselves
+
+The model's reply is parsed and validated against the extractor's schema. When it does not conform, the runtime does **one correction turn** automatically: it sends the failing reply and the validation error back to the provider and asks again. You see this as `onValidationFailed` followed by `onRetry` in the hooks, and as `attempts: 2` plus a diverging `effectivePrompt` in the receipt. If the second reply also fails, the ask throws a `NolaResolutionError`:
+
+> Intent resolution failed after retry at `src/person.tsi:10:18` — …
+
+Closed types help here more than anything else: a string-literal union or enum makes the correction turn precise ("one of billing, refund, fraud, other").
+
+## Catching at the await
+
+Infer functions are called from plain TypeScript, so ordinary `try`/`catch` around the `await` is the whole story:
+
+```tsi
+// src/person.tsi
+export interface Person { name: string; age: number }
+
+export infer function extractPerson(.message: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+```ts
+// src/main.ts
+import { NolaProviderError, NolaResolutionError } from "@nola-lang/runtime";
+import { extractPerson } from "./person.tsi";
+
+try {
+  const person = await extractPerson("Alice Smith, 32, works at Acme Corp.");
+  console.log(person);
+} catch (error) {
+  if (error instanceof NolaResolutionError) {
+    // where: the .tsi position of the ask; what: the last raw model text
+    console.error(`ask at ${error.details.site} failed: ${error.message}`);
+    console.error("last reply:", error.details.raw);
+  } else if (error instanceof NolaProviderError) {
+    console.error(`provider failure${error.status ? ` (HTTP ${error.status})` : ""}:`, error.message);
+  } else {
+    throw error;
+  }
+}
+```
+
+`details.site` is the `file:line:col` of the ask in your `.tsi` source; `details.prompt` is the composed prompt as last sent; `details.raw` the model's last reply; `trace` (when present) the invocation's spans — every ask and nested invocation that ran.
+
+## Definitive vs retryable
+
+A `NolaProviderError` is **definitive** when it is flagged so, or when its HTTP status is 4xx other than 408/429 — authentication, a bad request, a model that does not exist. Definitive errors stop the provider-level `withRetry` combinator immediately (retrying cannot help); everything else is retried per the policy, and a `retryAfterMs` from the provider stretches the wait. `NolaIntentError` and `NolaSchemaError` are always definitive: the fix is in the code — see [`NOLA3010`](/docs/reference/error-codes/#nola3010), [`NOLA3014`](/docs/reference/error-codes/#nola3014), [`NOLA3009`](/docs/reference/error-codes/#nola3009).
+
+## Retrying on purpose
+
+Three layers, each for a different failure — the table is on [Resilience](/docs/config/resilience/#the-three-retry-layers). In short: the correction loop handles a bad *answer*; `withRetry(provider, policy)` in the config handles a flaky *wire*; `.withRetry(n)` on an intent re-runs the *whole ask* — including a call intent's callee, so only on idempotent targets.
+
+## Timeouts
+
+`ask.timeoutMs` (default 60 000 ms) or `.withTimeout(ms)` arms an abort signal for the invocation. When it elapses, every pending provider call is aborted and the `await` rejects with an `Error` whose message reads "Nola invocation timed out after …ms (IntentOptions.timeout / ask.timeoutMs)". The signal bounds provider round trips only — a call intent's callee that is already running completes on its own. See [Ask options](/docs/config/ask-options/#timeouts).
+
+## Config and version errors
+
+`NolaConfigError` is raised when the config loads (or when an unknown provider name is used at ask time) — the message names the file and field; the codes are on [Config schema](/docs/reference/config-schema/). `NolaVersionError` means lowered code and the installed runtime disagree ([`NOLA3001`](/docs/reference/error-codes/#nola3001)) or two runtimes are loaded ([`NOLA3002`](/docs/reference/error-codes/#nola3002)): rebuild, `npm dedupe`, and keep every Nola package on one lockstep version.
+
+Next: [Deploying](/docs/guides/deploying/)

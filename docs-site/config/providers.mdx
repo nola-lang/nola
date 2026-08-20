@@ -1,0 +1,126 @@
+---
+title: Providers
+description: The providers map — default, named ask-with targets, the openai/anthropic/google factories and options, OpenAI-compatible endpoints, mockProvider, and routing.
+sidebar:
+  order: 20
+---
+
+`providers` is a named map. `default` is required; every other key is a name you choose, and that name is exactly what `ask with <name>` and `.withProvider("<name>")` accept.
+
+```ts
+// nola.config.ts
+import { anthropic, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: openai({ model: "gpt-5-mini" }),
+    fast: openai({ model: "gpt-5-nano" }),
+    careful: anthropic({ model: "claude-sonnet-4-5" }),
+  },
+});
+```
+
+```tsi
+// summarize.tsi
+export infer function summarize(.text: string) {
+  const draft = ask with fast ..`a rough summary`<string>;
+  return ask with careful ..`a polished summary of: ${draft}`<string>;
+}
+```
+
+An `ask with` name that is not a key of the map fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
+
+## Factories
+
+`openai`, `anthropic` and `google` come from `@nola-lang/providers`. A bare model string is shorthand for `{ model }` — `openai("gpt-5-mini")` is `openai({ model: "gpt-5-mini" })` with every other option defaulted; pass the object form when you need anything else.
+
+| Option | `openai` | `anthropic` | `google` |
+| --- | --- | --- | --- |
+| `model` (required) | e.g. `"gpt-5-mini"` | e.g. `"claude-sonnet-4-5"` | e.g. `"gemini-2.5-flash"` |
+| `apiKeyEnv` (default) | `OPENAI_API_KEY` | `ANTHROPIC_API_KEY` | `GEMINI_API_KEY` |
+| `apiKey` | inline key (prefer the env var) | same | same |
+| `baseUrl` | any Chat-Completions-compatible endpoint | Anthropic-compatible endpoint | Gemini-compatible endpoint |
+| `fetch` | an injectable `fetch` implementation | same | same |
+| `maxOutputTokens` | — | provider-level default cap | — |
+
+Every factory reads its API key **lazily, at the first request** — the config loads without the key present, and a missing key surfaces as a provider error at the first ask.
+
+## OpenAI-compatible endpoints
+
+Any service that speaks the Chat Completions dialect works through `openai({ baseUrl })` — no dedicated factory needed:
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    // Ollama (local; the key is required by the dialect but ignored by the server)
+    default: openai({ baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "llama3.2" }),
+    // OpenRouter (one key, every model)
+    router: openai({ baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY", model: "deepseek/deepseek-chat" }),
+    // Groq
+    groq: openai({ baseUrl: "https://api.groq.com/openai/v1", apiKeyEnv: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" }),
+    // DeepSeek
+    deepseek: openai({ baseUrl: "https://api.deepseek.com/v1", apiKeyEnv: "DEEPSEEK_API_KEY", model: "deepseek-chat" }),
+    // xAI
+    xai: openai({ baseUrl: "https://api.x.ai/v1", apiKeyEnv: "XAI_API_KEY", model: "grok-4" }),
+  },
+});
+```
+
+Structured output degrades gracefully on generate-then-validate backends: `openai()` recovers the model's answer from Groq-style `json_validate_failed` errors, and the JSON contract is always re-validated Nola-side regardless of what the backend enforced.
+
+## mockProvider
+
+`mockProvider` returns canned answers — deterministic, no API key, the right default for examples and tests. It takes either a **queue** of values (one per ask, in order) or a **function** of the request:
+
+```ts
+// nola.config.ts
+import { mockProvider } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: mockProvider([{ name: "Alice Smith", age: 32 }]),
+    echo: mockProvider((req) => ({ messages: req.messages.length })),
+  },
+});
+```
+
+See [Testing](/docs/guides/testing/) for the patterns around it.
+
+## Routing precedence
+
+Highest first:
+
+1. **`forceProvider`** — a hermetic override: when set, EVERY ask resolves through this provider, including intents pinned with `ask with` or `.withProvider()`. It must name a key of `providers` ([`NOLA3004`](/docs/reference/error-codes/#nola3004) otherwise).
+2. **The ask-site pin** — `ask with <name>` or `.withProvider(…)`.
+3. **`providers.default`.**
+
+The CI pattern:
+
+```ts
+// nola.config.ts
+import { mockProvider, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: openai({ model: "gpt-5-mini" }),
+    mock: mockProvider(() => ({ ok: true })),
+  },
+  // hermetic — EVERY ask goes here, even .withProvider()-pinned ones
+  forceProvider: process.env.CI ? "mock" : undefined,
+});
+```
+
+`forceProvider` is the one runtime-enforced mechanism, so a pinned provider in a dependency can never leak a real API call into a test run.
+
+## Writing your own provider
+
+A provider is any object with a `name` and a `complete(request)` method that returns `{ text }`. The contract and a minimal implementation are on [Providers API](/docs/reference/providers-api/#custom-providers).
+
+Next: [Resilience](/docs/config/resilience/)

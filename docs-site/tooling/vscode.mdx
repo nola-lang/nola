@@ -1,0 +1,37 @@
+---
+title: VS Code extension
+description: nola.nola-vscode 0.1.2 — features, install, the tsconfig include requirement, how it finds TypeScript, the debug launch snippet, and known limits.
+sidebar:
+  order: 30
+---
+
+`nola.nola-vscode` is the official extension (current Marketplace version **0.1.2**). It bundles the Nola language server and a tsserver plugin; it needs nothing installed globally.
+
+## Features
+
+- **Syntax highlighting** for `.tsi`: the `infer` / `ask` keywords, extractor templates, `ask with <provider>` routing.
+- **Diagnostics** — Nola parse errors and TypeScript errors, reported at the original `.tsi` positions.
+- **Hover, completion, go-to-definition** inside `.tsi` files, prompt templates included: typing `${.` inside an instruction completes the prompt-scope members, and TS errors inside a template point at the exact source range.
+- **Plain TypeScript interop** — `.ts` files that import `.tsi` modules get full types, and go-to-definition from `.ts` lands on the original `infer function` (the bundled tsserver plugin).
+- **Debugging** — the "Nola: Launch File" configuration snippet runs a `.tsi` entry under the Nola loader; breakpoints bind in `.tsi` source, stepping into an infer function works, and debug hover evaluates contextual parameters.
+
+## Install
+
+From the [Marketplace](https://marketplace.visualstudio.com/items?itemName=nola.nola-vscode), or `code --install-extension nola.nola-vscode`. Scaffolded projects (and retrofits with `--ide vscode`) carry a `.vscode/extensions.json` that recommends it.
+
+## Requirements
+
+- **A project using the `nola-lang` toolchain** — `npm create nola my-app`, or `nola init --add` in an existing project.
+- **`.tsi` inside a directory-style tsconfig `include`** (`["src"]`, never `["src/**/*.ts"]`), or the language server and the tsserver plugin cannot admit the files into the program.
+- **A TypeScript to load.** The language server is bundled with the extension, but the TypeScript it runs is resolved from your **workspace** (`node_modules/typescript`) first, falling back to VS Code's built-in copy. If neither is found the extension shows an error and does not start the server — install `typescript` in the project (the scaffold does).
+
+## Debugging
+
+Add the **Nola: Launch File** snippet from *Add Configuration…* in `launch.json`, or use the one the scaffold wrote. It runs `node --import nola-lang/register --enable-source-maps` with `resolveSourceMapLocations` and `skipFiles` set so breakpoints and stepping stay in `.tsi` source. The full configuration and why each key matters: [Editor setup](/docs/start/editor-setup/#debugging-with-f5).
+
+## Known limits (0.1.2)
+
+- Per-construct snippets (`infer`, `ask`, `calli`, …) are in the extension's changelog as *unreleased* — not in 0.1.2 yet.
+- Other editors are not covered by this extension; wire `@nola-lang/language-server` and `@nola-lang/typescript-plugin` into your LSP client instead (see [Editor setup](/docs/start/editor-setup/#other-editors)).
+
+Next: [Error codes](/docs/reference/error-codes/)

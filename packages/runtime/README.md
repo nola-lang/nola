@@ -9,7 +9,7 @@ import { defineConfig } from "@nola-lang/runtime";
 import { openai } from "@nola-lang/providers";
 
 export default defineConfig({
-  providers: { default: openai() },
+  providers: { default: openai("gpt-5-mini") },
 });
 ```
 

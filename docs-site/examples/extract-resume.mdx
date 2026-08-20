@@ -1,0 +1,43 @@
+---
+title: extract-resume
+description: The canonical structured-extraction demo — nested Education[] arrays and JSDoc comments that become schema descriptions, with no schema DSL and no codegen.
+sidebar:
+  order: 20
+---
+
+The industry-canonical structured-extraction demo — every LLM framework has a resume example; this is Nola's. The types are plain same-file interfaces (nested `Education[]` included; JSDoc comments become schema descriptions) and the function is imported directly — no schema DSL, no codegen step, no generated client directory, no second language.
+
+```tsi
+// src/resume.tsi
+export interface Education {
+  school: string;
+  degree: string;
+  /** graduation year */
+  year: number;
+}
+
+export interface Resume {
+  name: string;
+  email: string;
+  /** one entry per position, most recent first */
+  experience: string[];
+  skills: string[];
+  education: Education[];
+}
+
+export infer function extractResume(.message: string) {
+  return ask ..`the candidate's resume data`<Resume>;
+}
+```
+
+## Run it
+
+```sh
+npx nola run src/main.ts                      # mock provider (deterministic)
+# real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
+```
+
+**Scaffold:** `npm create nola my-app -- --template extract-resume`
+**Source:** [examples/extract-resume](https://github.com/nola-lang/nola/tree/main/examples/extract-resume) on GitHub.
+
+Next: [classify-message](/docs/examples/classify-message/)

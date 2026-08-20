@@ -1,0 +1,60 @@
+---
+title: Resilience — retries, fallback, round-robin
+description: withRetry with constant or exponential policies, fallback and roundRobin, how they nest, and the three retry layers that are easy to confuse.
+sidebar:
+  order: 30
+---
+
+Resilience is composition over the same `NolaProvider` interface: every combinator wraps a provider and returns a provider, so they nest.
+
+```ts
+// nola.config.ts
+import { exponential, fallback, openai, withRetry } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: fallback([
+      withRetry(openai({ model: "gpt-5-mini" }), exponential({ maxRetries: 3 })),
+      openai({ model: "gpt-5-nano" }),
+    ]),
+  },
+});
+```
+
+## withRetry
+
+`withRetry(provider, policy)` re-attempts the single wire call with backoff. Two policy builders:
+
+| Policy | Fields | Defaults |
+| --- | --- | --- |
+| `constant({ maxRetries, delayMs? })` | flat delay between attempts | `delayMs: 0` |
+| `exponential({ maxRetries, delayMs?, multiplier?, maxDelayMs? })` | delay × multiplier per attempt, capped | `delayMs: 200`, `multiplier: 2`, `maxDelayMs: 10_000` |
+
+- **Definitive errors fail fast.** A provider error flagged `definitive`, or any HTTP 4xx other than 408 and 429 (auth, bad request, …), is thrown immediately — retrying would not help.
+- **`Retry-After` is honoured.** When the provider reports `retryAfterMs` and it exceeds the scheduled delay, the wait grows to match — still capped at `maxDelayMs`. A policy whose `maxDelayMs` is `0` (`constant()` with no delay) ignores the header entirely.
+- After the last attempt the last error is rethrown.
+
+## fallback
+
+`fallback([a, b, c])` tries the providers in order and returns the first success. If every one fails, it throws a `NolaProviderError` listing each failure. An empty array is a config error ([`NOLA3003`](/docs/reference/error-codes/#nola3003)).
+
+## roundRobin
+
+`roundRobin([a, b, c])` rotates the starting provider on every call and, like `fallback`, continues through the list on failure. Use it to spread load across equivalent endpoints. Empty array: [`NOLA3003`](/docs/reference/error-codes/#nola3003).
+
+Combinators nest freely: `fallback([withRetry(a, …), roundRobin([b, c])])` is a valid provider and a valid `ask with` target.
+
+## The three retry layers
+
+Three different things are called "retry". Keep them apart:
+
+| Layer | What is retried | Configured by | When to use |
+| --- | --- | --- | --- |
+| **Built-in correction loop** | the model's *answer*: when it fails schema validation, the runtime sends a correction turn and asks again | nothing — automatic; observable through `onValidationFailed` / `onRetry` and the receipt's `attempts` | always on; you do not configure it |
+| **Provider combinator `withRetry(provider, policy)`** | the *wire call* — timeouts, 5xx, 408/429, network faults; definitive errors are not retried | `nola.config.ts` | transient provider trouble |
+| **Intent method `.withRetry(n)`** | the *whole ask* — composition, provider call, parse, validation — `n` extra flat attempts, no backoff, no definitive-error check | at the ask site | a flaky step you want to give another go; never on a call intent whose callee is not idempotent |
+
+See [Intent methods](/docs/language/intent-methods/) for the third and [Error handling](/docs/guides/error-handling/) for what surfaces when all of them give up.
+
+Next: [Ask options](/docs/config/ask-options/)

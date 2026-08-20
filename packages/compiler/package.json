@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/compiler",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Nola compiler: lowers .tsi to plain TypeScript with source maps (internal)",
   "keywords": [
     "nola"
@@ -32,9 +32,9 @@
   ],
   "dependencies": {
     "@jridgewell/sourcemap-codec": "^1.5.0",
-    "@nola-lang/ast": "0.1.3",
-    "@nola-lang/core": "0.1.3",
-    "@nola-lang/parser": "0.1.3",
+    "@nola-lang/ast": "0.1.4",
+    "@nola-lang/core": "0.1.4",
+    "@nola-lang/parser": "0.1.4",
     "magic-string": "^0.30.0"
   },
   "devDependencies": {

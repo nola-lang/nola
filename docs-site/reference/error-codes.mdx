@@ -1,0 +1,395 @@
+---
+title: Error codes
+description: Every NOLA diagnostic — parse (1xxx), compile (2xxx), runtime (3xxx), bundler (4xxx) — with its message, cause, and fix. Anchors are #nola<code>.
+sidebar:
+  order: 80
+---
+
+Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `NOLA2xxx` **compile** errors — raised by the editor, `nola check` and `nola build`; `NOLA3xxx` are **runtime** errors raised by the runtime, the loader or a provider; `NOLA4xxx` are **bundler** errors raised at build time by the bundler plugins. Each heading below is an anchor (`/docs/reference/error-codes/#nola2001`) and will not move. Codes listed as *not raised in 0.1.3* are reserved or retired; the numbers are never reused.
+
+**Parse errors (NOLA1xxx)**
+
+## NOLA1001
+
+> *(the parser's own message)*
+
+**Cause:** a plain syntax error — anything the parser rejects that does not carry a more specific Nola code, such as an unbalanced brace or a stray token.
+**Fix:** read the position in the message; it is an ordinary TypeScript/JavaScript syntax problem in your `.tsi` file.
+
+## NOLA1003
+
+> `ask` is a reserved word in .tsi files and cannot be used as an identifier.
+
+**Cause:** `ask` used as a variable, function or parameter name.
+**Fix:** rename it. `ask` stays legal as a member or property name (`obj.ask`).
+
+## NOLA1004
+
+> this Nola construct is reserved for a future Nola version.
+
+**Cause:** syntax the grammar recognises but does not ship yet — `infer` on a method, an arrow function, a function expression or a generator; the bare derive-all call `fn(..)`; other deferred forms (see [Restrictions](/docs/language/restrictions/)).
+**Fix:** use a top-level `infer function` declaration; give every call-intent slot an explicit `` ..`…`<T> ``.
+
+## NOLA1005
+
+> expected a template literal prompt after `..`.
+
+**Cause:** `..` followed by something other than a backtick instruction.
+**Fix:** write `` ..`instruction`<T> ``.
+
+## NOLA1006
+
+Not raised in 0.1.3 — reserved (`infer` without a following `function` is reported as `NOLA1001`).
+
+## NOLA1007
+
+> the `function name``()` form was removed — declare the function with `infer function`.
+
+**Cause:** the pre-0.1 spelling of an LLM-backed function.
+**Fix:** `infer function name(…)`, optionally with a marker: `` infer function name`instruction`(…) ``.
+
+## NOLA1008
+
+Not raised in 0.1.3 — retired (marker substitutions are legal); the number is not reused.
+
+## NOLA1009
+
+> expected a provider name after `ask with` — for a dynamic provider use `.withProvider(...)` on the intent.
+
+**Cause:** a string literal, a member expression or a parenthesized expression after `with`.
+**Fix:** name the provider in `nola.config.ts` and use that bare identifier; for a dynamic choice use `.withProvider(…)`.
+
+```tsi
+// not-checked — WRONG
+export infer function summarize(.text: string) {
+  const a = ask with "fast" ..`a rough summary`<string>;
+  const b = ask with providers.fast ..`a rough summary`<string>;
+  return { a, b };
+}
+```
+
+```tsi
+// summarize.tsi — RIGHT
+export infer function summarize(.text: string, useFast: boolean) {
+  const c = ask with fast ..`a rough summary`<string>;
+  const d = ask (..`a rough summary`<string>).withProvider(useFast ? "fast" : "careful");
+  return { c, d };
+}
+```
+
+## NOLA1010
+
+> `.` context parameters are only allowed on infer function parameters.
+
+**Cause:** a `.name` parameter on a plain function — there is no inference context to put the value in.
+**Fix:** drop the dot (the parameter is an ordinary argument), or make the function an `infer function`.
+
+```tsi
+// not-checked — WRONG
+function summarize(.text: string) {
+  return text.slice(0, 10);
+}
+```
+
+```tsi
+// summarize-right.tsi — RIGHT
+export infer function summarize(.text: string) {
+  return ask ..`a one-sentence summary`<string>;
+}
+```
+
+## NOLA1011
+
+> `.` on this parameter form is reserved for a future Nola version — use a plain identifier parameter.
+
+**Cause:** `.` on a destructuring pattern or a parameter with a default value.
+**Fix:** use a plain identifier parameter (`.issue: Issue`) and destructure or default inside the body.
+
+## NOLA1012
+
+> incomplete `.` context parameter — write `.name`.
+
+**Cause:** a `.` with no parameter name after it (usually mid-typing).
+**Fix:** finish the name.
+
+## NOLA1013
+
+> contextual parameters take one dot — write `.name` (`..` is the extractor sigil).
+
+**Cause:** `..name` on a parameter.
+**Fix:** one dot in, two dots out — `.name`.
+
+## NOLA1014
+
+> `.name` contextual bindings (`const .x = …`) are reserved for a future Nola version.
+
+**Cause:** a dotted binding inside a body.
+**Fix:** use an ordinary `const` and interpolate it into the instruction with `${}`, or make it a contextual *parameter*.
+
+## NOLA1015
+
+> incomplete scope access — write `${.member}`.
+
+**Cause:** `${.` inside an instruction with no member after the dot.
+**Fix:** finish the member (the editor completes them) — see [Prompt templates](/docs/language/prompt-templates/).
+
+**Compile errors (NOLA2xxx)**
+
+## NOLA2001
+
+> `ask` is only allowed directly inside an infer function body.
+
+**Cause:** `ask` at module level or inside a nested closure — even one written inside an infer function.
+**Fix:** ask directly in the body; from plain TS, `await` the infer function instead. Constructing an extractor outside a body is fine — only resolving it is restricted.
+
+```tsi
+// not-checked — WRONG
+const kind = ask ..`the kind`<string>;                  // module level
+
+export infer function f(.t: string) {
+  const g = () => ask ..`the kind`<string>;             // nested closure
+  return g();
+}
+```
+
+```tsi
+// kind.tsi — RIGHT
+export infer function f(.t: string) {
+  return ask ..`the kind`<string>;
+}
+```
+
+## NOLA2002
+
+> unsupported type for intent schema: …
+
+**Cause:** an extractor's `<T>` names a type the compiler cannot turn into a JSON Schema — `Map`, `Set`, `RegExp`, functions, generics, class instances.
+**Fix:** ask for a JSON-shaped type and convert afterwards in plain TypeScript. See [Extractors](/docs/language/extractors/#derivable-types).
+
+```tsi
+// not-checked — WRONG
+export infer function tally(.doc: string) {
+  return ask ..`counts per label`<Map<string, number>>;
+}
+```
+
+```tsi
+// tally.tsi — RIGHT
+export infer function tally(.doc: string) {
+  const counts = ask ..`counts per label`<{ label: string; count: number }[]>;
+  return new Map(counts.map((c) => [c.label, c.count]));
+}
+```
+
+## NOLA2003
+
+> infer functions must be declared at module top level.
+
+**Cause:** an `infer function` declared inside another function or block.
+**Fix:** move it to module level and export it.
+
+## NOLA2004
+
+> an extractor used as a call-intent argument must have an explicit `<T>`.
+
+**Cause:** a call-intent slot written as `` ..`…` `` with no type argument.
+**Fix:** give every slot a `<T>`.
+
+```tsi
+// not-checked — WRONG
+declare function createTicket(title: string, priority: number): Promise<string>;
+export infer function fileTicket(.request: string) {
+  return ask createTicket(..`a short ticket title`, 2);
+}
+```
+
+```tsi
+// file-ticket.tsi — RIGHT
+declare function createTicket(title: string, priority: number): Promise<string>;
+export infer function fileTicket(.request: string) {
+  return ask createTicket(..`a short ticket title`<string>, 2);
+}
+```
+
+## NOLA2005
+
+Not raised in 0.1.3 — retired (call-hint substitutions are legal); the number is not reused.
+
+## NOLA2006
+
+> the *.nola.* filename namespace is reserved for generated companion modules — rename this file
+
+**Cause:** a hand-written file whose name contains `.nola.` — the namespace the compiler uses for the type carriers it generates for cross-file types.
+**Fix:** rename the file. Never import a `*.nola.*` module yourself.
+
+## NOLA2007
+
+> cannot locate the type source for "…"
+
+**Cause:** a `.tsi` imports a type from a module whose source file the compiler cannot find next to the importer (wrong specifier, or the file is not a `.ts`/`.tsi` on disk).
+**Fix:** check the import — `import type { Person } from "./models.js"` must correspond to an on-disk `models.ts`. See [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file).
+
+## NOLA2008
+
+> contextual parameter '…' has a type that cannot be derived for inference: …. Set compiler.underivableContextType to "prune" or "omit" in nola.config.ts to allow it.
+
+**Cause:** a `.param` whose type is not derivable (same rules as `NOLA2002`); its value would have to be serialized into the prompt.
+**Fix:** pass a JSON-shaped view, keep the exotic value as a plain parameter, or relax `compiler.underivableContextType` — see [Contextual parameters](/docs/language/contextual-parameters/#when-a-type-is-not-derivable).
+
+```tsi
+// not-checked — WRONG
+export infer function topLabel(.index: Map<string, number>) {
+  return ask ..`the label with the highest count`<string>;
+}
+```
+
+```tsi
+// top-label.tsi — RIGHT
+export infer function topLabel(.index: { label: string; count: number }[]) {
+  return ask ..`the label with the highest count`<string>;
+}
+```
+
+## NOLA2009
+
+> `${.member}` scope access is only allowed inside a Nola instruction template (infer-function marker, extractor prompt, call-intent hint).
+
+**Cause:** `${.x}` in a plain template literal.
+**Fix:** use a lexical value there; prompt scope exists only inside an instruction.
+
+## NOLA2010
+
+> Nola constructs are not allowed inside an infer-function marker or call-intent hint hole.
+
+**Cause:** `` ..`…` ``, a call intent or `ask` inside a `${}` hole of a marker or call hint (those literals are re-emitted from source).
+**Fix:** compute the value first and interpolate the result, or move the ask into the function body.
+
+**Runtime errors (NOLA3xxx)**
+
+## NOLA3001
+
+> This module was compiled for Nola emit contract N, but @nola-lang/runtime (at …) provides contract M. …
+
+**Cause:** lowered code and the installed runtime disagree on the emit contract — a stale build or mismatched package versions.
+**Fix:** the message says which: rebuild with the current `nola-lang`, or update `@nola-lang/runtime`. Keep the lockstep packages on one version.
+
+## NOLA3002
+
+> Two incompatible copies of @nola-lang/runtime are loaded: … Run `npm dedupe`, or align your nola-lang versions so a single runtime is installed.
+
+**Cause:** two runtimes with different emit contracts in one process.
+**Fix:** `npm dedupe`; align every Nola package to the same version.
+
+## NOLA3003
+
+> *(one of several config messages, e.g.)* `providers must include a default entry.` · `unknown config key x — allowed keys: …` · `provider was replaced by providers — write providers: { default: <your provider> }.` · `Nola configuration is frozen after the first ask — call nolaRuntime.reset() before reconfiguring.` · `fallback([]) needs at least one provider.`
+
+**Cause:** `nola.config.ts` did not validate, the process was reconfigured after the first ask, or a combinator received an empty list. (A related `NolaConfigError` without a code — "No Nola provider configured" — means no config was loaded at all: run through `nola run` / the loader with a `nola.config.ts`, or call `nolaRuntime.configure(…)` first.)
+**Fix:** the message names the file and field — see [Config schema](/docs/reference/config-schema/).
+
+## NOLA3004
+
+> forceProvider "x" does not name a configured provider — configured: … · .withProvider() "x" does not name a configured provider — configured: …
+
+**Cause:** `forceProvider`, `ask with <name>` or `.withProvider("name")` names a key that is not in `providers`.
+**Fix:** add the provider to the map or fix the name.
+
+## NOLA3005
+
+> `plugins` is reserved for a future Nola version.
+
+**Cause:** a `plugins` key in the config.
+**Fix:** remove it.
+
+## NOLA3006
+
+> `cache must be an object — write cache: {} or cache: { store: <NolaCacheStore> }.` · `cache.store is not a NolaCacheStore (need { get(fingerprint), set(fingerprint, value) }).`
+
+**Cause:** a malformed `cache` section. (The cache validates but is not wired at 0.1.x.)
+**Fix:** `cache: {}` or a store with `get` and `set`.
+
+## NOLA3007
+
+> replay ledger … cannot be read: … · replay ledger …:N is not valid JSON. · replay ledger …:N is missing fingerprint or response.text.
+
+**Cause:** the JSONL ledger given to `replay(path)` is missing, unreadable or malformed.
+**Fix:** check the path; re-record the ledger. See [Record and replay](/docs/config/record-and-replay/).
+
+## NOLA3008
+
+> replay ledger … has no entry for fingerprint … — the prompt, schema, or context changed since the ledger was recorded. Re-record it.
+
+**Cause:** the request differs from every recorded one — you changed a prompt, a contextual value, a type, params or the provider. Replay is strict on purpose.
+**Fix:** re-record (`NOLA_RECORD=1`), or switch to a live provider.
+
+## NOLA3009
+
+> this type cannot be used in an intent schema: …
+
+**Cause:** an underivable type reached an ask at run time (a companion module marked it `unsupported`).
+**Fix:** as for `NOLA2002` — use a JSON-shaped type.
+
+## NOLA3010
+
+> extract/call intents carry no construction scope — only `ask` supplies their frame.
+
+**Cause:** a raw extractor or call intent was awaited (or otherwise run) outside `ask` — typically from plain TypeScript, or after storing it in a variable.
+**Fix:** resolve it with `ask` inside an infer function; from plain TS, `await` the *infer function's* result instead.
+
+```ts
+// not-checked — WRONG: nothing supplies the inference context
+import { nameIntent } from "./person.tsi";
+const name = await nameIntent;
+```
+
+```tsi
+// person.tsi — RIGHT
+export const nameIntent = ..`the user's full name`<string>;
+
+export infer function whoIsIt(.text: string) {
+  return ask nameIntent;
+}
+```
+
+## NOLA3011
+
+Not raised in 0.1.3 — reserved.
+
+## NOLA3012
+
+> nola.config.ts cannot import ".tsi" modules ("…" imported from …) — the config is evaluated before the Nola loader registers.
+
+**Cause:** `nola.config.ts` (or something it imports) imports a `.tsi` file.
+**Fix:** keep the config graph plain TypeScript.
+
+## NOLA3013
+
+> Nola asks cannot execute in a browser context (server-only in v0). Move this call behind a server boundary (server component, route handler, server action).
+
+**Cause:** an ask ran where `window` and `document` exist.
+**Fix:** call the infer function from server code.
+
+## NOLA3014
+
+> prompt template at … threw: … · prompt template at … rendered no text.
+
+**Cause:** a `${.member}` template threw, or rendered an empty string (it only read members that were undefined).
+**Fix:** fix the template — definitive, there is no retry. See [Prompt templates](/docs/language/prompt-templates/).
+
+## NOLA3015
+
+> the Nola loader needs Node.js module hooks, which Bun/Deno does not run. Run .tsi code on Node: `bun run start` / `npm start` (the nola bin runs on Node) or `node --import nola-lang/register src/main.ts`; `bun --bun` and `bun src/main.ts` cannot load .tsi files.
+
+**Cause:** the loader was started under Bun or Deno.
+**Fix:** run on Node (≥ 22); any package manager is fine.
+
+**Bundler errors (NOLA4xxx)**
+
+## NOLA4001
+
+> .tsi modules are server-only in Nola v0 — this file is being bundled for a browser target. Move the import behind a server boundary (SSR entry, route handler, server action).
+
+**Cause:** a client bundle imports a `.tsi` module.
+**Fix:** import it from server code only (SSR entry, route handler, server action).
+
+Next: [Syntax cheatsheet](/docs/reference/syntax-cheatsheet/)

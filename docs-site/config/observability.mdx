@@ -1,0 +1,87 @@
+---
+title: Observability — hooks, receipts, logging
+description: Observe every ask with hooks (onAskStart … onInvocationEnd), read the receipt (prompt, servedBy, attempts, tokens, site), and tune the built-in logger.
+sidebar:
+  order: 60
+---
+
+Every ask emits events, and every finished ask produces a *receipt*. Hooks observe both; the built-in logger is one such hook.
+
+## Hooks
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: { default: openai({ model: "gpt-5-mini" }) },
+  hooks: [
+    {
+      name: "cost",
+      onAskEnd: ({ receipt }) => {
+        const { inputTokens = 0, outputTokens = 0 } = receipt.usage ?? {};
+        console.log(`${receipt.site} via ${receipt.servedBy}: ${inputTokens}+${outputTokens} tokens, ${receipt.attempts} attempt(s)`);
+      },
+    },
+  ],
+});
+```
+
+- A hook is an object with any of `onAskStart`, `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`, `onAskEnd`, `onInvocationEnd` (and an optional `name`).
+- All hooks receive all events; their order in the array is not meaningful.
+- Hooks observe only — they cannot mutate payloads or short-circuit an ask. A hook that throws is swallowed and warned about once; it can never break resolution.
+
+## Event payloads
+
+| Event | Payload |
+| --- | --- |
+| `onAskStart` | `askId`, `site`, `provider` |
+| `onProviderRequest` | `askId`, `attempt`, `provider`, `messages` (the conversation as sent) |
+| `onProviderResponse` | `askId`, `attempt`, `provider`, `text`, `durationMs` |
+| `onValidationFailed` | `askId`, `attempt`, `error`, `site` — the answer did not match the schema; a correction attempt follows |
+| `onRetry` | `askId`, `attempt`, `reason`, `site` |
+| `onAskEnd` | `askId`, `receipt` (below) |
+| `onInvocationEnd` | `invocationId`, `trace` — the invocation's spans (asks and nested invocations) |
+
+## The receipt
+
+`AskReceipt`, delivered on `onAskEnd`:
+
+| Field | Meaning |
+| --- | --- |
+| `askId`, `site` | the ask and its source location (`file:line:col` in the `.tsi`) |
+| `originalPrompt` | the conversation as first composed for this ask |
+| `effectivePrompt` | as last sent to the provider — diverges from the original on a correction retry |
+| `schema` | the JSON Schema the answer was validated against |
+| `servedBy` | the provider name that answered |
+| `attempts` | provider round trips actually performed |
+| `outcome` | `{ ok: true, value }` or `{ ok: false, error }` |
+| `usage` | `{ inputTokens?, outputTokens? }` when the provider reports them |
+| `durationMs` | wall-clock time of the ask |
+| `invocationId`, `spanPath` | the invocation this ask belongs to, and the chain from the root frame |
+| `fingerprint` | the canonical ask fingerprint — the replay/cache key |
+| `meta` | free-form scratch space |
+
+Secrets are redacted before anything lands in a receipt.
+
+## The built-in logger
+
+A logger ships as a hook. Its level comes from `observability.logLevel` (`silent` · `error` · `warn` · `info` · `debug`; default `warn`), and the `NOLA_LOG` environment variable overrides the configured level when set to a valid value:
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: { default: openai({ model: "gpt-5-mini" }) },
+  observability: { logLevel: "info" },
+});
+```
+
+```sh
+NOLA_LOG=debug nola run src/main.ts
+```
+
+Next: [Record and replay](/docs/config/record-and-replay/)

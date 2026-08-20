@@ -1,0 +1,109 @@
+---
+title: Nola vs LangGraph
+description: LangGraph orchestrates graphs of LLM steps; Nola makes each typed step a language expression with TypeScript control flow. Same task in both.
+sidebar:
+  order: 40
+---
+
+## What LangGraph is
+
+LangGraph (here the JavaScript package, `@langchain/langgraph`) is a low-level orchestration framework for long-running, stateful agents: you define a typed state, add nodes (plain functions, often calling a model) and edges — including conditional ones — compile the graph and invoke it. It brings durable execution, checkpointing, streaming of intermediate state and human-in-the-loop interrupts, and it sits on LangChain's model integrations (`withStructuredOutput` for typed replies).
+
+{/* LangGraph JS API (StateGraph, StateSchema, START/END, GraphNode, withStructuredOutput) verified against docs.langchain.com/oss/javascript/langgraph on 2026-08-20. */}
+
+## The same task, side by side
+
+Classify a support message, then write a reply that depends on the category.
+
+**LangGraph JS** — a two-node graph:
+
+```ts
+// not-checked — graph.ts
+import { ChatOpenAI } from "@langchain/openai";
+import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+const llm = new ChatOpenAI({ model: "gpt-5-mini" });
+const Triage = z.object({
+  category: z.enum(["billing", "refund", "fraud", "other"]),
+  orderIds: z.array(z.string()),
+});
+const classifier = llm.withStructuredOutput(Triage);
+
+const State = new StateSchema({
+  message: z.string(),
+  category: z.string(),
+  orderIds: z.array(z.string()),
+  reply: z.string(),
+});
+
+const graph = new StateGraph(State)
+  .addNode("classify", async (state) => {
+    const triage = await classifier.invoke([
+      { role: "system", content: "You are a support classifier." },
+      { role: "user", content: state.message },
+    ]);
+    return { category: triage.category, orderIds: triage.orderIds };
+  })
+  .addNode("reply", async (state) => {
+    const res = await llm.invoke([
+      { role: "system", content: "You are a support agent." },
+      { role: "user", content: `Reply to this ${state.category} case: ${state.message}` },
+    ]);
+    return { reply: res.content };
+  })
+  .addEdge(START, "classify")
+  .addEdge("classify", "reply")
+  .addEdge("reply", END)
+  .compile();
+
+const result = await graph.invoke({ message });
+```
+
+**Nola** — the "graph" is a function call:
+
+```tsi
+// classify.tsi
+export type Triage = {
+  category: "billing" | "refund" | "fraud" | "other";
+  orderIds: string[];
+};
+
+export infer function classifyMessage(.message: string) {
+  const triage = ask ..`triage the customer message`<Triage>;
+  const reply = ask ..`a reply for a ${triage.category} case`<string>;
+  return { ...triage, reply };
+}
+```
+
+```ts
+// main.ts
+import { classifyMessage } from "./classify.tsi";
+
+const result = await classifyMessage("I was charged twice for order #4711.");
+console.log(result.category, result.reply);
+```
+
+## Where LangGraph is stronger
+
+- **Durable, resumable execution.** Checkpointing, persistence and human-in-the-loop interrupts are the reason LangGraph exists; Nola has none of that — an invocation is a plain async call.
+- **Streaming intermediate state** and graph visualisation for long agent runs.
+- **Ecosystem.** LangChain's model, tool and retriever integrations plug straight in; LangGraph is established and widely used, Nola is 0.1.x.
+
+## Where Nola is stronger
+
+- **The typed call layer.** `Triage` is the TypeScript type, its schema derived at compile time; no Zod mirror, no `withStructuredOutput` wrapper, and the editor sees every ask.
+- **Context composition.** Both asks share `.message` because context belongs to the function; in the graph the second node re-threads the message and the category through state by hand.
+- **Control flow is TypeScript.** Branches, loops and retries are `if`/`for`/`try` around asks, type-checked together with the rest of the code — no edges to declare for a straight line of steps.
+
+## Composing them
+
+They are not exclusive: a LangGraph node is an ordinary async function, and an infer function is an ordinary async call — call Nola functions from nodes when you want durable orchestration around typed steps. Note the constraints on Nola's side: Node ≥ 22, server-only ([`NOLA4001`](/docs/reference/error-codes/#nola4001)).
+
+## When to pick which
+
+- Long-running agents that must pause, resume and be inspected mid-flight → LangGraph for orchestration (with or without Nola inside the nodes).
+- Typed extraction, classification and function calling inside an ordinary TypeScript program → Nola.
+- Positioning in one line: complementary for orchestration, a replacement for the typed-call layer.
+
+Next: [Nola vs Vercel AI SDK](/docs/compare/vercel-ai-sdk/)

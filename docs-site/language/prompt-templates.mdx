@@ -1,0 +1,88 @@
+---
+title: Prompt templates
+description: ${.member} inside any instruction reads the intent's prompt scope and replaces its block — the one rule, scope members, safe defaults, rendering, and errors.
+sidebar:
+  order: 70
+---
+
+Every instruction literal — an infer-function marker, an extractor's backticks, a call-intent hint — can act as a *template* for the prompt block that intent contributes. One rule: a substitution hole whose expression starts with a single dot reads the intent's prompt scope; every other hole is ordinary lexical JavaScript.
+
+## Reshaping the built-in block
+
+```tsi
+// analyze.tsi
+export type Ticket = { id: string; body: string };
+
+export infer function analyze`${.default}
+Rules: answer only from the arguments above; never invent ids.`(.ticket: Ticket) {
+  const id = ask ..`ticket id, comply with ${.type}`<string>;
+  return id;
+}
+```
+
+`${.default}` in the marker is the built-in CONTEXT block; the template appends a rule after it. `${.type}` in the extractor is the native type text of the target (`string` here).
+
+## Override semantics
+
+The rule is static and decided per literal:
+
+- A literal with at least ONE `${.x}` hole is a **template** — its rendered text REPLACES that intent's block: the CONTEXT block for an infer-function marker, the TASK block for an extractor or call hint.
+- A literal with no scope hole is an **instruction**, exactly as before — it goes inside the built-in block (the `Purpose:` line / the `<request>`), even when it has lexical `${}` holes.
+
+## Function scope
+
+Available in an infer-function marker (`FunctionPromptScope`):
+
+| Member | Meaning |
+| --- | --- |
+| `.fn` | the function name |
+| `.signature` | its signature text |
+| `.file` | the source file |
+| `.args[]` | one entry per parameter: `name`, `type` (native type text), `value`, `contextual` |
+| `.nested` | whether this invocation runs inside another infer function's frame |
+| `.hasContext` | whether any contextual value is present |
+| `.default` | the built-in CONTEXT block (without the Purpose line) |
+| `.next` | the rest of the prompt: callee blocks + TASK |
+
+A fully custom CONTEXT block:
+
+```tsi
+// triage.tsi
+export infer function triage`
+CONTEXT — inside ${.signature}, ${.file}
+${.args.map((a) => `- ${a.name} (${a.type}): ${JSON.stringify(a.value)}`)}
+
+TASK
+${.next}
+`(.ticket: string) {
+  return ask ..`the severity: low, medium or high`<"low" | "medium" | "high">;
+}
+```
+
+## Extractor and call-hint scope
+
+Available in an extractor's backticks or a call hint (`ExtractPromptScope`): `.type` (native type text of the target), `.schema` (the JSON Schema, serialized), `.hasContext`, `.default` (the built-in TASK block) and `.format` (the JSON response rules).
+
+## Safe by default
+
+- A function template that never reads `.next` gets the rest of the prompt appended after it; an extractor template that never reads `.format` gets the JSON response rules appended. Read them only to choose WHERE they go (wrapping).
+- `.next`, `.default` and `.format` are memoized getters — reading one twice does not compose twice.
+
+## Rendering
+
+- Arrays render one item per line (no `.join` needed); `undefined` and `null` render as nothing; objects as JSON; `Date` as ISO.
+- Templates render when the ask composes its prompt, so lexical values inside a TEMPLATE are read then — not at construction. That is the only observable difference from an instruction's eager `${}`.
+- Nested holes follow the same rule: `${.file}` inside a `.map` callback's own template literal still reads the scope. Keyword-named members work (`${.default}`).
+
+## Editor support
+
+Completion, hover and precise TypeScript errors work inside the backticks: typing `${.` completes the scope members, and an unknown member is a `TS2339` at the member.
+
+## Errors
+
+- [`NOLA2009`](/docs/reference/error-codes/#nola2009) — `${.x}` in a template literal that is not a Nola instruction. Use a lexical value there.
+- [`NOLA2010`](/docs/reference/error-codes/#nola2010) — a Nola construct (`..`, a call intent, `ask`) inside a marker or call-hint hole. Compute the value first, or move the ask into the body.
+- [`NOLA3014`](/docs/reference/error-codes/#nola3014) — the template threw or rendered no text. Definitive: fix the template, there is no retry.
+- [`NOLA1015`](/docs/reference/error-codes/#nola1015) — an incomplete `${.` with no member after the dot.
+
+Next: [Intent methods](/docs/language/intent-methods/)

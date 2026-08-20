@@ -1,0 +1,36 @@
+---
+title: Examples
+description: Ten runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
+sidebar:
+  order: 0
+---
+
+The repository ships ten standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key.
+
+| Example | Demonstrates | Scaffold |
+| --- | --- | --- |
+| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app` (the starter is this example) |
+| [extract-resume](/docs/examples/extract-resume/) | Nested arrays of objects, JSDoc schema descriptions | `npm create nola my-app -- --template extract-resume` |
+| [extract-invoice](https://github.com/nola-lang/nola/tree/main/examples/extract-invoice) | Same-file type references, optional fields | `npm create nola my-app -- --template extract-invoice` |
+| [classify-message](/docs/examples/classify-message/) | Closed label sets: union alias, string enum, inline union | `npm create nola my-app -- --template classify-message` |
+| [chain-of-thought](https://github.com/nola-lang/nola/tree/main/examples/chain-of-thought) | Two-step reasoning: a free-text ask interpolated into a typed ask | `npm create nola my-app -- --template chain-of-thought` |
+| [research-notes](https://github.com/nola-lang/nola/tree/main/examples/research-notes) | TS control flow orchestrating nola functions | `npm create nola my-app -- --template research-notes` |
+| [contextual-args](https://github.com/nola-lang/nola/tree/main/examples/contextual-args) | `.param` contextual parameters and the `system.message` config key | — |
+| [cross-file-types](https://github.com/nola-lang/nola/tree/main/examples/cross-file-types) | A type imported from another file (companion module), self-recursive | — |
+| [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
+| [prompt-template](https://github.com/nola-lang/nola/tree/main/examples/prompt-template) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor | — |
+
+## Running an example
+
+Scaffold one with its template (above), or run it inside a clone of the repository — the examples are workspaces of the monorepo, so build once at the root first:
+
+```sh
+git clone https://github.com/nola-lang/nola
+cd nola && npm install && npm run build
+cd examples/extract-person
+npx nola run src/main.ts      # mock provider, deterministic
+```
+
+Each example's `nola.config.ts` contains the one-line change for a real provider (`openai({ model: "gpt-5-mini" })` with `OPENAI_API_KEY` set).
+
+Next: [extract-person](/docs/examples/extract-person/)

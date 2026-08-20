@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/node-loader",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Node module hooks that compile .tsi on the fly (internal; powers nola run and nola-lang/register)",
   "keywords": [
     "nola"
@@ -33,10 +33,10 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.3",
-    "@nola-lang/compiler": "0.1.3",
-    "@nola-lang/parser": "0.1.3",
-    "@nola-lang/runtime": "0.1.3",
+    "@nola-lang/ast": "0.1.4",
+    "@nola-lang/compiler": "0.1.4",
+    "@nola-lang/parser": "0.1.4",
+    "@nola-lang/runtime": "0.1.4",
     "@ampproject/remapping": "^2.3.0",
     "@jridgewell/sourcemap-codec": "^1.5.0",
     "esbuild": "^0.25.0"

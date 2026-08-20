@@ -1,0 +1,126 @@
+---
+title: Quick start
+description: From zero to a running .tsi file in five minutes — scaffold, run offline, switch on a real provider, type-check.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This page takes you from nothing to a running Nola program — and the first run needs no API key.
+
+## 1. Create a project
+
+<Tabs syncKey="pm">
+  <TabItem label="npm">
+    ```sh
+    npm create nola
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```sh
+    pnpm create nola
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```sh
+    yarn create nola
+    ```
+  </TabItem>
+  <TabItem label="bun">
+    ```sh
+    bun create nola
+    ```
+  </TabItem>
+</Tabs>
+
+The scaffolder asks for a name and a template — `starter` (the default: typed extraction that runs offline), `empty` (just `nola.config.ts` and `tsconfig.json`), or one of the curated examples. Non-interactive: `npm create nola my-app -- --template extract-resume`. Nola needs **Node ≥ 22**.
+
+Pick **VS Code** at the editor prompt (or pass `--ide vscode`) to get a `launch.json` for F5 debugging and a recommendation for the Nola extension — see [Editor setup](/docs/start/editor-setup/).
+
+## 2. Run it — offline
+
+```sh
+cd my-app
+npm install
+npm start
+```
+
+`npm start` runs `nola run src/main.ts`. The starter's `nola.config.ts` uses `replay("./nola.replay.jsonl")`, so the answers come from a ledger committed with the project — no key, no network. These are the two files it runs:
+
+```tsi
+// src/person.tsi
+export interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+export infer function extractPerson(.message: string) {
+  const person = ask ..`the person described in the text`<Person>;
+  return person;
+}
+```
+
+```ts
+// src/main.ts
+import { extractPerson } from "./person.tsi";
+
+const person = await extractPerson(
+  "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.",
+);
+console.log(JSON.stringify(person));
+```
+
+Expected output:
+
+```sh
+{"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}
+```
+
+- `.message` is a **contextual parameter** — its value is shown to the model.
+- `` ask ..`…`<Person> `` is an **extractor**: it asks the model for a `Person`, and `ask` resolves it. Raw intents are resolved with `ask`, never a bare `await`.
+- The `.tsi` import keeps its extension, and plain TypeScript `await`s the returned intent — that is what runs the inference.
+
+## 3. Switch on a real provider
+
+Edit `nola.config.ts`:
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    // Reads OPENAI_API_KEY from the environment at the first ask.
+    default: openai({ model: "gpt-5-mini" }),
+  },
+});
+```
+
+Put `OPENAI_API_KEY=…` in a `.env` file at the project root (the dev loader reads it; production reads the real environment) and run `npm start` again. `anthropic({ model })` and `google({ model })` work the same way — see [Providers](/docs/config/providers/).
+
+Why switch now? The replay ledger is strict: once you edit a prompt or a type, the recorded entry no longer matches and replay fails with `NOLA3008` instead of silently calling the network. Either switch to a live provider or re-record the ledger — see [Record and replay](/docs/config/record-and-replay/).
+
+## 4. Check and build
+
+```sh
+npx nola check          # type-checks .tsi and .ts together, positions mapped back to .tsi
+npx nola build          # lowers every .tsi into dist/ (+ a self-configuring dist/nola.config.js)
+```
+
+`nola build` writes `dist/src/person.tsi.js` (with a source map and a `.tsi.d.ts` next to it) and a `dist/nola.config.js` that the built modules import, so they run under plain `node` with no loader. It compiles `.tsi` files only — a plain `.ts` entry like `src/main.ts` is not part of its output; see [Deploying](/docs/guides/deploying/) for the production recipe.
+
+`nola-lang` is a devDependency; the app itself depends on `@nola-lang/runtime` and `@nola-lang/providers`.
+
+## What to read next
+
+- [Project anatomy](/docs/start/project-anatomy/) — what every file in the scaffold is for.
+- [Add Nola to an existing project](/docs/start/add-to-existing-project/) — retrofit instead of scaffold.
+- [Editor setup](/docs/start/editor-setup/) — IntelliSense and F5 debugging in `.tsi`.
+- [The mental model](/docs/language/mental-model/) — the five ideas the language rests on.
+- [Examples on GitHub](https://github.com/nola-lang/nola/tree/main/examples) — ten runnable projects.
+
+Next: [Add Nola to an existing project](/docs/start/add-to-existing-project/)

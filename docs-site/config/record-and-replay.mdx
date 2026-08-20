@@ -1,0 +1,54 @@
+---
+title: Record and replay
+description: record(provider, path) writes a fingerprint-keyed JSONL ledger; replay(path) serves it strictly offline. What re-keys an entry, and the NOLA_RECORD pattern.
+sidebar:
+  order: 70
+---
+
+`record` and `replay` turn a live provider into a deterministic one: record once, replay offline forever. They are what make the starter's first run keyless.
+
+```ts
+// nola.config.ts
+import { openai, record, replay } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+const live = process.env.NOLA_RECORD === "1";
+
+export default defineConfig({
+  providers: {
+    default: live
+      ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
+      : replay("./nola.replay.jsonl"),
+  },
+});
+```
+
+```sh
+NOLA_RECORD=1 nola run src/main.ts   # talks to the provider, appends every exchange to the ledger
+nola run src/main.ts                 # offline: answers come from the ledger
+```
+
+## The ledger
+
+`record(inner, path)` wraps a real provider and appends every exchange to a JSONL file — one JSON object per line, keyed by the **fingerprint** of the exact request and carrying the provider's response text. It is human-readable, diff-friendly, and meant to be committed for deterministic tests. A ledger that cannot be read, or a line that is not valid JSON or lacks its fingerprint/response, fails at load with [`NOLA3007`](/docs/reference/error-codes/#nola3007).
+
+## Replay is strict
+
+`replay(path)` serves answers back from the ledger. A request with no matching entry fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008) — never a silent network call. That is the point: a test cannot accidentally go live, and a stale ledger announces itself.
+
+## What re-keys an entry
+
+The fingerprint covers the whole request, so any of these changes produce a new key and a replay miss:
+
+- the composed prompt — the instruction text *and* the contextual values the ask saw;
+- the extractor's type / schema;
+- provider params (`temperature`, `maxOutputTokens`, `providerOptions`);
+- the provider name.
+
+Edit a `.tsi` file, add an ask, or change a type, and you re-record: run once with `NOLA_RECORD=1`, commit the new ledger.
+
+## The starter's keyless first run
+
+`npm create nola` ships `nola.replay.jsonl` alongside `src/person.tsi` and a config whose `default` is `replay("./nola.replay.jsonl")` — so `npm start` works with no API key. The moment you change the example, the ledger no longer matches and replay fails loudly; switch the config to a live provider (the comment in the file shows how) or record a fresh ledger.
+
+Next: [The nola CLI](/docs/tooling/cli/)

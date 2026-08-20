@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -68,6 +68,24 @@ describe("runSkillInstall", () => {
     const code = await runSkillInstall({ dir, agents: "none" }, { interactive: false, prompter: p });
     expect(code).toBe(0);
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+  });
+
+  it("a stale file is reported, and --force replaces it", async () => {
+    const dir = await tmp();
+    await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
+    const old = "<!-- nola-skill v0.0.1 — regenerate with: nola skill install --force -->\nold\n";
+    await writeFile(join(dir, ".cursor", "rules", "nola.mdc"), old);
+
+    const held = scripted([]);
+    expect(await runSkillInstall({ dir, agents: "cursor" }, { interactive: false, prompter: held })).toBe(0);
+    expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).toBe(old);
+    expect(held.notes.join("\n")).toContain("--force");
+
+    const forced = scripted([]);
+    expect(
+      await runSkillInstall({ dir, agents: "cursor", force: true }, { interactive: false, prompter: forced }),
+    ).toBe(0);
+    expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).not.toBe(old);
   });
 
   it("skipped notes surface (existing AGENTS.md)", async () => {

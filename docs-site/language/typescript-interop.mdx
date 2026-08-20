@@ -1,0 +1,121 @@
+---
+title: TypeScript interop
+description: Crossing the .tsi/.ts boundary both ways — importing .tsi from .ts, importing plain TS from .tsi with ./x.js, where the types come from, and companion modules.
+sidebar:
+  order: 100
+---
+
+A Nola project mixes `.tsi` and `.ts` files freely. The boundary is crossed in both directions; this page is the set of rules for each.
+
+## .ts importing .tsi
+
+Plain TypeScript imports a `.tsi` module with the **literal extension**:
+
+```ts
+// right.ts
+import { extractPerson } from "./person.tsi";     // RIGHT
+```
+
+```ts
+// not-checked
+import { extractPerson } from "./person";         // WRONG — unresolved
+import { extractPerson } from "./person.js";      // WRONG — no such file
+```
+
+```tsi
+// person.tsi
+export interface Person { name: string; age: number }
+
+export infer function extractPerson(.text: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+Where the types come from depends on who is looking:
+
+- **The editor** — the VS Code extension's tsserver plugin gives `.ts` files full types for `.tsi` imports and go-to-definition onto the `infer function` ([Editor setup](/docs/start/editor-setup/)).
+- **`nola check`** — lowers the `.tsi` files and type-checks them *together with* the project's `.ts` files; diagnostics are mapped back to `.tsi` positions. Plain `tsc` over `src` is not a supported check path — it cannot parse `.tsi`.
+- **Built output** — `nola build` emits `<name>.tsi.js` + `<name>.tsi.d.ts` pairs, so consumers of the built package get types normally.
+- **Plain `tsc` or framework builds that must resolve `.tsi` imports** (for example `next build`, or `tsc --noEmit` in CI): set `"allowArbitraryExtensions": true` and run `nola declarations` (or let a bundler plugin do it) to write adjacent `<name>.d.tsi.ts` files. Gitignore them — the editor hides them next to a live `.tsi`, and `nola check` ignores them.
+
+## .tsi importing plain TS
+
+Use the standard NodeNext `.js` specifier — `./helpers.js` finds the on-disk `helpers.ts`:
+
+```ts
+// tickets.ts
+export async function createTicket(title: string, priority: number): Promise<string> {
+  return `${title}:${priority}`;
+}
+```
+
+```tsi
+// file-ticket.tsi
+import { createTicket } from "./tickets.js";      // RIGHT — NodeNext specifier, file on disk is tickets.ts
+
+export infer function fileTicket(.request: string) {
+  return ask createTicket(..`a short ticket title`<string>, 2);
+}
+```
+
+```ts
+// not-checked
+import { createTicket } from "./tickets.ts";      // WRONG — TS5097
+import { createTicket } from "./tickets";         // WRONG — TS2835
+```
+
+`nola check` and the editor map the `.js` specifier natively, and the `nola run` loader falls back from a missing relative `./x.js` to `x.ts` (a real on-disk `.js` always wins). A literal `./helpers.ts` import also runs under Node's native type stripping, but it needs `allowImportingTsExtensions` under `nola check` and the specifier survives into built output where no `.ts` exists — prefer the `.js` form.
+
+## Types from another file
+
+Types imported from another file are carried into the extractor schema automatically:
+
+```ts
+// models.ts
+export interface Person {
+  name: string;
+  age: number;
+}
+```
+
+```tsi
+// report.tsi
+import type { Person } from "./models.js";
+
+export infer function extractPerson(.text: string) {
+  return ask ..`the person described in the text`<Person>;
+}
+```
+
+Behind the scenes the compiler generates a **companion module** — a type carrier named in the `*.nola.*` filename namespace — for each type source it needs. Two rules follow:
+
+- `*.nola.*` filenames are reserved. A hand-written file with such a name is [`NOLA2006`](/docs/reference/error-codes/#nola2006); rename it.
+- Never import a `*.nola.*` module yourself — only generated code does. If the compiler cannot locate the type source an import points at, that is [`NOLA2007`](/docs/reference/error-codes/#nola2007).
+
+```ts
+// not-checked
+import { Person } from "./models.nola.js";        // WRONG — internal
+import type { Person } from "./models.js";        // RIGHT
+```
+
+## tsconfig
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowArbitraryExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
+
+`include` must be directory-style (`["src"]`, never `["src/**/*.ts"]`) so the editor tooling can admit `.tsi` files into the program while plain `tsc` ignores them; `module` / `moduleResolution` are NodeNext (hence the `./x.js` specifiers); `allowArbitraryExtensions` is required for the `.tsi` declaration pairs.
+
+Next: [Restrictions and reserved syntax](/docs/language/restrictions/)

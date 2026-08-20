@@ -1,0 +1,75 @@
+---
+title: Classification
+description: Classify against closed label sets with the TypeScript types you already have — string-literal unions, string enums, inline unions — and add confidence.
+sidebar:
+  order: 20
+---
+
+A closed label set beats free text every time: the set lowers to a JSON Schema `enum`, the provider's structured output enforces it, and the runtime re-validates the answer — a wrong label triggers a correction retry that lists the allowed values. The label set is the TypeScript type you already have.
+
+## Three native forms
+
+```tsi
+// src/classify.tsi
+export type Category = "billing" | "refund" | "fraud" | "other";
+
+export enum Sentiment {
+  Positive = "positive",
+  Neutral = "neutral",
+  Negative = "negative",
+}
+
+export infer function classifyMessage(.message: string) {
+  const category = ask ..`the category of the customer message`<Category>;
+  const sentiment = ask ..`the overall sentiment of the message`<Sentiment>;
+  const urgent = ask ..`does the message need urgent attention`<"yes" | "no">;
+  return { category, sentiment, urgent: urgent === "yes" };
+}
+```
+
+- A **string-literal union alias** (`Category`) — the lightest form; the result is typed as the union.
+- A **string enum** (`Sentiment`) — also a runtime value, so consumers compare with `Sentiment.Negative`.
+- An **inline union** (`<"yes" | "no">`) — handy for a one-off, mapped to a boolean in plain TypeScript right there.
+
+No separate schema DSL and no generated mirror types; the three asks share `.message` because context belongs to the invocation.
+
+## Consuming the result
+
+```ts
+// src/main.ts
+import { classifyMessage, Sentiment } from "./classify.tsi";
+
+const result = await classifyMessage("I was charged twice for order #4711 and nobody answers the phone.");
+
+if (result.category === "fraud" || (result.sentiment === Sentiment.Negative && result.urgent)) {
+  console.log("escalate", result);
+} else {
+  console.log("queue", result);
+}
+```
+
+Once an `ask` returns, its value is an ordinary typed value — branch on it, pass it around, put it in an object.
+
+## Confidence and rationale
+
+Ask for them as further typed values in the same invocation:
+
+```tsi
+// src/classify-confident.tsi
+export type Category = "billing" | "refund" | "fraud" | "other";
+
+export infer function classifyWithConfidence(.message: string) {
+  const category = ask ..`the category of the customer message`<Category>;
+  const confidence = ask ..`how confident is the "${category}" classification, from 0 to 1`<number>;
+  const rationale = ask ..`one sentence explaining why the message is "${category}"`<string>;
+  return { category, confidence, rationale };
+}
+```
+
+Asks in one invocation share the contextual parameters, but not each other's answers — the second and third asks see `category` only because it is interpolated with `${}`. See [The ask operator](/docs/language/ask/).
+
+## What is not there yet
+
+Per-label descriptions — a hint attached to each variant of the union or enum — have no Nola equivalent at 0.1.x (a planned follow-up). Until then, put the guidance in a JSDoc comment on the alias or in the instruction text.
+
+Next: [Function calling](/docs/guides/function-calling/)

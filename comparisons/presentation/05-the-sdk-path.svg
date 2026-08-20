@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect id="background" width="1920" height="1080" fill="#FAFBFC"/>
+  <text x="100" y="98" font-family="Roboto Mono" font-size="20" font-weight="500" letter-spacing="2.5" fill="#0E7C86">THE SDK PATH</text>
+  <text x="100" y="158" font-family="Inter" font-size="54" font-weight="700" fill="#161C24">Your types, then the same fields in zod</text>
+  <text x="100" y="204" font-family="Inter" font-size="23" fill="#5B6573">LangChain.js is the same shape as the Vercel column &#8212; a zod mirror and a hand-written date bridge.</text>
+  <rect x="100" y="280" width="554" height="640" rx="14" fill="#F2F9F9" stroke="#0E7C86" stroke-width="2"/>
+  <text x="128" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#0A5A62">Nola</text>
+  <text x="128" y="362" font-family="Inter" font-size="18" fill="#437A80">one file &#183; no codegen &#183; no second schema</text>
+  <text x="128" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// types.ts &#8212; the types you already have</text>
+  <text x="128" y="442" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">export interface OrderRequest {</text>
+  <text x="128" y="464" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  customer: Customer;</text>
+  <text x="128" y="486" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  shipTo: Address;</text>
+  <text x="128" y="508" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  items: LineItem[];</text>
+  <text x="128" y="530" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  needBy?: Date;</text>
+  <text x="128" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority: "standard" | "rush";</text>
+  <text x="128" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
+  <text x="128" y="618" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// triage.tsi &#8212; the whole LLM seam</text>
+  <text x="128" y="640" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">const order =</text>
+  <text x="128" y="662" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">  ask ..`the order request`&lt;OrderRequest&gt;;</text>
+  <text x="128" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">placeOrder(order);</text>
+  <text x="128" y="728" font-family="Roboto Mono" font-size="14.5" fill="#1E7A3C">// needBy is already a real Date</text>
+  <rect x="683" y="280" width="554" height="640" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
+  <text x="711" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#161C24">Vercel AI SDK</text>
+  <text x="711" y="362" font-family="Inter" font-size="18" fill="#5B6573">generateObject &#183; zod mirror</text>
+  <text x="711" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// schemas.ts &#8212; the zod mirror of types.ts</text>
+  <text x="711" y="442" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const OrderRequestSchema = z.object({</text>
+  <text x="711" y="464" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  customer: CustomerSchema,</text>
+  <text x="711" y="486" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  shipTo: AddressSchema,</text>
+  <text x="711" y="508" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  items: z.array(LineItemSchema),</text>
+  <text x="711" y="530" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  needBy: z.string().optional(),</text>
+  <text x="711" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority: z.enum(["standard", "rush"]),</text>
+  <text x="711" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">});</text>
+  <text x="711" y="618" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// main.ts</text>
+  <text x="711" y="640" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const { object: raw } = await generateObject({</text>
+  <text x="711" y="662" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  model, schema: OrderRequestSchema,</text>
+  <text x="711" y="684" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  prompt: `Extract the order request...`,</text>
+  <text x="711" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">});</text>
+  <text x="711" y="728" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const order: OrderRequest = { ...raw,</text>
+  <text x="711" y="750" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  needBy: raw.needBy ? new Date(raw.needBy)</text>
+  <text x="711" y="772" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">                     : undefined };</text>
+  <rect x="1266" y="280" width="554" height="640" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
+  <text x="1294" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#161C24">OpenAI SDK</text>
+  <text x="1294" y="362" font-family="Inter" font-size="18" fill="#5B6573">no framework &#183; and the longest of the six</text>
+  <text x="1294" y="420" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// schemas.ts &#8212; strict mode forbids</text>
+  <text x="1294" y="442" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// .optional(), so every hole is .nullable()</text>
+  <text x="1294" y="464" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  company: z.string().nullable(),</text>
+  <text x="1294" y="486" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  needBy: z.string().nullable(),</text>
+  <text x="1294" y="530" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// main.ts</text>
+  <text x="1294" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const res = await client.responses.parse({</text>
+  <text x="1294" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  model,</text>
+  <text x="1294" y="596" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  input: [{ role: "user", content: prompt }],</text>
+  <text x="1294" y="618" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  text: { format: zodTextFormat(</text>
+  <text x="1294" y="640" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">    OrderRequestSchema, "order_request") },</text>
+  <text x="1294" y="662" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">});</text>
+  <text x="1294" y="684" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const raw = res.output_parsed;</text>
+  <text x="1294" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const order: OrderRequest = {</text>
+  <text x="1294" y="728" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  customer: { name: raw.customer.name,</text>
+  <text x="1294" y="750" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">    company: raw.customer.company</text>
+  <text x="1294" y="772" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">      ?? undefined },</text>
+  <text x="1294" y="794" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  shipTo: raw.shipTo, items: raw.items,</text>
+  <text x="1294" y="816" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">  needBy: raw.needBy ? new Date(raw.needBy)</text>
+  <text x="1294" y="838" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">                     : undefined,</text>
+  <text x="1294" y="860" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority: raw.priority,</text>
+  <text x="1294" y="882" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">};</text>
+  <text x="100" y="985" font-family="Inter" font-size="24" font-weight="500" fill="#2A323C">Every SDK path declares the model twice and hand-writes the bridge back. The compiler cannot see the two drift apart.</text>
+</svg>

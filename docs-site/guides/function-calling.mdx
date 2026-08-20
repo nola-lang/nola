@@ -1,0 +1,92 @@
+---
+title: Function calling
+description: Let the model fill a function's arguments and run it — an async helper, the call intent, the hint form, withRetry idempotency, one round trip for all slots.
+sidebar:
+  order: 40
+---
+
+When you already have a function that *does* something, do not extract its arguments one at a time and then call it. Make the call itself the intent: the model fills every extractor-shaped argument in one provider call, and the function runs with the results.
+
+## The helper
+
+Ordinary TypeScript, nothing Nola about it:
+
+```ts
+// src/tickets.ts
+export async function createTicket(title: string, priority: number): Promise<string> {
+  const res = await fetch("https://example.test/tickets", {
+    method: "POST",
+    body: JSON.stringify({ title, priority }),
+  });
+  return (await res.json()).id as string;
+}
+```
+
+## The call intent
+
+The `.tsi` imports the helper with the NodeNext `.js` specifier and gives the call extractor arguments. That is the whole recipe:
+
+```tsi
+// src/file-ticket.tsi
+import { createTicket } from "./tickets.js";
+
+export infer function fileTicket(.request: string) {
+  // Sigil-less: the extractor argument makes this call an intent. `2` is a
+  // plain argument and is passed through untouched.
+  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  return id;
+}
+```
+
+`createTicket` is async, but `id` is a `string`, not a `Promise<string>`: a call intent awaits a promise-returning callee itself (`ask` ≈ `await`), so `await ask createTicket(…)` is redundant.
+
+## Adding instruction text
+
+The marker form is the only spelling that carries a hint for the call:
+
+```tsi
+// src/file-ticket-carefully.tsi
+import { createTicket } from "./tickets.js";
+
+export infer function fileTicketCarefully(.request: string) {
+  return ask createTicket`file the ticket exactly as the customer described it`(
+    ..`a short ticket title`<string>,
+    ..`priority 1-5, where 1 is most urgent`<number>,
+  );
+}
+```
+
+Every slot needs an explicit `<T>` ([`NOLA2004`](/docs/reference/error-codes/#nola2004)), and all slots of one call resolve together in a single provider round trip — the model sees the whole signature and fills the arguments consistently.
+
+## Idempotency
+
+Because the callee runs *inside* the ask, `.withRetry(n)` on a call intent re-invokes it on every failed attempt. Only use it when the target is idempotent. When it is not, split the work: extract the arguments with plain extractors, then call the function in ordinary TypeScript under your own retry policy.
+
+```tsi
+// src/file-ticket-split.tsi
+import { createTicket } from "./tickets.js";
+
+export infer function fileTicketOnce(.request: string) {
+  const title = ask ..`a short ticket title for the request`<string>;
+  const priority = ask ..`priority 1-5, where 1 is most urgent`<number>;
+  return await createTicket(title, priority);   // plain await — runs exactly once
+}
+```
+
+## Timeouts
+
+The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider round trips only. Once the arguments are filled, the callee's own promise runs to completion, exactly like a plain `await createTicket()` in your code — see [Ask options](/docs/config/ask-options/#timeouts).
+
+## Calling from plain TypeScript
+
+```ts
+// src/main.ts
+import { fileTicket } from "./file-ticket.tsi";
+
+const id = await fileTicket("Checkout is down for every customer in the EU — please treat as urgent.");
+console.log("created", id);
+```
+
+The grammar in full — the three spellings, the detection rule, what stays a plain call — is on [Call intents](/docs/language/call-intents/).
+
+Next: [Testing](/docs/guides/testing/)

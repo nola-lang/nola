@@ -1,0 +1,61 @@
+---
+title: Ask options — timeouts, params, system message
+description: ask.timeoutMs and .withTimeout, params (temperature, maxOutputTokens, providerOptions) with nearest-wins merging, and the system.message text.
+sidebar:
+  order: 40
+---
+
+Three knobs shape how an ask reaches the provider: how long an invocation may take, which wire parameters go with the request, and what extra system text every prompt carries.
+
+## Timeouts
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: { default: openai({ model: "gpt-5-mini" }) },
+  ask: { timeoutMs: 60_000 },   // per-invocation; 0 disables
+});
+```
+
+- `ask.timeoutMs` is the default **per-invocation** timeout (60 000 ms when unset). It is the root frame's abort signal: when it elapses, every provider call in that invocation receives the signal. `0` disables it.
+- `.withTimeout(ms)` on the intent an infer function returns overrides it for that invocation — see [Intent methods](/docs/language/intent-methods/).
+- The timeout bounds **provider round trips only**. Once a call intent's arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
+
+## Params
+
+Wire-tuning knobs travel with the intent:
+
+```tsi
+// tuned.tsi
+export infer function tagline(.product: string) {
+  return ask (..`a creative tagline`<string>).withParams({
+    temperature: 0.9,
+    maxOutputTokens: 200,
+    providerOptions: { reasoning: { effort: "low" } },   // passed through to the provider untouched
+  });
+}
+```
+
+- `temperature` and `maxOutputTokens` are typed; `providerOptions` is an opaque, JSON-serializable bag of provider-specific knobs passed through to the provider's `complete()` untouched.
+- **Merge rule:** patch fields win per field, and `providerOptions` merges per key rather than being replaced wholesale — both when chaining `.withParams()` and along the frame chain (nearest wins).
+- Params are part of the ask **fingerprint**: two asks that differ only in params never share a replay or cache entry — see [Record and replay](/docs/config/record-and-replay/).
+
+## System message
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: { default: openai({ model: "gpt-5-mini" }) },
+  system: { message: "Answer in British English." },
+});
+```
+
+`system.message` is extra system-prompt text composed after the Nola protocol preamble on every ask. Use it for global tone and policy; use instruction markers and prompt templates for anything specific to one function or one ask.
+
+Next: [Environments and secrets](/docs/config/environments-and-secrets/)

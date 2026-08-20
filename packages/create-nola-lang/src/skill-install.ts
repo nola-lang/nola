@@ -6,6 +6,8 @@ export interface SkillInstallArgs {
   dir?: string;
   /** raw --agents flag value */
   agents?: string;
+  /** replace files stamped by another version */
+  force?: boolean;
 }
 
 export interface SkillInstallOptions {
@@ -46,10 +48,11 @@ export async function runSkillInstall(args: SkillInstallArgs, opts: SkillInstall
     return 0;
   }
 
-  const result = await writeAgentSkills(dir, agents);
+  const result = await writeAgentSkills(dir, agents, { force: args.force });
   for (const note of result.skipped) prompter.note(note);
-  const message =
-    result.wrote.length > 0 ? `Installed agent skill files: ${result.wrote.join(", ")}` : "Nothing new to write.";
+  let message = "Nothing new to write.";
+  if (result.wrote.length > 0) message = `Installed agent skill files: ${result.wrote.join(", ")}`;
+  else if (result.stale) message = "Nothing written — re-run with --force to replace outdated files.";
   if (prompter.outro) prompter.outro(message);
   else prompter.note(message);
   return 0;

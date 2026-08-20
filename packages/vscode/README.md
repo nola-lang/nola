@@ -27,7 +27,7 @@ extractors at run time.
 The extension expects a project using the `nola-lang` toolchain:
 
 ```bash
-npm create nola@latest my-app
+npm create nola@latest
 ```
 
 The scaffold's editor step writes `.vscode/launch.json` (the debug

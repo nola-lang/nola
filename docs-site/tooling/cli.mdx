@@ -1,0 +1,87 @@
+---
+title: The nola CLI
+description: nola init, build, run, check, declarations and skill — every flag, what each command writes, exit codes, and how npm create nola relates to nola init.
+sidebar:
+  order: 10
+---
+
+The `nola` binary ships in the `nola-lang` package (a devDependency). Run it as `npx nola <command>` or through the scaffold's npm scripts. Every command exits `0` on success and `1` with the errors on stderr; `nola` with no command prints the usage and exits `0`, an unknown command prints it and exits `1`.
+
+```sh
+nola init [dir] [--template <t>|--add] [--ide vscode] [--agents <list>]
+nola build [dir] [--out <dir>]
+nola run <entry>
+nola check [dir]
+nola declarations [dir] [--watch]
+nola skill install [--agents <list>]
+```
+
+## nola init
+
+```sh
+nola init [dir] [--template <name> | --add] [--ide vscode] [--agents claude,cursor,copilot,agents-md]
+```
+
+Scaffolds a new project or retrofits an existing one — the same interactive flow as `npm create nola`.
+
+| Flag | Effect |
+| --- | --- |
+| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`) |
+| `--add` | retrofit the project in `dir` (writes `nola.config.ts`, merges the packages into `package.json`) — see [Add Nola to an existing project](/docs/start/add-to-existing-project/); contradictory with `--template` |
+| `--ide vscode` | write `.vscode/launch.json` and `.vscode/extensions.json` |
+| `--agents <list>` | write agent-skill pointer files (see `nola skill install`) |
+
+## nola build
+
+```sh
+nola build [dir] [--out dist]
+```
+
+Lowers every `.tsi` under `dir` (default `.`; `node_modules`, `.git` and `dist` are skipped) into `--out` (default `dist`), mirroring the source tree: `src/person.tsi` → `dist/src/person.tsi.js` + `.js.map` + `.tsi.d.ts`. For app projects (`build.target: "app"`, the default) it first bundles `nola.config.ts` into `dist/nola.config.js` — a self-configuring module every built file imports — and refuses to overwrite a `dist/nola.config.js` it did not generate. `build.target: "lib"` skips the wiring. Companion modules for cross-file types are emitted as real files. Plain `.ts` files are not compiled by `nola build` — see [Deploying](/docs/guides/deploying/).
+
+## nola run
+
+```sh
+nola run <entry>
+```
+
+Registers the Nola loader for the entry's directory (lowering `.tsi` in memory, loading `nola.config.ts` and a project-root `.env`) and imports the entry — `src/main.ts` or a `.tsi` file. It is the shortcut for `node --import nola-lang/register <entry>`; see [The Node loader](/docs/tooling/node-loader/). The scaffold wires `npm start` to it.
+
+## nola check
+
+```sh
+nola check [dir]
+```
+
+Type-checks the project: lowers every `.tsi` and runs the TypeScript checker over the lowered code **and** the project's `.ts` files (per your `tsconfig.json`), with diagnostics mapped back to `.tsi` positions (`file:line:col NOLA…` or `TS…`). Nola compile errors (`NOLA1xxx`/`2xxx`) are reported first; a hand-written `*.nola.*` file is refused ([`NOLA2006`](/docs/reference/error-codes/#nola2006)). This is the type-check path — plain `tsc` cannot parse `.tsi`.
+
+## nola declarations
+
+```sh
+nola declarations [dir] [--watch]
+```
+
+Emits an adjacent `<name>.d.tsi.ts` next to each `.tsi` so plain `tsc` and framework builds (with `"allowArbitraryExtensions": true`) resolve `.tsi` imports. `--watch` re-emits on every `.tsi` change until Ctrl-C. Gitignore the generated files; the editor hides them next to a live `.tsi`, and `nola check` ignores them. Bundler plugins can do this for you during their build.
+
+## nola skill install
+
+```sh
+nola skill install [--agents claude,cursor,copilot,agents-md | all | none]
+```
+
+Writes pointer files so your coding assistant reads the Nola skill that ships inside `node_modules/nola-lang` — always matching the installed version:
+
+| Agent | File written |
+| --- | --- |
+| `claude` | `.claude/skills/nola/SKILL.md` |
+| `cursor` | `.cursor/rules/nola.mdc` |
+| `copilot` | `.github/instructions/nola.instructions.md` |
+| `agents-md` | `AGENTS.md` (cross-agent pointer: Codex, Gemini CLI, …) |
+
+Without `--agents` it detects the agents your project already uses (`.claude`/`CLAUDE.md`, `.cursor`, `.github`) and adds `agents-md`. The scaffold offers the same step.
+
+## npm create nola and nola init
+
+`npm create nola` runs the `create-nola-lang` package (`create-nola` is a thin alias of it); `nola init` calls the very same flow from the installed toolchain. Use whichever you have at hand — the result is identical.
+
+Next: [The Node loader](/docs/tooling/node-loader/)

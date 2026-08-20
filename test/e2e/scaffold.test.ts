@@ -82,7 +82,14 @@ describe("scaffolded project", () => {
     ]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
-    expect(readFileSync(join(dir, "AGENTS.md"), "utf8")).toContain("node_modules/nola-lang/skills/nola/SKILL.md");
+    // Adapters are self-contained copies, never pointers into node_modules.
+    const agentsMd = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("Where Nola diverges from TypeScript");
+    expect(agentsMd).toContain("<!-- nola-skill v");
+    expect(agentsMd).not.toContain("node_modules/nola-lang/skills");
+    for (const ref of ["syntax.md", "patterns.md", "config.md", "pitfalls.md"]) {
+      expect(existsSync(join(dir, ".claude", "skills", "nola", "references", ref)), ref).toBe(true);
+    }
     linkDeps(dir);
     const out = await run([NOLA, "check"], dir);
     expect(out).toContain("no errors");
@@ -150,8 +157,20 @@ describe("scaffolded project", () => {
     expect(out).toContain("Installed agent skill files");
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(dir, ".claude", "skills", "nola", "SKILL.md"))).toBe(true);
-    // idempotent second run: everything skipped, exit 0
+    // idempotent second run: same version, so nothing is rewritten
     const again = await run([NOLA, "skill", "install", "--agents", "agents-md,claude"], dir);
     expect(again).toContain("already exists");
+    expect(again).toContain("is up to date");
+
+    // a stale stamp is held back until --force
+    const rule = join(dir, ".cursor", "rules", "nola.mdc");
+    mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+    writeFileSync(rule, "<!-- nola-skill v0.0.1 -->\nstale\n");
+    const held = await run([NOLA, "skill", "install", "--agents", "cursor"], dir);
+    expect(held).toContain("--force");
+    expect(readFileSync(rule, "utf8")).toContain("stale");
+    const forced = await run([NOLA, "skill", "install", "--agents", "cursor", "--force"], dir);
+    expect(forced).toContain("Installed agent skill files");
+    expect(readFileSync(rule, "utf8")).toContain("Where Nola diverges from TypeScript");
   });
 });

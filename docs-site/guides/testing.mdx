@@ -1,0 +1,139 @@
+---
+title: Testing without a network
+description: Test Nola code deterministically — mockProvider, forceProvider for hermetic CI, node:test or vitest, and record/replay ledgers.
+sidebar:
+  order: 60
+---
+
+Nola code is deterministic to test when the provider is: a `mockProvider` or a replay ledger answers every ask, `forceProvider` guarantees nothing escapes to the network, and your test runner imports the `.tsi` file like any other module. Every recipe on this page was run against a fresh starter project.
+
+## mockProvider
+
+`mockProvider` takes a **queue** of values (one per ask, in order) or a **function** of the request:
+
+```ts
+// nola.config.ts
+import { mockProvider, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  providers: {
+    default: openai({ model: "gpt-5-mini" }),
+    mock: mockProvider([{ name: "Alice Smith", age: 32, employer: "Acme Corp", job: "engineer" }]),
+    echo: mockProvider((req) => ({ messages: req.messages.length })),
+  },
+  // hermetic: with NOLA_TEST=1 EVERY ask goes to `mock`, even ones pinned with ask with / .withProvider()
+  forceProvider: process.env.NOLA_TEST === "1" ? "mock" : undefined,
+});
+```
+
+`forceProvider` is the one runtime-enforced switch: a provider pinned inside a dependency cannot leak a real call into a test run. Values returned by a mock are still validated against the extractor's schema, so a mock that returns the wrong shape fails the test — useful in itself.
+
+## A test under the loader (node:test)
+
+Node's built-in runner plus the Nola loader needs no extra package:
+
+```ts
+// not-checked — test/person.test.ts
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { extractPerson } from "../src/person.tsi";
+
+test("extracts a person from prose", async () => {
+  const person = await extractPerson("Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.");
+  assert.equal(person.name, "Alice Smith");
+});
+```
+
+```sh
+NOLA_TEST=1 node --import nola-lang/register --test "test/**/*.test.ts"
+```
+
+The loader lowers `.tsi` in memory and applies `nola.config.ts` (and `.env`) before the tests run. Pass test files or a glob — not a bare directory.
+
+## Configuring in code
+
+When a test wants its own provider without touching `nola.config.ts`, configure the runtime programmatically and reset it afterwards:
+
+```ts
+// not-checked — test/mock.test.ts
+import assert from "node:assert/strict";
+import { afterEach, test } from "node:test";
+import { mockProvider } from "@nola-lang/providers";
+import { nolaRuntime } from "@nola-lang/runtime";
+import { extractPerson } from "../src/person.tsi";
+
+afterEach(() => nolaRuntime.reset());
+
+test("configure in code with a mock provider", async () => {
+  nolaRuntime.reset();   // the loader may already have applied nola.config.ts — the config is frozen after the first ask
+  nolaRuntime.configure({ providers: { default: mockProvider([{ name: "Bob", age: 40, employer: "Initech", job: "dev" }]) } });
+  const person = await extractPerson("whatever");
+  assert.equal(person.name, "Bob");
+});
+```
+
+`configure()` after the first ask throws [`NOLA3003`](/docs/reference/error-codes/#nola3003) ("configuration is frozen"); `reset()` first.
+
+## vitest
+
+Vitest transforms modules through Vite, so the `@nola-lang/vite` plugin lowers `.tsi` for it and wires `nola.config.ts` in:
+
+```sh
+npm i -D vitest @nola-lang/vite
+```
+
+```ts
+// not-checked — vitest.config.ts
+import { defineConfig } from "vitest/config";
+import nola from "@nola-lang/vite";
+
+export default defineConfig({
+  plugins: [nola()],
+});
+```
+
+```ts
+// not-checked — test/person.test.ts
+import { expect, test } from "vitest";
+import { extractPerson } from "../src/person.tsi";
+
+test("extracts a person from prose", async () => {
+  const person = await extractPerson("Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.");
+  expect(person.name).toBe("Alice Smith");
+});
+```
+
+```sh
+NOLA_TEST=1 npx vitest run
+```
+
+## Record once, replay forever
+
+For tests against a real model's answers, record a ledger once and replay it in CI:
+
+```ts
+// nola.config.ts
+import { openai, record, replay } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+const live = process.env.NOLA_RECORD === "1";
+
+export default defineConfig({
+  providers: {
+    default: live
+      ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
+      : replay("./nola.replay.jsonl"),
+  },
+});
+```
+
+Commit `nola.replay.jsonl`. Replay is strict: an ask whose prompt, contextual values, type or params changed since recording fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008) instead of silently going live — re-record with `NOLA_RECORD=1` and commit the new ledger. Details: [Record and replay](/docs/config/record-and-replay/).
+
+## What to assert
+
+- Assert on the **typed value** an infer function returns, not on prompt text — prompts are an implementation detail the toolchain may recompose.
+- When routing or retries matter, register a hook in the test config and assert on the **receipt**: `servedBy`, `attempts`, `fingerprint` — see [Observability](/docs/config/observability/).
+- Keep mocks shape-true: a mock answer that violates the schema fails validation exactly like a real one would.
+
+Next: [Error handling](/docs/guides/error-handling/)

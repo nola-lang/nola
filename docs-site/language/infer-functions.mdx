@@ -1,0 +1,79 @@
+---
+title: infer functions
+description: Declaring an infer function — the three forms, the instruction marker, why it is never async, where ask is legal, and how to annotate Intent<T>.
+sidebar:
+  order: 20
+---
+
+An `infer function` is an LLM-backed function. Calling it runs nothing; it returns a lazy, thenable `Intent<T>`, and resolving that intent — with `ask` from another infer function or `await` from plain TypeScript — is what runs the inference.
+
+## Three declaration forms
+
+```tsi
+// forms.tsi
+infer function summarize(.text: string) {
+  return ask ..`a one-sentence summary`<string>;
+}
+
+export infer function classify(.message: string) {
+  return ask ..`the category of the message`<string>;
+}
+
+export infer function triage`triage the ticket like a support lead`(.ticket: string) {
+  return ask ..`the severity: low, medium or high`<"low" | "medium" | "high">;
+}
+```
+
+The third form carries an **instruction marker**: a template literal between the name and the parameter list. Its text is the function's *instruction* — guidance that applies to every `ask` in the invocation. `${expr}` holes interpolate lexical values into the instruction; a `${.member}` hole turns the marker into a prompt template for the function's context block (see [Prompt templates](/docs/language/prompt-templates/)).
+
+## Rules
+
+- **Top-level function declarations only.** `infer` on a method, an arrow function or a function expression is reserved for a later version ([`NOLA1004`](/docs/reference/error-codes/#nola1004)); a declaration nested in another function is [`NOLA2003`](/docs/reference/error-codes/#nola2003).
+- **Never `async`.** `async infer function` is a parse error — an infer function is implicitly awaitable through `Intent`.
+- **`await` is legal in the body**, for ordinary promises: fetch, a database, any library.
+
+  ```tsi
+  // enrich.tsi
+  export infer function enrich(.handle: string, fetchProfile: (h: string) => Promise<string>) {
+    const profile = await fetchProfile(handle);       // ordinary promise
+    return ask ..`the person's job title from: ${profile}`<string>;
+  }
+  ```
+
+- **`ask` only directly inside the body** — not at module level, not inside a nested closure, not even one written inside the infer function ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
+- **Export by name.** `export default infer function` does not parse; write `export infer function f(…)` and let consumers import the name.
+
+## Return type
+
+Leave the return type off and let it infer — every example in the repository does. When you do annotate, the annotation is `Intent<T>`: the body returns a `T`, the way an `async` function body returns `T` under `Promise<T>`.
+
+```tsi
+// get-user.tsi
+import type { Intent } from "@nola-lang/runtime";
+
+interface User {
+  name: string;
+}
+
+export infer function getUser(.message: string): Intent<User> {
+  const user = ask ..`the user described in the message`<User>;
+  return user;
+}
+```
+
+Do not annotate it `Promise<T>`: `Intent<T>` is `PromiseLike<T>`, not a `Promise`, so `nola check` reports `TS2739` (missing `catch`, `finally`, `[Symbol.toStringTag]`).
+
+## Calling from plain TypeScript
+
+```ts
+// main.ts
+import { classify, triage } from "./forms.tsi";
+
+const category = await classify("My card was charged twice.");
+const severity = await triage("Checkout is down for every customer in the EU.");
+console.log(category, severity);
+```
+
+`await` on the returned intent opens an *invocation* and runs it. The intent also carries a few methods you can chain before awaiting — `.withTimeout(ms)`, `.detached()`, `.withProvider(…)` and more — described in [Intent methods](/docs/language/intent-methods/).
+
+Next: [Contextual parameters](/docs/language/contextual-parameters/)

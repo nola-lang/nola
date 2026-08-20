@@ -1,0 +1,14 @@
+import { placeOrder, requestQuote } from "./handlers.js";
+import type { OrderRequest } from "./types.js";
+
+export infer function triageEmail(.email: string) {
+  const kind = ask ..`is this email placing an order or asking for a quote`<"order" | "quote">;
+  if (kind === "order") {
+    const order = ask ..`the order request described in the email`<OrderRequest>;
+    return placeOrder(order);
+  }
+  return ask requestQuote``(
+    ..`one line describing what the customer wants quoted`<string>,
+    ..`the customer's name`<string>,
+  );
+}
