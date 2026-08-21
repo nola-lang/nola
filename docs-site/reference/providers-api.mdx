@@ -39,7 +39,7 @@ Keys are read lazily at the first request. The option interfaces are exported as
 
 ## mockProvider
 
-`mockProvider(source: unknown[] | ((req: ProviderRequest) => unknown)): NolaProvider` — a queue of values served one per ask in order, or a function of the request. Deterministic, no network.
+`mockProvider(source: unknown[] | ((req: ProviderRequest) => unknown)): NolaProvider` — a queue of values served one per **provider call** in order (an ask that needs its correction turn, or a `.withRetry()` attempt, consumes the next entry; an empty queue throws), or a function of the request. Deterministic, no network.
 
 ## Combinators
 
@@ -82,7 +82,7 @@ interface ProviderRequest {
   signal?: AbortSignal;                              // the invocation's timeout
 }
 
-type ProviderResponse = { text: string; durationMs?: number };
+type ProviderResponse = { text: string; durationMs?: number };   // not re-exported by @nola-lang/runtime — the return type is structural
 ```
 
 A minimal implementation over `fetch`:

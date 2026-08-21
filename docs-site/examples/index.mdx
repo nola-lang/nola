@@ -9,7 +9,7 @@ The repository ships ten standalone example projects, each built around one cano
 
 | Example | Demonstrates | Scaffold |
 | --- | --- | --- |
-| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app` (the starter is this example) |
+| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app` (the starter is this example on a committed replay ledger instead of the mock) |
 | [extract-resume](/docs/examples/extract-resume/) | Nested arrays of objects, JSDoc schema descriptions | `npm create nola my-app -- --template extract-resume` |
 | [extract-invoice](https://github.com/nola-lang/nola/tree/main/examples/extract-invoice) | Same-file type references, optional fields | `npm create nola my-app -- --template extract-invoice` |
 | [classify-message](/docs/examples/classify-message/) | Closed label sets: union alias, string enum, inline union | `npm create nola my-app -- --template classify-message` |
@@ -31,6 +31,6 @@ cd examples/extract-person
 npx nola run src/main.ts      # mock provider, deterministic
 ```
 
-Each example's `nola.config.ts` contains the one-line change for a real provider (`openai({ model: "gpt-5-mini" })` with `OPENAI_API_KEY` set).
+Most examples' `nola.config.ts` carry the commented one-line switch to a real provider (`openai({ model: "gpt-5-mini" })` with `OPENAI_API_KEY` set); for the rest, replace the `mockProvider(...)` default with that call — see [Providers](/docs/config/providers/).
 
 Next: [extract-person](/docs/examples/extract-person/)

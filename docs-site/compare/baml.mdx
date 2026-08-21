@@ -15,7 +15,7 @@ BAML is a domain-specific language for LLM functions: you declare `class`es and 
 
 Classify a support message into a category plus order ids, then write a reply that depends on the category.
 
-**BAML** — two files: the `.baml` source and the TypeScript that calls the generated client.
+**BAML** — the `.baml` source, a `generators.baml` that tells `baml-cli generate` to emit the TypeScript client, and the TypeScript that calls it.
 
 ```txt
 // baml_src/triage.baml

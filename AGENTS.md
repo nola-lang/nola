@@ -811,7 +811,12 @@ plugin expects, adapt the *plugin*, never the test expectations.
   link, `test/docs-error-codes.test.ts` pins code coverage, and
   `node scripts/check-docs.mjs` compiles every `tsi` fence against the workspace
   build. A change to user-facing language or config surface updates `docs-site/`
-  in the same commit, exactly as it updates the agent skill.
+  in the same commit, exactly as it updates the agent skill. Version numbers
+  never appear in docs prose; the only literals allowed are Nola-package
+  dependency entries in `package.json` samples, and `scripts/release.mjs`
+  rewrites those (in `docs-site/` AND the skill) to `^<version>` on every bump —
+  `test/docs-site.test.ts` fails on any entry that disagrees with the lockstep
+  version.
 
 ## TDD workflow
 

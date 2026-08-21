@@ -41,7 +41,8 @@ export infer function tagline(.product: string) {
 
 - `temperature` and `maxOutputTokens` are typed; `providerOptions` is an opaque, JSON-serializable bag of provider-specific knobs passed through to the provider's `complete()` untouched.
 - **Merge rule:** patch fields win per field, and `providerOptions` merges per key rather than being replaced wholesale — both when chaining `.withParams()` and along the frame chain (nearest wins).
-- Params are part of the ask **fingerprint**: two asks that differ only in params never share a replay or cache entry — see [Record and replay](/docs/config/record-and-replay/).
+- Params are part of the ask **fingerprint**: two asks that differ only in params never share a replay entry — see [Record and replay](/docs/config/record-and-replay/).
+- **What acts on them:** params reach the provider's `complete()` as `request.params`, and a custom provider can honor them. The built-in `openai`, `anthropic` and `google` providers do **not** forward them to the wire in 0.1.x — their request bodies are fixed by the factory options, so `.withParams({ temperature: 0.9 })` changes the fingerprint and nothing else there. For a real output cap with Anthropic use the factory's `maxOutputTokens` option — see [Providers](/docs/config/providers/).
 
 ## System message
 

@@ -56,7 +56,7 @@ export infer function fileTicketCarefully(.request: string) {
 }
 ```
 
-Every slot needs an explicit `<T>` ([`NOLA2004`](/docs/reference/error-codes/#nola2004)), and all slots of one call resolve together in a single provider round trip — the model sees the whole signature and fills the arguments consistently.
+Every slot needs an explicit `<T>` ([`NOLA2004`](/docs/reference/error-codes/#nola2004)), and all slots of one call resolve together in a single provider round trip — the model is asked for the arguments of the named function, sees each slot's type and instruction (plus the hint, if any), and fills every slot of the same call consistently. Plain, non-extractor arguments are not shown to it.
 
 ## Idempotency
 

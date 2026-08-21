@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-Everything valid in TypeScript is valid in a `.tsi` file. This page lists only the additions, one line each, with a link to the page that explains it.
+Everything valid in TypeScript is valid in a `.tsi` file, with one exception — `ask` is a reserved word (see [Not valid](#not-valid)). This page lists only the additions, one line each, with a link to the page that explains it.
 
 ## Declarations
 
@@ -106,6 +106,6 @@ export async function createTicket(title: string, priority: number): Promise<str
 
 ## Not valid
 
-`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `const .x = …`, `..name` on a parameter, `__nola*` identifiers, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/).
+`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `const .x = …`, `..name` on a parameter, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/). Reserved by convention but not rejected: `__nola*` identifiers — the compiler emits names with that prefix, so shadowing one breaks the lowered code without a diagnostic.
 
 Next: [Intent API](/docs/reference/intent-api/)

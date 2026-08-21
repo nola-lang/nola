@@ -29,7 +29,7 @@ After loading, the runtime holds a frozen `ResolvedNolaConfig`: `providers` (fro
 
 ## Types
 
-`NolaConfig`, `NolaHook`, `NolaMiddleware`, `NolaCacheStore`, `NolaLogLevel` and `NolaProvider` are exported from `@nola-lang/runtime`; `defineConfig`, `resolveNolaConfig`, `resolveCompilerConfig` and `resolveBuildConfig` too.
+`NolaConfig`, `NolaHook`, `NolaMiddleware`, `NolaLogLevel` and `NolaProvider` are exported from `@nola-lang/runtime`; `defineConfig`, `resolveNolaConfig`, `resolveCompilerConfig` and `resolveBuildConfig` too. (`NolaCacheStore` is not re-exported — the `cache` section validates but is not served in 0.1.x.)
 
 ```ts
 // nola.config.ts

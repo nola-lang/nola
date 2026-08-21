@@ -33,7 +33,7 @@ Calling an infer function runs nothing. It returns an `Intent<T>` — a lazy, th
 
 ## 4. One dot in, two dots out
 
-A parameter with one leading dot — `.message` — is a **contextual parameter**: its value flows *into* the model's context for every `ask` in that invocation. A plain parameter (`userId`) is an ordinary argument; the model sees its name and type, never its value. Two dots — `` ..`instruction` `` — is an **extractor**: a value comes *out* of the model. One dot in, two dots out.
+A parameter with one leading dot — `.message` — is a **contextual parameter**: its value flows *into* the model's context for every `ask` in that invocation. A plain parameter (`userId`) is an ordinary argument; the model sees only that it exists — its name in the signature — never its value. Two dots — `` ..`instruction` `` — is an **extractor**: a value comes *out* of the model. One dot in, two dots out.
 
 ## 5. Lowering: the JSX model
 

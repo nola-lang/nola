@@ -20,7 +20,7 @@ nola run src/main.ts                             # the same, registered for the 
 - **Registers Node module hooks** (`module.register`) for the project and lowers every imported `.tsi` in memory — nothing is written to disk.
 - **Inlines source maps** that point at the on-disk `.tsi` files, so breakpoints bind in `.tsi` source and, with `--enable-source-maps`, stack traces report `.tsi` positions.
 - **Loads `nola.config.ts`** — bundled and evaluated before your entry runs — and configures the process. The config itself cannot import `.tsi` ([`NOLA3012`](/docs/reference/error-codes/#nola3012)): it is evaluated before the hooks register.
-- **Applies a project-root `.env`** first, dotenv-style: a variable already present in the real environment wins over the file.
+- **Applies the `.env` beside your `nola.config.ts`** before evaluating it, dotenv-style: a variable already present in the real environment wins over the file. (No config file means no `.env` is read.)
 - **Falls back from `./x.js` to `x.ts`** for a missing relative specifier (a real on-disk `.js` always wins) — which is why `.tsi` files import plain TS with the NodeNext `.js` form.
 - **Serves companion modules** for types imported from other files, so cross-file schemas work without any generated files on disk.
 

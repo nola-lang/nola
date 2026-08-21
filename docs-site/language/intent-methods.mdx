@@ -30,7 +30,7 @@ export infer function tuned(.text: string) {
 
 ## On the intent an infer function returns
 
-These two act when the intent *roots* an invocation, which is why they are typically used from plain TypeScript:
+`.withTimeout()` acts when the intent *roots* an invocation, which is why it is typically used from plain TypeScript; `.detached()` does the opposite job — it matters only when the intent is asked from **inside another infer function**, where it would otherwise inherit the caller's frame (from plain TypeScript there is no parent frame, so it is a no-op there):
 
 ```tsi
 // person.tsi
@@ -47,8 +47,19 @@ import { extractPerson } from "./person.tsi";
 
 const text = "Alice Smith, 32, is a staff engineer at Acme Corp.";
 const person = await extractPerson(text).withTimeout(30_000);
-const loose = await extractPerson(text).detached();   // do not inherit the caller frame's context
-console.log(person, loose);
+console.log(person);
+```
+
+```tsi
+// brief.tsi
+import { extractPerson } from "./person.tsi";
+
+export infer function brief(.text: string, .audience: string) {
+  // extractPerson runs with its own context only — brief's .text/.audience are not composed into its prompts
+  const person = ask extractPerson(text).detached();
+  const intro = ask ..`a one-line introduction of the person for this audience`<string>;
+  return { person, intro };
+}
 ```
 
 - **`.withTimeout(ms)`** — the per-invocation timeout when this intent roots the invocation; overrides `ask.timeoutMs` from the config; `0` disables. It bounds provider round trips only — see [Ask options](/docs/config/ask-options/).

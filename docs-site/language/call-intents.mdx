@@ -31,7 +31,7 @@ export infer function file(.request: string) {
 }
 ```
 
-Use the sigil-less form by default; reach for the hint marker when the call needs its own instruction, and for the empty marker when every argument is plain but you still want the model to *decide to call*.
+Use the sigil-less form by default; reach for the hint marker when the call needs its own instruction. The empty marker on a call with no extractor arguments wraps it as an intent — it gets the uniform `ask` shape, a receipt and a history entry — but makes **no provider call**: with nothing to fill, the callee simply runs with the literal arguments.
 
 ## The detection rule
 
@@ -52,9 +52,9 @@ export infer function place(.request: string) {
 
 ## What stays a plain call
 
-These are ordinary calls, and the extractor is just a value argument: an extractor inside a ternary, a logical expression, a spread element or a template substitution; a nested call — in `` outer(inner(..`x`<T>)) `` the *inner* call is the intent and `outer` receives an `Askable`; `new Foo(…)`, `super(…)`, `import(…)`, optional calls (`fn?.(…)`, `a?.b(…)`); and exotic callees (`getFn()(…)`, IIFEs). Use the marker form if you want a call intent on one of those.
+These are ordinary calls, and the extractor is just a value argument: an extractor inside a ternary, a logical expression, a spread element or a template substitution; a nested call — in `` outer(inner(..`x`<T>)) `` the *inner* call is the intent and `outer` receives an `Askable`; `new Foo(…)`, `super(…)`, `import(…)`, optional calls (`fn?.(…)`, `a?.b(…)`); and exotic callees (`getFn()(…)`, IIFEs). The marker form rescues the first group — a ternary, logical, spread, template-substitution or nested position, or an exotic callee — but not `new`, `super`, `import()` or optional calls: those can never be call intents.
 
-Parenthesizing an extractor does NOT opt out. To pass an intent as a plain value, bind it to a variable first:
+Do not parenthesize an extractor argument — `` fn((..`x`<T>)) `` is not supported. To pass an intent as a plain value, bind it to a variable first:
 
 ```tsi
 // plain-value.tsi
@@ -77,7 +77,7 @@ Every extractor used as a call-intent slot must carry an explicit `<T>` — [`NO
 
 Two consequences:
 
-- The callee runs INSIDE the ask. A rejected promise fails the ask at the call site (a `NolaResolutionError` carrying the intent's location), and `.withRetry(n)` re-runs the WHOLE ask, callee included. Do not put `.withRetry` on a call intent whose target is not idempotent.
+- The callee runs INSIDE the ask. A rejected promise fails the ask at the call site with the callee's own error, unwrapped (a `NolaResolutionError` is raised only when the target is not a function), and `.withRetry(n)` re-runs the WHOLE ask, callee included. Do not put `.withRetry` on a call intent whose target is not idempotent.
 - The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider round trips only. Once the arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
 
 ## A real helper

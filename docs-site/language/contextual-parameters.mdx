@@ -5,14 +5,14 @@ sidebar:
   order: 30
 ---
 
-A parameter written with one leading dot is a **contextual parameter**: its name, type and run-time value are composed into the prompt of every `ask` in that invocation. A plain parameter is an ordinary argument — the model sees its name and type, never its value.
+A parameter written with one leading dot is a **contextual parameter**: its name, type and run-time value are composed into the prompt of every `ask` in that invocation. A plain parameter is an ordinary argument — the model sees its name in the function's signature and that no value is available; never its type or value.
 
 ## What the model sees
 
 | Parameter | In the prompt |
 | --- | --- |
 | `.issue: Issue` (contextual) | name, type **and value** |
-| `fallback: string` (plain) | name and type only |
+| `fallback: string` (plain) | name only, marked `(value not available)` |
 
 ```tsi
 // classify-issue.tsi

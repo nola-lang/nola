@@ -66,7 +66,7 @@ Available in an extractor's backticks or a call hint (`ExtractPromptScope`): `.t
 ## Safe by default
 
 - A function template that never reads `.next` gets the rest of the prompt appended after it; an extractor template that never reads `.format` gets the JSON response rules appended. Read them only to choose WHERE they go (wrapping).
-- `.next`, `.default` and `.format` are memoized getters — reading one twice does not compose twice.
+- `.next` is a memoized getter — reading it twice does not compose the rest of the prompt twice. `.default` and `.format` are pure renders, safe to read more than once.
 
 ## Rendering
 

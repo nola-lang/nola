@@ -1,11 +1,11 @@
 ---
 title: VS Code extension
-description: nola.nola-vscode 0.1.2 — features, install, the tsconfig include requirement, how it finds TypeScript, the debug launch snippet, and known limits.
+description: The nola.nola-vscode extension — features, snippets, install, the tsconfig include rule, how it finds TypeScript, the debug launch snippet, known limits.
 sidebar:
   order: 30
 ---
 
-`nola.nola-vscode` is the official extension (current Marketplace version **0.1.2**). It bundles the Nola language server and a tsserver plugin; it needs nothing installed globally.
+`nola.nola-vscode` is the official extension — the current version is on the [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=nola.nola-vscode). It bundles the Nola language server and a tsserver plugin; it needs nothing installed globally.
 
 ## Features
 
@@ -17,7 +17,7 @@ sidebar:
 
 ## Install
 
-From the [Marketplace](https://marketplace.visualstudio.com/items?itemName=nola.nola-vscode), or `code --install-extension nola.nola-vscode`. Scaffolded projects (and retrofits with `--ide vscode`) carry a `.vscode/extensions.json` that recommends it.
+From the [Marketplace](https://marketplace.visualstudio.com/items?itemName=nola.nola-vscode), or `code --install-extension nola.nola-vscode`. Projects scaffolded with VS Code chosen at the editor prompt (and retrofits with `--ide vscode`) carry a `.vscode/extensions.json` that recommends it.
 
 ## Requirements
 
@@ -29,9 +29,12 @@ From the [Marketplace](https://marketplace.visualstudio.com/items?itemName=nola.
 
 Add the **Nola: Launch File** snippet from *Add Configuration…* in `launch.json`, or use the one the scaffold wrote. It runs `node --import nola-lang/register --enable-source-maps` with `resolveSourceMapLocations` and `skipFiles` set so breakpoints and stepping stay in `.tsi` source. The full configuration and why each key matters: [Editor setup](/docs/start/editor-setup/#debugging-with-f5).
 
-## Known limits (0.1.2)
+## Snippets
 
-- Per-construct snippets (`infer`, `ask`, `calli`, …) are in the extension's changelog as *unreleased* — not in 0.1.2 yet.
+One snippet per construct, in `.tsi` files: `infer` / `inferc` / `inferi` declare an infer function (bare, with a contextual parameter, or with an instruction); `ask` / `askfree` / `askwith` resolve a typed extractor, an untyped one, or one routed through a named provider; `calli` writes a call intent and `extract` a bare extractor. Type `infer` or `ask` and the whole family appears in completion.
+
+## Known limits
+
 - Other editors are not covered by this extension; wire `@nola-lang/language-server` and `@nola-lang/typescript-plugin` into your LSP client instead (see [Editor setup](/docs/start/editor-setup/#other-editors)).
 
 Next: [Error codes](/docs/reference/error-codes/)

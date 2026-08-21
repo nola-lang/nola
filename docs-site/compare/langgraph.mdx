@@ -50,7 +50,7 @@ const graph = new StateGraph(State)
       { role: "system", content: "You are a support agent." },
       { role: "user", content: `Reply to this ${state.category} case: ${state.message}` },
     ]);
-    return { reply: res.content };
+    return { reply: String(res.content) };   // message content is not typed as string
   })
   .addEdge(START, "classify")
   .addEdge("classify", "reply")

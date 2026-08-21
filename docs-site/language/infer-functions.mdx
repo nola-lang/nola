@@ -28,7 +28,7 @@ The third form carries an **instruction marker**: a template literal between the
 
 ## Rules
 
-- **Top-level function declarations only.** `infer` on a method, an arrow function or a function expression is reserved for a later version ([`NOLA1004`](/docs/reference/error-codes/#nola1004)); a declaration nested in another function is [`NOLA2003`](/docs/reference/error-codes/#nola2003).
+- **Top-level function declarations only.** `infer` is a keyword only directly before `function` at statement or export position, so `infer` on a method, an arrow function or a function expression is a plain parse error ([`NOLA1001`](/docs/reference/error-codes/#nola1001)); an `infer` generator is reserved for a later version ([`NOLA1004`](/docs/reference/error-codes/#nola1004)); a declaration nested in another function is [`NOLA2003`](/docs/reference/error-codes/#nola2003).
 - **Never `async`.** `async infer function` is a parse error — an infer function is implicitly awaitable through `Intent`.
 - **`await` is legal in the body**, for ordinary promises: fetch, a database, any library.
 

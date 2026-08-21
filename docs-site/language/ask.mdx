@@ -5,7 +5,7 @@ sidebar:
   order: 50
 ---
 
-`ask` is a unary prefix operator with `await`'s precedence. It resolves any *askable* to its value. Because it binds like `await`, a method chain on the operand needs parentheses: `` ask (..`x`<string>).withRetry(2) ``.
+`ask` is a unary prefix operator with `await`'s precedence. It resolves any *askable* to its value. Because it binds like `await`, a method chain on the operand attaches to the operand — `` ask ..`x`<string>.withRetry(2) `` is `` ask (..`x`<string>).withRetry(2) ``; the parentheses are optional but recommended for readability.
 
 ## What ask accepts
 
@@ -95,7 +95,7 @@ export default defineConfig({
 });
 ```
 
-- `<name>` must be a **static identifier** naming a key of the `providers` map. A string literal, a member expression or a parenthesized expression after `with` is [`NOLA1009`](/docs/reference/error-codes/#nola1009).
+- `<name>` must be a **static identifier** naming a key of the `providers` map. A string literal, a number or a parenthesized expression after `with` is [`NOLA1009`](/docs/reference/error-codes/#nola1009); a dotted name (`providers.fast`) is read as the identifier `providers` plus a stray `.fast` and fails as a plain syntax error instead.
 - The name is matched against the config at ask time, not compile time; an unknown name fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
 - For a *dynamic* choice use the intent method instead: `` ask (..`a rough summary`<string>).withProvider(useFast ? "fast" : "careful") `` — see [Intent methods](/docs/language/intent-methods/).
 - `ask without` is a plain ask of an identifier named `without`, not a pin.

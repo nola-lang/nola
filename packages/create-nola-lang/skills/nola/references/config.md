@@ -130,11 +130,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.0",
-    "@nola-lang/runtime": "^0.1.0"
+    "@nola-lang/providers": "^0.1.4",
+    "@nola-lang/runtime": "^0.1.4"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.0",
+    "nola-lang": "^0.1.4",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22" }
@@ -154,7 +154,9 @@ for you). Do not mix versions.
   the process.
 - `nola check [dir]` type-checks `.tsi` and `.ts` together with diagnostics
   mapped back to `.tsi` positions. Plain `tsc` over `src` is NOT a check path.
-- Scaffold a project with `npm create nola my-app` (or `npx nola init`).
+- Scaffold a project with `npm create nola my-app`. (`nola init` is the same
+  flow, but it ships in `nola-lang`, so it only exists once that is installed;
+  `npx nola` before that resolves an unrelated npm package named `nola`.)
 
 ## tsconfig.json
 

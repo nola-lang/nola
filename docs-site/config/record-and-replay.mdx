@@ -43,7 +43,9 @@ The fingerprint covers the whole request, so any of these changes produce a new 
 - the composed prompt — the instruction text *and* the contextual values the ask saw;
 - the extractor's type / schema;
 - provider params (`temperature`, `maxOutputTokens`, `providerOptions`);
-- the provider name.
+- the system text — the built-in preamble plus your `system.message`.
+
+The provider *name* is deliberately **not** part of the key: a ledger recorded behind `openai` replays behind `anthropic` as long as the request is the same.
 
 Edit a `.tsi` file, add an ask, or change a type, and you re-record: run once with `NOLA_RECORD=1`, commit the new ledger.
 

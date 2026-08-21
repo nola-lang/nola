@@ -7,13 +7,15 @@ sidebar:
 
 The `nola` binary ships in the `nola-lang` package (a devDependency). Run it as `npx nola <command>` or through the scaffold's npm scripts. Every command exits `0` on success and `1` with the errors on stderr; `nola` with no command prints the usage and exits `0`, an unknown command prints it and exits `1`.
 
+`npx nola` works because `nola-lang` is installed in the project — `npx` runs the local `node_modules/.bin/nola`. Outside such a project it would instead download an unrelated npm package that happens to be named `nola`, so to scaffold from nothing use `npm create nola`, never `npx nola init`.
+
 ```sh
 nola init [dir] [--template <t>|--add] [--ide vscode] [--agents <list>]
 nola build [dir] [--out <dir>]
 nola run <entry>
 nola check [dir]
 nola declarations [dir] [--watch]
-nola skill install [--agents <list>]
+nola skill install [--agents <list>] [--force]
 ```
 
 ## nola init
@@ -29,7 +31,7 @@ Scaffolds a new project or retrofits an existing one — the same interactive fl
 | `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`) |
 | `--add` | retrofit the project in `dir` (writes `nola.config.ts`, merges the packages into `package.json`) — see [Add Nola to an existing project](/docs/start/add-to-existing-project/); contradictory with `--template` |
 | `--ide vscode` | write `.vscode/launch.json` and `.vscode/extensions.json` |
-| `--agents <list>` | write agent-skill pointer files (see `nola skill install`) |
+| `--agents <list>` | write the agent skill files into the project (see `nola skill install`) |
 
 ## nola build
 
@@ -66,19 +68,19 @@ Emits an adjacent `<name>.d.tsi.ts` next to each `.tsi` so plain `tsc` and frame
 ## nola skill install
 
 ```sh
-nola skill install [--agents claude,cursor,copilot,agents-md | all | none]
+nola skill install [--agents claude,cursor,copilot,agents-md | all | none] [--force]
 ```
 
-Writes pointer files so your coding assistant reads the Nola skill that ships inside `node_modules/nola-lang` — always matching the installed version:
+Writes the Nola skill into the project so your coding assistant can read it. The files are **self-contained** — nothing points into `node_modules` — and each is stamped with the `nola-lang` version that wrote it:
 
-| Agent | File written |
+| Agent | Files written |
 | --- | --- |
-| `claude` | `.claude/skills/nola/SKILL.md` |
-| `cursor` | `.cursor/rules/nola.mdc` |
-| `copilot` | `.github/instructions/nola.instructions.md` |
-| `agents-md` | `AGENTS.md` (cross-agent pointer: Codex, Gemini CLI, …) |
+| `claude` | `.claude/skills/nola/SKILL.md` + `references/` — the whole skill directory, verbatim |
+| `cursor` | `.cursor/rules/nola.mdc` — the skill body inline |
+| `copilot` | `.github/instructions/nola.instructions.md` — the skill body inline |
+| `agents-md` | `AGENTS.md` — the skill body inline (cross-agent: Codex, Gemini CLI, …) |
 
-Without `--agents` it detects the agents your project already uses (`.claude`/`CLAUDE.md`, `.cursor`, `.github`) and adds `agents-md`. The scaffold offers the same step.
+Interactively (no `--agents`) it preselects the agents your project already uses (`.claude`/`CLAUDE.md`, `.cursor`, `.github`) plus `agents-md`; non-interactive runs must pass `--agents`. An existing file written by the same version is left alone; one stamped by an older version is reported as stale and replaced only with `--force` — run `nola skill install --force` after upgrading `nola-lang`. The scaffold and `--add` offer the same step.
 
 ## npm create nola and nola init
 

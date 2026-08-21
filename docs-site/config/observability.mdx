@@ -18,10 +18,9 @@ export default defineConfig({
   providers: { default: openai({ model: "gpt-5-mini" }) },
   hooks: [
     {
-      name: "cost",
+      name: "timing",
       onAskEnd: ({ receipt }) => {
-        const { inputTokens = 0, outputTokens = 0 } = receipt.usage ?? {};
-        console.log(`${receipt.site} via ${receipt.servedBy}: ${inputTokens}+${outputTokens} tokens, ${receipt.attempts} attempt(s)`);
+        console.log(`${receipt.site} via ${receipt.servedBy}: ${receipt.durationMs}ms, ${receipt.attempts} attempt(s)`);
       },
     },
   ],
@@ -57,13 +56,13 @@ export default defineConfig({
 | `servedBy` | the provider name that answered |
 | `attempts` | provider round trips actually performed |
 | `outcome` | `{ ok: true, value }` or `{ ok: false, error }` |
-| `usage` | `{ inputTokens?, outputTokens? }` when the provider reports them |
+| `usage` | `{ inputTokens?, outputTokens? }` — reserved; no built-in provider reports tokens in 0.1.x, so it is always absent |
 | `durationMs` | wall-clock time of the ask |
 | `invocationId`, `spanPath` | the invocation this ask belongs to, and the chain from the root frame |
-| `fingerprint` | the canonical ask fingerprint — the replay/cache key |
-| `meta` | free-form scratch space |
+| `fingerprint` | the canonical ask fingerprint — the replay key |
+| `meta` | scratch space for middleware stages; always `{}` while middleware is unwired |
 
-Secrets are redacted before anything lands in a receipt.
+The receipt's `outcome.error` string is redacted (`redactError`); the prompt fields are **not** — `originalPrompt` and `effectivePrompt` hold the conversation exactly as composed, so a key that reached a contextual value is in the receipt. Keep secrets out of contextual parameters; see [Environments and secrets](/docs/config/environments-and-secrets/).
 
 ## The built-in logger
 

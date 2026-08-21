@@ -43,7 +43,7 @@ Every method **clones** — the original stays unstarted — and an intent resol
 ## Types
 
 ```ts
-// not-checked — shapes as exported from @nola-lang/runtime
+// not-checked — the shapes .withProvider()/.withParams() accept (ProviderRef is exported from @nola-lang/runtime; ProviderParams is not re-exported — use it structurally)
 type ProviderRef = NolaProvider | string;
 
 interface ProviderParams {

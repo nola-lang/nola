@@ -14,8 +14,8 @@
 // test/publish-manifests.test.ts enforces the lockstep invariant; run
 // `npm install` after a bump so the lockfile follows. Tagging/publishing is
 // `node scripts/sync.mjs --release ...` (private repo tooling).
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const args = process.argv.slice(2);
 const version = args.find((a) => !a.startsWith("--"));
@@ -77,6 +77,34 @@ for (const { path, json } of manifests) {
       ? version
       : `${json.version} (kept)`;
   console.log(`${json.name} -> ${note}`);
+}
+
+// Docs and the shipped skill quote package.json samples. Every dependency entry
+// naming a workspace package is rewritten to `^<version>` — the caret range is
+// what the scaffold stamps (create-nola-lang/src/scaffold.ts). Keyed on package
+// NAME, so `"version": "0.0.0"` and `"typescript": "^5.6.0"` are untouchable by
+// construction. test/docs-site.test.ts fails on any entry this did not reach.
+if (doNpm) {
+  const names = [...internalNames].map((n) => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|");
+  const NOLA_DEP = new RegExp(`"(${names})":(\\s*)"[^"]*"`, "g");
+  const walk = (dir) =>
+    existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+          e.isDirectory() ? walk(join(dir, e.name)) : /\.mdx?$/.test(e.name) ? [join(dir, e.name)] : [],
+        )
+      : [];
+  const roots = [join(process.cwd(), "docs-site"), join(process.cwd(), "packages", "create-nola-lang", "skills")];
+  let touched = 0;
+  for (const file of roots.flatMap(walk)) {
+    const before = readFileSync(file, "utf8");
+    const after = before.replace(NOLA_DEP, (_m, name, ws) => `"${name}":${ws}"^${version}"`);
+    if (after !== before) {
+      writeFileSync(file, after);
+      touched++;
+      console.log(`${relative(process.cwd(), file)} -> samples pinned to ^${version}`);
+    }
+  }
+  if (touched === 0) console.log("docs-site/skill samples: already at this version");
 }
 
 console.log(`\nbumped: ${[doNpm && "npm lockstep", doVscode && "vscode"].filter(Boolean).join(" + ")} -> ${version}. Now run: npm install`);

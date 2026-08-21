@@ -5,7 +5,7 @@ sidebar:
   order: 80
 ---
 
-Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `NOLA2xxx` **compile** errors — raised by the editor, `nola check` and `nola build`; `NOLA3xxx` are **runtime** errors raised by the runtime, the loader or a provider; `NOLA4xxx` are **bundler** errors raised at build time by the bundler plugins. Each heading below is an anchor (`/docs/reference/error-codes/#nola2001`) and will not move. Codes listed as *not raised in 0.1.3* are reserved or retired; the numbers are never reused.
+Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `NOLA2xxx` **compile** errors — raised by the editor, `nola check` and `nola build`; `NOLA3xxx` are **runtime** errors raised by the runtime, the loader or a provider; `NOLA4xxx` are **bundler** errors raised at build time by the bundler plugins. Each heading below is an anchor (`/docs/reference/error-codes/#nola2001`) and will not move. Codes listed as *not raised* are reserved or retired; the numbers are never reused.
 
 **Parse errors (NOLA1xxx)**
 
@@ -27,7 +27,7 @@ Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `
 
 > this Nola construct is reserved for a future Nola version.
 
-**Cause:** syntax the grammar recognises but does not ship yet — `infer` on a method, an arrow function, a function expression or a generator; the bare derive-all call `fn(..)`; other deferred forms (see [Restrictions](/docs/language/restrictions/)).
+**Cause:** syntax the grammar recognises but does not ship yet — an `infer` generator (`infer function*`), an instruction marker on a class method or on a bodiless `declare function`, the bare derive-all call `fn(..)`; other deferred forms (see [Restrictions](/docs/language/restrictions/)). `infer` on an arrow or function *expression* never reaches this check — `infer` is a keyword only directly before `function` at statement or export position — so those are plain `NOLA1001` syntax errors.
 **Fix:** use a top-level `infer function` declaration; give every call-intent slot an explicit `` ..`…`<T> ``.
 
 ## NOLA1005
@@ -39,7 +39,7 @@ Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `
 
 ## NOLA1006
 
-Not raised in 0.1.3 — reserved (`infer` without a following `function` is reported as `NOLA1001`).
+Not raised — reserved (`infer` without a following `function` is reported as `NOLA1001`).
 
 ## NOLA1007
 
@@ -50,20 +50,20 @@ Not raised in 0.1.3 — reserved (`infer` without a following `function` is repo
 
 ## NOLA1008
 
-Not raised in 0.1.3 — retired (marker substitutions are legal); the number is not reused.
+Not raised — retired (marker substitutions are legal); the number is not reused.
 
 ## NOLA1009
 
 > expected a provider name after `ask with` — for a dynamic provider use `.withProvider(...)` on the intent.
 
-**Cause:** a string literal, a member expression or a parenthesized expression after `with`.
+**Cause:** a string literal, a number or a parenthesized expression after `with` — anything that is not a bare identifier. (A dotted name such as `providers.fast` is parsed as the identifier `providers` followed by a stray `.fast`, so it reports `NOLA1005`/`NOLA1001` rather than this code.)
 **Fix:** name the provider in `nola.config.ts` and use that bare identifier; for a dynamic choice use `.withProvider(…)`.
 
 ```tsi
 // not-checked — WRONG
-export infer function summarize(.text: string) {
+export infer function summarize(.text: string, useFast: boolean) {
   const a = ask with "fast" ..`a rough summary`<string>;
-  const b = ask with providers.fast ..`a rough summary`<string>;
+  const b = ask with (useFast ? "fast" : "careful") ..`a rough summary`<string>;
   return { a, b };
 }
 ```
@@ -213,7 +213,7 @@ export infer function fileTicket(.request: string) {
 
 ## NOLA2005
 
-Not raised in 0.1.3 — retired (call-hint substitutions are legal); the number is not reused.
+Not raised — retired (call-hint substitutions are legal); the number is not reused.
 
 ## NOLA2006
 
@@ -353,7 +353,7 @@ export infer function whoIsIt(.text: string) {
 
 ## NOLA3011
 
-Not raised in 0.1.3 — reserved.
+Not raised — reserved.
 
 ## NOLA3012
 

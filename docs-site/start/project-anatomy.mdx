@@ -13,10 +13,12 @@ my-app/
   nola.replay.jsonl     # the starter's recorded answers (offline first run)
   package.json          # runtime + providers as dependencies, nola-lang as a devDependency
   tsconfig.json         # NodeNext, allowArbitraryExtensions, include: ["src"]
-  .env                  # dev-time secrets — never committed
+  .gitignore            # node_modules, dist, .env
+  README.md             # the starter's own notes
   src/
     person.tsi          # Nola source: types + infer functions
     main.ts             # plain TypeScript entry point
+  .env                  # NOT written by the scaffold — you create it for dev-time secrets (ignored by git)
 ```
 
 ## nola.config.ts
@@ -106,11 +108,11 @@ Plain TypeScript. The import keeps the literal `.tsi` extension, and `await` on 
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "0.1.3",
-    "@nola-lang/runtime": "0.1.3"
+    "@nola-lang/providers": "^0.1.4",
+    "@nola-lang/runtime": "^0.1.4"
   },
   "devDependencies": {
-    "nola-lang": "0.1.3",
+    "nola-lang": "^0.1.4",
     "typescript": "^5.6.0"
   },
   "engines": {
@@ -127,7 +129,7 @@ The split is deliberate: the app depends on the **runtime** and the **providers*
 OPENAI_API_KEY=sk-...
 ```
 
-A dev-time convenience: `nola run` and `node --import nola-lang/register` apply a project-root `.env` before evaluating the config (values already set in the real environment win). Production reads the real environment — nothing loads `.env` there. The starter's `.gitignore` lists `.env` beside `node_modules/` and `dist/`; keep it that way, and add it yourself in a retrofitted project.
+A dev-time convenience, and **not** written by the scaffold — create it yourself. `nola run` and `node --import nola-lang/register` apply the `.env` next to `nola.config.ts` (the project root here) before evaluating the config; values already set in the real environment win. Production reads the real environment — nothing loads `.env` there. The starter's `.gitignore` lists `.env` beside `node_modules/` and `dist/`; keep it that way, and add it yourself in a retrofitted project.
 
 ## nola.replay.jsonl
 

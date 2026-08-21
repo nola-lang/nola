@@ -9,7 +9,7 @@ Nola code is deterministic to test when the provider is: a `mockProvider` or a r
 
 ## mockProvider
 
-`mockProvider` takes a **queue** of values (one per ask, in order) or a **function** of the request:
+`mockProvider` takes a **queue** of values (one per provider call, in order — an ask whose first reply fails validation takes a second entry for its correction turn) or a **function** of the request:
 
 ```ts
 // nola.config.ts

@@ -26,12 +26,12 @@ const result = await analyzeUserRequest("user-1", "Ticket TCK-4711: customer rep
 // → { userId: "user-1", ticketId: "TCK-4711", isFraud: true }
 ```
 
-`.message` is a **contextual parameter** — its value is shown to the model in every `ask` of that invocation. `userId` is a plain argument the model never sees.
+`.message` is a **contextual parameter** — its value is shown to the model in every `ask` of that invocation. `userId` is a plain argument — the model sees its name in the function signature, never its value.
 
 ## The two constructs
 
 - **`infer function`** declares an LLM-backed function. It lowers to an ordinary function that returns a lazy, thenable `Intent<T>`; awaiting the result runs the inference.
-  Parameters that start with a dot (`.message`) are **contextual**: their values are shown to the model. Plain parameters are ordinary values the model never sees. *One dot in, two dots out.*
+  Parameters that start with a dot (`.message`) are **contextual**: their values are shown to the model. Plain parameters are ordinary values — the model sees their names, never their values. *One dot in, two dots out.*
 - **`ask`** resolves an intent the way `await` resolves a promise.
   `` ask ..`instruction`<T> `` is an **extractor** — ask the model for a `T`. `` ask fn`hint`(...) `` is a **call intent** — the model fills the extractor-shaped arguments and the function runs. `ask with <provider> …` routes one ask through a named provider from `nola.config.ts`.
 

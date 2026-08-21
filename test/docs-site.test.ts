@@ -133,3 +133,51 @@ describe("docs-site contract", () => {
     expect(foreign).toEqual([]);
   });
 });
+
+/**
+ * Version literals in docs drift the moment a release happens. The only ones
+ * allowed to exist are dependency entries for Nola packages inside package.json
+ * samples, and `scripts/release.mjs` rewrites exactly those on every bump —
+ * this test is what fails when a page is hand-edited to a stale or exact
+ * version, or when the bump forgot the docs. The skill ships in user projects
+ * and carries the same sample, so it is held to the same rule.
+ */
+describe("docs-site version literals", () => {
+  const lockstep = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../packages/runtime/package.json", import.meta.url)), "utf8"),
+  ).version as string;
+  const SKILL = fileURLToPath(new URL("../packages/create-nola-lang/skills/nola", import.meta.url));
+  // "a Nola package" = a workspace package name — the same key scripts/release.mjs rewrites on
+  const PACKAGES = fileURLToPath(new URL("../packages", import.meta.url));
+  const names = readdirSync(PACKAGES)
+    .map((d) => join(PACKAGES, d, "package.json"))
+    .filter((p) => statSync(p, { throwIfNoEntry: false })?.isFile())
+    .map((p) => (JSON.parse(readFileSync(p, "utf8")) as { name: string }).name)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"));
+  // a dependency entry naming one: `"@nola-lang/runtime": "<range>"`
+  const NOLA_DEP = new RegExp(`"(${names.join("|")})":\\s*"([^"]*)"`, "g");
+
+  const skillFiles = walk(SKILL)
+    .filter((p) => /\.md$/.test(p))
+    .map((p) => ({ label: `skill:${relative(SKILL, p).split("\\").join("/")}`, text: readFileSync(p, "utf8") }));
+  const docFiles = pages.map((p) => ({ label: p, text: read(p) }));
+
+  it.each([...docFiles, ...skillFiles].map((f) => [f.label, f.text] as const))(
+    "%s pins Nola package samples to ^<lockstep>",
+    (_label, text) => {
+      const stale = [...text.matchAll(NOLA_DEP)]
+        .filter(([, , range]) => range !== `^${lockstep}`)
+        .map(([whole]) => whole);
+      expect(stale).toEqual([]);
+    },
+  );
+
+  it("the lockstep version is what the scaffold stamps (caret range, scaffold.ts)", () => {
+    const scaffold = readFileSync(
+      fileURLToPath(new URL("../packages/create-nola-lang/src/scaffold.ts", import.meta.url)),
+      "utf8",
+    );
+    // keep the docs' `^x.y.z` shape honest: if the scaffold ever changes its range form, this fails first
+    expect(scaffold).toMatch(/versionRange = `\^\$\{version\}`/);
+  });
+});

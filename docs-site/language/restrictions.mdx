@@ -11,7 +11,7 @@ Nola adds little and reserves a little more. This page is the complete list of w
 
 - **`ask` and `with`** are reserved words in `.tsi`. `ask` stays legal as a member or property name (`obj.ask`); using it as a plain identifier is [`NOLA1003`](/docs/reference/error-codes/#nola1003).
 - **`infer`** is contextual: a keyword only directly before `function` at statement or export position. `T extends infer U` in a conditional type is untouched.
-- **`__nola`** and any identifier starting with `__nola` are reserved. `__nola.ask(…)`, `__nola.intents.ExtractIntent(…)` and friends are what the compiler *emits* — not an API you call.
+- **`__nola`** and any identifier starting with `__nola` are reserved *by convention* — nothing rejects them, but `__nola.ask(…)`, `__nola.intents.ExtractIntent(…)`, `__nola_file_ctx` and friends are what the compiler *emits*, so declaring one shadows the lowered code and breaks it without a diagnostic. Not an API you call.
 
 ```tsi
 // not-checked — WRONG: emitted code, not a user-facing API
@@ -37,13 +37,14 @@ The grammar is shaped to accept these; today each one is a clear error rather th
 | --- | --- |
 | `async infer function f(…)` | parse error — an infer function is never `async` in source; `await` is already legal in its body |
 | `export default infer function f(…)` | does not parse — export by name and import the name |
-| `infer` on a method, arrow function or function expression | [`NOLA1004`](/docs/reference/error-codes/#nola1004) — top-level function declarations only |
+| `infer` on a method, arrow function or function expression | plain parse error ([`NOLA1001`](/docs/reference/error-codes/#nola1001)) — `infer` is a keyword only before `function` at statement/export position |
+| `infer function*` (generator), an instruction marker on a class method or a bodiless `declare function` | [`NOLA1004`](/docs/reference/error-codes/#nola1004) — reserved |
 | `fn(..)` — the bare derive-all call | [`NOLA1004`](/docs/reference/error-codes/#nola1004) |
 | `const .x = …` — a contextual binding inside a body | [`NOLA1014`](/docs/reference/error-codes/#nola1014) |
 | `.` on a destructuring pattern or a defaulted parameter | [`NOLA1011`](/docs/reference/error-codes/#nola1011) — use a plain identifier parameter |
 | the removed `` function name`()` `` form | [`NOLA1007`](/docs/reference/error-codes/#nola1007) — declare it with `infer function` |
 
-Further language features are deferred and parse as reserved today: abstract functions, type and interface intents, `ask if` / `ask for` / `ask while` / `ask switch`, and class methods. They are listed here so you recognise the error; nothing on this site documents them as available.
+Further language features are deferred and are simply **parse errors** today (`NOLA1001`, no specific "reserved" code): abstract functions, type and interface intents, `ask if` / `ask for` / `ask while` / `ask switch`, and class methods. Only the forms in the table above carry a specific reserved-construct diagnostic. They are listed here so you recognise the error; nothing on this site documents them as available.
 
 ## Runtimes
 

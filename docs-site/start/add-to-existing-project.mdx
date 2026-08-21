@@ -10,15 +10,15 @@ You have a TypeScript project; this adds `.tsi` support to it without scaffoldin
 ## Run the retrofit
 
 ```sh
-npm create nola -- --add      # or: npx nola init --add
+npm create nola -- --add
 ```
 
-A bare interactive `npm create nola` offers the same thing when it finds a `package.json` in the current directory ("Add Nola to this project"). `--add` and `--template` are mutually exclusive — the first retrofits, the second scaffolds.
+A bare interactive `npm create nola` offers the same thing when it finds a `package.json` in the current directory ("Add Nola to this project"). `--add` and `--template` are mutually exclusive — the first retrofits, the second scaffolds. (`nola init --add` is the identical flow, but it lives in the `nola-lang` package — so it only exists once that is installed; `npm create nola` is the form that works from nothing.)
 
 Optional flags, both also offered interactively:
 
 - `--ide vscode` writes `.vscode/launch.json` (F5 debugging of `.tsi` files) and `.vscode/extensions.json` (recommends the Nola extension) — see [Editor setup](/docs/start/editor-setup/).
-- `--agents claude,cursor,copilot,agents-md` writes pointer files so your coding assistant reads the Nola skill that ships inside `node_modules/nola-lang` (always matching the installed version). `nola skill install` does the same later.
+- `--agents claude,cursor,copilot,agents-md` writes the Nola skill into the project for your coding assistant — self-contained, version-stamped files (Claude Code gets the whole skill directory; Cursor, Copilot and `AGENTS.md` get the skill body inline). `nola skill install` does the same later, and `nola skill install --force` refreshes them after an upgrade.
 
 ## What it writes, merges, and leaves alone
 
@@ -26,7 +26,8 @@ Optional flags, both also offered interactively:
 | --- | --- | --- |
 | **Written** | `nola.config.ts` | The minimal config (`providers.default: openai({ model: "gpt-5-mini" })`, with an offline `mockProvider` alternative in a comment). Skipped — and left untouched — if one already exists. |
 | **Merged** | `package.json` | Adds `@nola-lang/runtime` and `@nola-lang/providers` to `dependencies`, `nola-lang` and `typescript` to `devDependencies`. The Nola packages get the same lockstep version; `typescript` gets `^5.6.0`. Existing entries are never rewritten, and the file is only touched when something was added. |
-| **Suggested, not touched** | `package.json` scripts, `tsconfig.json`, `.env`, `.gitignore` | The command prints its next steps: install the packages, an optional `"start": "nola run src/main.ts"` script, and the tsconfig tip below. |
+| **Suggested, not touched** | `package.json` scripts, `tsconfig.json` | The command prints its next steps: install the packages, an optional `"start": "nola run src/main.ts"` script, and the tsconfig tip below. |
+| **Untouched** | `.env`, `.gitignore`, everything else | Nothing else in the project is read or written. |
 
 Then run your package manager's install.
 

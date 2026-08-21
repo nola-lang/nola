@@ -5,15 +5,15 @@ sidebar:
   order: 90
 ---
 
-Everything that can go wrong in an ask surfaces as one of a small family of error classes, all exported from `@nola-lang/runtime`, and it surfaces at the `await` in your plain TypeScript.
+Everything that can go wrong in an ask surfaces as one of a small family of error classes, and it surfaces at the `await` in your plain TypeScript. All but one are exported from `@nola-lang/runtime`; `NolaSchemaError` is exported from `@nola-lang/core` only.
 
 | Class | When | Carries |
 | --- | --- | --- |
-| `NolaResolutionError` | an ask could not produce a valid value — after the correction retry, on a rejected call-intent callee, on a value that fails the type contract | `details.site`, `details.prompt`, `details.raw`, `trace` |
-| `NolaProviderError` | the provider call failed (HTTP error, network, malformed reply) | `status?`, `definitive?`, `retryAfterMs?` |
-| `NolaConfigError` | the config did not validate, names an unknown provider, or is frozen | `code?` (`NOLA3003`–`NOLA3008`, `NOLA3012`) |
+| `NolaResolutionError` | an ask could not produce a valid value — after the correction retry, on a value that fails the type contract, or when a call intent's callee is not a function | `details.site`, `details.prompt`, `details.raw`, `trace` |
+| `NolaProviderError` | the provider call failed (HTTP error, network, malformed reply) — and a replay miss (`NOLA3008`, definitive) | `status?`, `definitive?`, `retryAfterMs?` |
+| `NolaConfigError` | the config did not validate, names an unknown provider, or is frozen | `code?` (`NOLA3003`–`NOLA3007`, `NOLA3012`) |
 | `NolaIntentError` | an intent was used outside `ask` or in a browser, or a prompt template failed | `code` (`NOLA3010`, `NOLA3013`, `NOLA3014`) — definitive |
-| `NolaSchemaError` | an underivable type reached an ask | `code` (`NOLA3009`) — definitive |
+| `NolaSchemaError` (from `@nola-lang/core`) | an underivable type reached an ask | `code` (`NOLA3009`) — definitive |
 | `NolaVersionError` | emit-contract mismatch or two runtimes loaded | `code` (`NOLA3001`, `NOLA3002`), `details` |
 
 ## Validation failures retry themselves
