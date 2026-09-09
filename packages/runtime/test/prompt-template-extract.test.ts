@@ -1,16 +1,17 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: raw instruction strings carry literal ${} holes
+import type { ClassicPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import {
   ask,
-  ExtractInferContext,
+  ExtractContext,
   ExtractIntent,
   Frame,
-  FunctionCallingIntent,
+  FunctionCallIntent,
   nolaRuntime,
-  PromptBuilder,
   inferTypes as t,
 } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
+import { classicText } from "./helpers/model.js";
 
 afterEach(() => nolaRuntime.reset());
 const runtime = () => nolaRuntime.current();
@@ -19,7 +20,7 @@ const FORMAT_NUMBER = 'RESPONSE SCHEMA (JSON Schema):\n{"type":"number"}\nRespon
 
 describe("extractor prompt template", () => {
   it("replaces the TASK block; .format is appended when not read", () => {
-    const node = new ExtractInferContext(
+    const node = new ExtractContext(
       {
         instruction: "raw ${.type}",
         type: t.string(),
@@ -29,19 +30,19 @@ describe("extractor prompt template", () => {
       runtime(),
     );
     const frame = Frame.open(runtime().fileContext("x.tsi").func({ fn: "go" }));
-    const { messages } = new PromptBuilder().build(frame, node);
-    expect(messages[0]?.content).toBe(
+    const text = classicText(frame, node);
+    expect(text).toBe(
       `CONTEXT — inside go(), x.tsi\n\nGive me: string / {"type":"string"} / ctx=true\n\n${FORMAT_STRING}`,
     );
   });
 
   it("places .format where it is read and exposes .default (the whole built-in TASK block)", () => {
-    const node = new ExtractInferContext(
+    const node = new ExtractContext(
       { instruction: "p", type: t.number(), loc: "1:1", template: (s) => `${s.format}\n---\n${s.default}` },
       runtime(),
     );
-    const { messages } = new PromptBuilder().build(Frame.open(runtime().fileContext("x.tsi").scope({})), node);
-    expect(messages[0]?.content).toBe(
+    const text = classicText(Frame.open(runtime().fileContext("x.tsi").scope({})), node);
+    expect(text).toBe(
       `${FORMAT_NUMBER}\n---\nTASK\nProduce the data requested below.\n<request>\np\n</request>\n${FORMAT_NUMBER}`,
     );
   });
@@ -49,15 +50,15 @@ describe("extractor prompt template", () => {
   it("a call-intent hint template reaches the synthesized slot ask", async () => {
     const seen: string[] = [];
     runtime().configure({
-      providers: {
+      model: {
         default: mockProvider((req) => {
-          seen.push(req.messages[0]?.content ?? "");
+          seen.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
           return { arg0: "x" };
         }),
       },
     });
     const target = (v: string) => v.toUpperCase();
-    const intent = new FunctionCallingIntent<string>(
+    const intent = new FunctionCallIntent<string>(
       {
         fn: target,
         name: "target",

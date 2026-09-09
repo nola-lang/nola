@@ -1,5 +1,5 @@
+import { type FunctionScopeInit, InvocationContext } from "../intents/invocation/invocation-context.js";
 import type { NolaRuntime } from "../runtime/index.js";
-import { FunctionInferContext, type FunctionScopeInit } from "./function-infer-context.js";
 import { InferContext } from "./infer-context.js";
 import type { SystemInferContext } from "./system-infer-context.js";
 
@@ -21,7 +21,7 @@ export class FileInferContext extends InferContext<FileScopeData> {
   }
 
   /** The factory lowering calls: `__nola_file_ctx().func({...})`. */
-  func(init: FunctionScopeInit): FunctionInferContext {
-    return FunctionInferContext.create(init, this.runtime, this);
+  func(init: FunctionScopeInit): InvocationContext {
+    return InvocationContext.create(init, this.runtime, this);
   }
 }

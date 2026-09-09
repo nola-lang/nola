@@ -15,11 +15,9 @@ import { defineConfig } from "@nola-lang/runtime";
 const live = process.env.NOLA_RECORD === "1";
 
 export default defineConfig({
-  providers: {
-    default: live
-      ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
-      : replay("./nola.replay.jsonl"),
-  },
+  model: live
+    ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
+    : replay("./nola.replay.jsonl"),
 });
 ```
 
@@ -36,14 +34,18 @@ nola run src/main.ts                 # offline: answers come from the ledger
 
 `replay(path)` serves answers back from the ledger. A request with no matching entry fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008) — never a silent network call. That is the point: a test cannot accidentally go live, and a stale ledger announces itself.
 
+Entries recorded under the same key — an ask's first attempt and its correction turn share one fingerprint, since the key ignores the correction itself — replay in the order they were recorded, so a session that needed a correction reproduces the correction turn instead of jumping straight to the corrected answer.
+
 ## What re-keys an entry
 
-The fingerprint covers the whole request, so any of these changes produce a new key and a replay miss:
+The fingerprint is taken over the rendered prompt as first composed — the same rendering whether a chat provider, the platform-served model, or `replay` computes it, so one ledger serves any model. Any of these changes produce a new key and a replay miss:
 
-- the composed prompt — the instruction text *and* the contextual values the ask saw;
+- the instruction text and the contextual values the ask saw;
+- a prompt template's rendered text;
 - the extractor's type / schema;
 - provider params (`temperature`, `maxOutputTokens`, `providerOptions`);
-- the system text — the built-in preamble plus your `system.message`.
+- your `system.message`;
+- a Nola upgrade that rephrases the built-in prompt wording — re-record after upgrading if replay starts missing.
 
 The provider *name* is deliberately **not** part of the key: a ledger recorded behind `openai` replays behind `anthropic` as long as the request is the same.
 

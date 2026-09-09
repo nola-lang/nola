@@ -24,7 +24,7 @@ function makePlugin(framework = "rollup"): PluginShape {
 
 function tmpProject(): string {
   const dir = mkdtempSync(join(tmpdir(), "nola-factory-"));
-  writeFileSync(join(dir, "nola.config.ts"), "export default { providers: {} };\n");
+  writeFileSync(join(dir, "nola.config.ts"), "export default { model: {} };\n");
   writeFileSync(join(dir, "greet.tsi"), TSI);
   return dir;
 }

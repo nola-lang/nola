@@ -6,23 +6,23 @@ run time.
 ## NOLA1009 — `ask with` needs a static provider name
 
 > expected a provider name after `ask with` — for a dynamic provider use
-> `.withProvider(...)` on the intent.
+> `.withModel(...)` on the intent.
 
 The alias after `with` must be a bare identifier naming a key of the
-`providers` map in `nola.config.ts`. A string literal, a variable expression or
+`provider` map in `nola.config.ts`. A string literal, a variable expression or
 a parenthesized expression will not parse.
 
 ```tsi
 export infer function summarize(.text: string, useFast: boolean) {
   // WRONG
   const a = ask with "fast" ..`a rough summary`<string>;
-  const b = ask with providers.fast ..`a rough summary`<string>;
+  const b = ask with provider.fast ..`a rough summary`<string>;
 
   // RIGHT — name it in nola.config.ts, then use that name
   const c = ask with fast ..`a rough summary`<string>;
 
   // RIGHT — dynamic choice
-  const d = ask (..`a rough summary`<string>).withProvider(useFast ? "fast" : "careful");
+  const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
 
   return { a, b, c, d };
 }
@@ -31,7 +31,7 @@ export infer function summarize(.text: string, useFast: boolean) {
 ```ts
 // nola.config.ts
 export default defineConfig({
-  providers: {
+  model: {
     default: openai({ model: "gpt-5-mini" }),
     fast: openai({ model: "gpt-5-nano" }),
   },
@@ -147,7 +147,7 @@ the rest of the type; `"omit"` drops the whole type silently:
 
 ```ts
 export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
+  model: openai({ model: "gpt-5-mini" }),
   compiler: { underivableContextType: "prune" },   // default is "error"
 });
 ```

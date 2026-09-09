@@ -1,13 +1,13 @@
 import {
   type HistoryRecord,
   type InvocationTrace,
+  type ModelRef,
   mergeProviderParams,
   type ProviderParams,
-  type ProviderRef,
 } from "@nola-lang/core";
 import type { InferenceComposer } from "../ask/composer.js";
 import { DEFAULT_ASK_TIMEOUT_MS } from "../config.js";
-import type { ComposeOptions, InferContext } from "../infer-context/index.js";
+import type { InferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
 import { AskSpan, type AskSpanInit } from "./ask-span.js";
 import type { NolaRuntime } from "./nola-runtime.js";
@@ -26,6 +26,8 @@ export type { HistoryRecord } from "@nola-lang/core";
  */
 export class Frame {
   readonly invocationId: string = globalThis.crypto.randomUUID();
+  /** wall-clock mint time — invocationEnd's durationMs is measured from it */
+  readonly startedAt: number = Date.now();
   readonly history: HistoryRecord[] = [];
   private readonly children: Array<AskSpan | Frame> = [];
   /** Root frames only — one controller per invocation; children read through `abortSignal`. */
@@ -89,9 +91,9 @@ export class Frame {
   }
 
   /** Ask-site pin, nearest frame first (an outer invocation's pin covers callee asks). */
-  resolveProvider(): ProviderRef | undefined {
+  resolveModel(): ModelRef | undefined {
     for (let f: Frame | undefined = this; f; f = f.parent) {
-      if (f.options.provider !== undefined) return f.options.provider;
+      if (f.options.model !== undefined) return f.options.model;
     }
     return undefined;
   }
@@ -118,9 +120,10 @@ export class Frame {
     return chain.flat();
   }
 
-  composeInferenceData(composer: InferenceComposer, opts?: Omit<ComposeOptions, "nested">): void {
-    // The node has no call-chain view — the frame supplies it; builder hints pass through.
-    this.infer.composeInferenceData(composer, { ...opts, nested: this.parent !== undefined });
+  /** This frame's node describes its scope; the caller chain composes one level out. */
+  compose(composer: InferenceComposer): void {
+    this.infer.compose(composer);
+    this.parent?.compose(composer.outer());
   }
 
   /**
@@ -134,12 +137,17 @@ export class Frame {
     return this.parent?.sourceFile() ?? "<unknown>";
   }
 
-  toTrace(): InvocationTrace {
+  /** The infer function's name, `<anonymous>` for a scope-less root. */
+  fnName(): string {
     const fn = (this.infer.data as { fn?: unknown }).fn;
+    return typeof fn === "string" ? fn : "<anonymous>";
+  }
+
+  toTrace(): InvocationTrace {
     return {
       kind: "invocation",
       invocationId: this.invocationId,
-      fn: typeof fn === "string" ? fn : "<anonymous>",
+      fn: this.fnName(),
       file: this.sourceFile(),
       spans: this.children.map((c) => c.toTrace()),
     };

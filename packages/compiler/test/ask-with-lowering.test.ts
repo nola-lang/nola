@@ -1,5 +1,6 @@
 import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
+import { defHash } from "../src/lower/templates.js";
 import { typecheckLowered } from "./helpers/typecheck.js";
 
 const SRC = ["infer function go() {", "  const v = ask with fast ..`v`<string>;", "  return v;", "}", ""].join("\n");
@@ -10,7 +11,7 @@ describe("ask with <identifier> lowering", () => {
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
       "await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: `v`, " +
-        'type: __nola.types.string(), loc: "2:27" }), __frame, "fast");',
+        `type: __nola.types.string(), loc: "2:27", def: "${defHash("x.tsi", "extract", "v", "string")}" }), __frame, "fast");`,
     );
   });
 

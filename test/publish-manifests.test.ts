@@ -16,6 +16,7 @@ const PUBLIC = [
   "nola-lang",
   "@nola-lang/ast",
   "@nola-lang/compiler",
+  "@nola-lang/console",
   "@nola-lang/core",
   "@nola-lang/esbuild",
   "@nola-lang/language-core",
@@ -35,7 +36,7 @@ const PUBLIC = [
 ];
 
 /** babel-parser: vendoring policy (bundled into parser); nola-vscode: Marketplace, not npm. */
-const PRIVATE = ["@nola-lang/babel-parser", "nola-vscode"];
+const PRIVATE = ["@nola-lang/babel-parser", "@nola-lang/console-ui", "nola-vscode"];
 
 interface Manifest {
   name: string;
@@ -148,6 +149,11 @@ describe("lockstep versioning", () => {
   it("every workspace package shares one version", () => {
     const versions = new Set(lockstep.map((m) => m.version));
     expect([...versions]).toHaveLength(1);
+  });
+
+  it("packages/runtime/src/version.ts (the nola() protocol `version`) carries the lockstep version", () => {
+    const src = readFileSync(join(ROOT, "packages", "runtime", "src", "version.ts"), "utf8");
+    expect(src).toContain(`NOLA_VERSION = "${lockstep[0]?.version}"`);
   });
 
   it.each(packages.map((m) => [m.name, m] as const))("%s pins internal refs exactly", (_name, m) => {

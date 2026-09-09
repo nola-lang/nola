@@ -1,0 +1,88 @@
+---
+title: Why Nola
+description: Nola is a language notation for LLM inference — why inference deserves syntax rather than an SDK, and what you get because the compiler can see the ask.
+sidebar:
+  order: 5
+---
+
+Nola is a **language notation for LLM inference**. The name says so — *NOtation LAnguage* — and this page explains what that means and why it matters.
+
+## Every new kind of computation gets a notation
+
+Programming languages grow syntax when a kind of computation becomes routine. Concurrency was a library of callbacks and promise chains until `async`/`await` gave it a notation: an `async` function returns a `Promise<T>`, `await` resolves it, and the rest of the language — control flow, `try`/`catch`, types — just works around it. Markup was `createElement` calls until JSX gave it one. Nobody argues today that concurrency or UI trees should have stayed in a library.
+
+LLM inference is the next kind. It is already routine: a request made of a prompt, a target shape, some context and a model, that returns a value you then use like any other. And today it lives entirely in SDK calls:
+
+```ts
+// not-checked — the SDK shape, whichever SDK
+const schema = z.object({ ticketId: z.string(), isFraud: z.boolean() });   // the contract, declared again
+const result = await client.generate({
+  prompt: `Ticket: ${message}\nExtract the ticket id and whether it looks fraudulent.`,
+  schema,
+});
+const { ticketId, isFraud } = result.object as z.infer<typeof schema>;     // the type, recovered by hand
+```
+
+Four things are wrong with this picture, and none of them is the SDK's fault. The contract is written twice — once as a TypeScript type, once as a schema object. The request is a string the compiler cannot see into. The context has to be re-threaded by hand into every call. And the result comes back as a value that the type-checker only believes because you told it to. A library cannot fix any of that, because a library is a function call, and the compiler treats a function call as opaque.
+
+Nola's claim is that inference deserves a notation for the same reason concurrency did: the tools that make code trustworthy — the type-checker, the editor, the debugger, the compiler — only help with what they can see.
+
+## The notation
+
+The whole notation is three marks on top of TypeScript:
+
+```tsi
+// analyze.tsi
+export infer function analyzeUserRequest(userId: string, .message: string) {
+  const ticketId = ask ..`ticket id mentioned in the message`<string>;
+  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  return { userId, ticketId, isFraud };
+}
+```
+
+- **`infer`** marks a function whose body is resolved by a model, the way `async` marks one resolved by the event loop. It returns an [`Intent<T>`](/docs/language/intent/), Nola's `Promise<T>`.
+- **One dot in, two dots out.** `.message` is a contextual parameter — its value flows *into* the model's context for every `ask` in the invocation. `` ..`instruction`<T> `` is an extractor — a `T` comes *out* of the model.
+- **`ask`** resolves an intent the way `await` resolves a promise, with the same precedence and the same place in your code.
+
+Plain TypeScript imports the file directly and `await`s the result:
+
+```ts
+// main.ts
+import { analyzeUserRequest } from "./analyze.tsi";
+
+const result = await analyzeUserRequest("user-1", "Ticket TCK-4711: customer reports suspicious activity.");
+// → { userId: "user-1", ticketId: "TCK-4711", isFraud: true }
+```
+
+That is the entire surface. There is no prompt-template language, no schema DSL, no graph builder — the rest is TypeScript, and the toolchain *lowers* `.tsi` to plain TypeScript before `tsc`, bundlers, Node or your editor see it, the same way JSX is compiled away. See [The mental model](/docs/language/mental-model/).
+
+## What you get because it is syntax
+
+Everything Nola does that a library cannot follows from one fact: the compiler can see the ask.
+
+| Because the compiler sees… | You get |
+| --- | --- |
+| the type argument on an extractor | **the type is the schema.** `<boolean>` is derived into the wire schema, validated on the way back, and revived where the wire shape differs — a `Date` arrives as a real `Date`. Rename a field in your `interface` and every ask follows; drift between the model and the type is a compile error, not a 3 a.m. surprise. |
+| which parameters carry a dot | **context belongs to the function.** A second `ask` still sees `.message`; a callee invoked with `ask` inherits the caller's context like a stack frame. Nothing is re-threaded by hand. |
+| every `ask` site | **the editor works inside the LLM function.** Completion for `${.` scope accesses, go-to-definition from a `.ts` consumer onto the `infer function`, type errors reported at the `.tsi` line, and a breakpoint that pauses *inside* the inference — the runtime stays under the debugger. |
+| the one boundary where inference happens | **one seam for everything operational.** Receipts, telemetry, retries, timeouts, provider routing (`ask with fast …`) and [record/replay](/docs/config/record-and-replay/) attach at the language boundary, once, instead of being wrapped around each SDK call. The first run of a new project works offline from a replay ledger for exactly this reason. |
+| that `.tsi` lowers to plain TS | **nothing downstream changes.** `tsc`, Vite, webpack, Next.js and Node see ordinary TypeScript; production code depends on a small runtime and nothing else. |
+
+The [comparison pages](/docs/compare/) put the same task through Nola, BAML, the Vercel AI SDK and LangGraph with working code on every side. The recurring pattern is the one above: the domain model is declared once instead of twice, there is no hand-written wire schema, and the model drifting from the type is caught by the compiler instead of at run time.
+
+## What Nola is not
+
+A notation is narrow on purpose. Nola is not:
+
+- **An orchestration framework.** There is no graph, no agent loop, no node type. You orchestrate with `if`, `for`, `Promise.all` and functions, because it is TypeScript. Graph libraries remain useful *above* Nola for long-running, checkpointed workflows — see [Nola vs LangGraph](/docs/compare/langgraph/).
+- **A separate language with a codegen step.** A `.tsi` file is your TypeScript with three marks added, imported directly — not a DSL that generates a client you then import. See [Nola vs BAML](/docs/compare/baml/).
+- **A prompt optimizer.** Nola composes prompts from your code and shows you the result in receipts; it does not search for better wording on your behalf.
+- **A model or a hosted runtime.** Providers are configured in [`nola.config.ts`](/docs/config/nola-config/); the runtime is plain `fetch`. It runs on Node ≥ 22, server-side.
+
+## The bet, and what it costs
+
+Putting inference in the syntax is a bet, and it has a price. `.tsi` is not valid TypeScript, so Nola owns the parse — a vendored Babel parser with a Nola plugin — and ships its own editor extension, `nola check` and loader rather than reusing `tsc` on the source. A new file extension is a real thing to adopt. And the project is early.
+
+The bet is that these costs are paid once, in the toolchain, while the alternative is paid on every call site forever. That is the trade `async`/`await` and JSX made, and it is the one Nola makes.
+
+Next: [Quick start](/docs/start/quick-start/) — scaffold a project and run your first `.tsi` file offline.

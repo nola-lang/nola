@@ -276,7 +276,7 @@ describe("LSP over examples/cross-file-types", () => {
     const completions = await server.sendCompletionRequest(uri, pos);
     const labels = completions?.items.map((i) => i.label) ?? [];
     expect(labels).toContain("withRetry");
-    expect(labels).toContain("withProvider");
+    expect(labels).toContain("withModel");
     expect(labels).toContain("withParams");
     // internals and root-only knobs must not leak into the narrow tier
     for (const internal of ["__nolaBrand", "then", "run", "spec", "reviveValue", "withTimeout", "detached"]) {

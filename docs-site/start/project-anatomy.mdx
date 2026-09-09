@@ -9,39 +9,40 @@ This is the project `npm create nola` lays down, file by file. Every Nola projec
 
 ```
 my-app/
-  nola.config.ts        # providers and runtime options
-  nola.replay.jsonl     # the starter's recorded answers (offline first run)
+  nola.config.ts        # provider and runtime options
+  nola.replay.jsonl     # offline scaffold only: the starter's recorded answers
   package.json          # runtime + providers as dependencies, nola-lang as a devDependency
   tsconfig.json         # NodeNext, allowArbitraryExtensions, include: ["src"]
-  .gitignore            # node_modules, dist, .env
+  .gitignore            # node_modules, dist, .env, .env.*
   README.md             # the starter's own notes
   src/
     person.tsi          # Nola source: types + infer functions
     main.ts             # plain TypeScript entry point
-  .env                  # NOT written by the scaffold — you create it for dev-time secrets (ignored by git)
+  .env                  # NOLA_API_KEY when you chose Nola as the provider; otherwise yours to create (ignored by git)
 ```
 
 ## nola.config.ts
 
+With Nola as the provider (the 25 free runs):
+
 ```ts
 // nola.config.ts
-import { replay } from "@nola-lang/providers";
-import { defineConfig } from "@nola-lang/runtime";
+import { defineConfig, nola } from "@nola-lang/runtime";
 
+// Nola serves inference: reads NOLA_API_KEY from .env (your free trial key)
+// and picks the model. Out of runs? `npx nola-lang account` opens your Nola
+// account, where prepaid balance is added — or bring your own model and keep
+// everything else:
+//   import { openai } from "@nola-lang/providers";
+//   model: openai("gpt-5-mini"),   // reads OPENAI_API_KEY
 export default defineConfig({
-  providers: {
-    // The starter runs offline: answers replay from the committed ledger
-    // (nola.replay.jsonl), so the first `npm start` needs no API key. The
-    // ledger is keyed by the exact prompt — once you edit the .tsi or add
-    // asks, switch to a real provider:
-    //   import { openai } from "@nola-lang/providers";
-    //   default: openai({ model: "gpt-5-mini" }),   // reads OPENAI_API_KEY
-    default: replay("./nola.replay.jsonl"),
-  },
+  model: nola.infer(),
 });
 ```
 
-The config lives at the project root and default-exports a `defineConfig` call. `providers.default` is required; every other key of `providers` becomes an `ask with <name>` target. The import surface is exactly two specifiers — `defineConfig` from `@nola-lang/runtime`, everything provider-shaped from `@nola-lang/providers`. Full reference: [nola.config.ts](/docs/config/nola-config/).
+Scaffolded offline instead, the starter's config is `model: replay("./nola.replay.jsonl")` — answers come from the committed ledger and the first run needs no key.
+
+The config lives at the project root and default-exports a `defineConfig` call. `model` is one model or a map whose `default` is required; every other key of the map becomes an `ask with <name>` target. The import surface is exactly two specifiers — `defineConfig`, `nola` and `terminalTrace` from `@nola-lang/runtime`, everything bring-your-own from `@nola-lang/providers`. Full reference: [nola.config.ts](/docs/config/nola-config/).
 
 ## src/person.tsi
 
@@ -108,11 +109,11 @@ Plain TypeScript. The import keeps the literal `.tsi` extension, and `await` on 
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.4",
-    "@nola-lang/runtime": "^0.1.4"
+    "@nola-lang/providers": "^0.1.5",
+    "@nola-lang/runtime": "^0.1.5"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.4",
+    "nola-lang": "^0.1.5",
     "typescript": "^5.6.0"
   },
   "engines": {
@@ -126,14 +127,14 @@ The split is deliberate: the app depends on the **runtime** and the **providers*
 ## .env
 
 ```sh
-OPENAI_API_KEY=sk-...
+NOLA_API_KEY=nola_sk_...
 ```
 
-A dev-time convenience, and **not** written by the scaffold — create it yourself. `nola run` and `node --import nola-lang/register` apply the `.env` next to `nola.config.ts` (the project root here) before evaluating the config; values already set in the real environment win. Production reads the real environment — nothing loads `.env` there. The starter's `.gitignore` lists `.env` beside `node_modules/` and `dist/`; keep it that way, and add it yourself in a retrofitted project.
+Written by the scaffold when you chose Nola as the provider; otherwise create it yourself for dev-time secrets (`OPENAI_API_KEY=…`, or the env var the config's comment names). `nola run` and `node --import nola-lang/register` apply the `.env` next to `nola.config.ts` (the project root here) before evaluating the config; values already set in the real environment win. Production reads the real environment — nothing loads `.env` there. Both scaffold templates' `.gitignore` list `.env` and `.env.*` beside `node_modules/` and `dist/`; keep it that way. In a retrofitted project the trial step adds those lines for you.
 
 ## nola.replay.jsonl
 
-The starter's *ledger*: one JSON line per recorded exchange, keyed by a fingerprint of the exact request. `replay("./nola.replay.jsonl")` serves answers from it, which is why the first run needs no key. Replay is strict — a request with no matching entry fails with `NOLA3008` rather than quietly calling the network, so after editing `person.tsi` you either switch to a live provider or re-record. See [Record and replay](/docs/config/record-and-replay/).
+The offline starter's *ledger*: one JSON line per recorded exchange, keyed by a fingerprint of the exact request. `replay("./nola.replay.jsonl")` serves answers from it, which is why the first run needs no key. Replay is strict — a request with no matching entry fails with `NOLA3008` rather than quietly calling the network, so after editing `person.tsi` you either switch to a live provider or re-record. See [Record and replay](/docs/config/record-and-replay/). A project scaffolded with the trial has no ledger.
 
 ## Built output
 

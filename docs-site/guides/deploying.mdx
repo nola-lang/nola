@@ -9,7 +9,7 @@ Production runs plain JavaScript under plain `node` — no loader, no `nola-lang
 
 ## What nola build emits
 
-From the starter layout, `npx nola build --out dist` writes:
+From the starter layout, `npx nola-lang build --out dist` writes:
 
 ```
 dist/
@@ -36,7 +36,7 @@ console.log(JSON.stringify(await extractPerson("Alice Smith, 32, is a staff engi
 ```
 
 ```sh
-npx nola build --out dist
+npx nola-lang build --out dist
 node entry.mjs        # no --import, no loader: prints the extraction
 ```
 

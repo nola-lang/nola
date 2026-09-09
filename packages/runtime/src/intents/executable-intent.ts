@@ -6,7 +6,7 @@ import { Intent, type IntentOptions } from "./intent.js";
 
 /**
  * Base for intents whose executor is their own execute() (Extract,
- * FunctionCalling). They carry a context node (prompt composition) but no
+ * FunctionCall). They carry a context node (prompt composition) but no
  * scope: `ask` supplies the frame, so a bare thenable await fails with
  * NOLA3010.
  */

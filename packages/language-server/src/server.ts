@@ -8,7 +8,11 @@
 // - volar-service-typescript: create(ts) -> LanguageServicePlugin[].
 import { createNolaLanguagePlugin } from "@nola-lang/language-core";
 import { findProjectRoot } from "@nola-lang/node-loader";
-import { decorateHostHideShadowedDeclarations, decorateHostWithCompanions } from "@nola-lang/typescript-plugin";
+import {
+  decorateHostHideShadowedDeclarations,
+  decorateHostWithCompanions,
+  decorateHostWithRuntimeStub,
+} from "@nola-lang/typescript-plugin";
 import {
   createConnection,
   createServer,
@@ -42,6 +46,11 @@ connection.onInitialize((params) => {
         if (host) {
           decorateHostHideShadowedDeclarations(tsdk.typescript, host);
           decorateHostWithCompanions(tsdk.typescript, host, { sourceRoot });
+          // Before `npm install` (or for a bare .tsi) the lowered appendix
+          // import of @nola-lang/runtime has nothing to resolve to; serve the
+          // compiler's ambient stub like `nola check` does, so the editor
+          // never shows the derivative "__frame implicitly any" on a header.
+          decorateHostWithRuntimeStub(tsdk.typescript, host);
         }
       },
     })),

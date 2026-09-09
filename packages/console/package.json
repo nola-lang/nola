@@ -1,0 +1,46 @@
+{
+  "name": "@nola-lang/console",
+  "version": "0.1.5",
+  "description": "Nola Console: local trace ingestion, storage and API for observing every ask — started with `nola console`",
+  "keywords": [
+    "nola",
+    "llm",
+    "ai",
+    "observability",
+    "traces",
+    "console"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/console"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo"
+  ],
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@nola-lang/core": "0.1.5",
+    "hono": "^4.6.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

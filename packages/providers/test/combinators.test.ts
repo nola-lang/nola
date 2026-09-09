@@ -1,11 +1,13 @@
-import type { NolaProvider } from "@nola-lang/core";
+import type { LanguageModel } from "@nola-lang/core";
+import { isPlatformModel, NolaConfigError, PLATFORM_MODEL } from "@nola-lang/core";
 import { constant, exponential, fallback, isDefinitiveProviderError, roundRobin, withRetry } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
 import { describe, expect, it } from "vitest";
+import { requestOf } from "./helpers/model.js";
 
-const req = { system: "s", messages: [] };
-const succeeding = (name: string, text: string): NolaProvider => ({ name, complete: async () => ({ text }) });
-const failing = (name: string, error: Error): NolaProvider => ({
+const req = requestOf();
+const succeeding = (name: string, text: string): LanguageModel => ({ name, complete: async () => ({ text }) });
+const failing = (name: string, error: Error): LanguageModel => ({
   name,
   complete: async () => {
     throw error;
@@ -34,7 +36,7 @@ describe("isDefinitiveProviderError", () => {
 describe("withRetry", () => {
   it("retries transient failures and succeeds", async () => {
     let calls = 0;
-    const flaky: NolaProvider = {
+    const flaky: LanguageModel = {
       name: "flaky",
       complete: async () => {
         calls++;
@@ -49,7 +51,7 @@ describe("withRetry", () => {
 
   it("does not retry definitive errors", async () => {
     let calls = 0;
-    const auth: NolaProvider = {
+    const auth: LanguageModel = {
       name: "auth",
       complete: async () => {
         calls++;
@@ -62,7 +64,7 @@ describe("withRetry", () => {
 
   it("gives up after maxRetries and rethrows the last error", async () => {
     let calls = 0;
-    const dead: NolaProvider = {
+    const dead: LanguageModel = {
       name: "dead",
       complete: async () => {
         calls++;
@@ -75,7 +77,7 @@ describe("withRetry", () => {
 
   it("waits at least the error's retryAfterMs before retrying", async () => {
     let calls = 0;
-    const limited: NolaProvider = {
+    const limited: LanguageModel = {
       name: "limited",
       complete: async () => {
         calls++;
@@ -91,7 +93,7 @@ describe("withRetry", () => {
 
   it("caps the retry-after wait at the policy's maxDelayMs", async () => {
     let calls = 0;
-    const hostile: NolaProvider = {
+    const hostile: LanguageModel = {
       name: "hostile",
       complete: async () => {
         calls++;
@@ -130,7 +132,7 @@ describe("fallback", () => {
   });
 
   it("rejects an empty list at construction", () => {
-    expect(() => fallback([])).toThrow(/at least one provider/);
+    expect(() => fallback([])).toThrow(/at least one model/);
   });
 });
 
@@ -148,6 +150,29 @@ describe("roundRobin", () => {
   });
 
   it("rejects an empty list at construction", () => {
-    expect(() => roundRobin([])).toThrow(/at least one provider/);
+    expect(() => roundRobin([])).toThrow(/at least one model/);
+  });
+});
+
+describe("platform-model rejection (a platform model can only be the root)", () => {
+  const platform = (name: string): LanguageModel =>
+    ({ [PLATFORM_MODEL]: true, name, infer: async () => ({ text: "m" }) }) as unknown as LanguageModel;
+
+  it("withRetry refuses the platform model, pointing at nola.infer({ retry })", () => {
+    expect(() => withRetry(platform("nola"), constant({ maxRetries: 1 }))).toThrow(NolaConfigError);
+    expect(() => withRetry(platform("nola"), constant({ maxRetries: 1 }))).toThrow(/nola\.infer\(\{ retry \}\)/);
+    expect(() => withRetry(platform("nola"), constant({ maxRetries: 1 }))).toThrow(/can only be the root/);
+  });
+
+  it("fallback and roundRobin refuse platform members", () => {
+    expect(() => fallback([platform("a"), platform("b")])).toThrow(NolaConfigError);
+    expect(() => roundRobin([platform("a")])).toThrow(NolaConfigError);
+    expect(() => fallback([platform("nola"), succeeding("openai", "1")])).toThrow(/can only be the root/);
+  });
+
+  it("classic models keep the full combinator toolbox, unbranded results", () => {
+    expect(isPlatformModel(withRetry(succeeding("x", "t"), constant({ maxRetries: 0 })))).toBe(false);
+    expect(isPlatformModel(fallback([succeeding("a", "1"), succeeding("b", "2")]))).toBe(false);
+    expect(isPlatformModel(roundRobin([succeeding("a", "1"), succeeding("b", "2")]))).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { ProviderParams, ProviderRequest } from "@nola-lang/core";
+import type { InferenceModel, ProviderParams, ProviderRequest } from "@nola-lang/core";
 import { ExtractIntent, fingerprintRequest, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
@@ -22,7 +22,7 @@ const extract = () =>
 describe("ProviderParams", () => {
   it("withParams reaches the provider and shallow-merges across clones", async () => {
     const seen: (ProviderParams | undefined)[] = [];
-    nolaRuntime.configure({ providers: { default: probeProvider(seen) } });
+    nolaRuntime.configure({ model: { default: probeProvider(seen) } });
     const frame = openTestFrame();
     await extract().withParams({ temperature: 1 }).withParams({ maxOutputTokens: 5 }).run(frame);
     expect(seen).toEqual([{ temperature: 1, maxOutputTokens: 5 }]);
@@ -30,7 +30,7 @@ describe("ProviderParams", () => {
 
   it("an outer frame's params cover callee asks; a nearer frame overrides per field", async () => {
     const seen: (ProviderParams | undefined)[] = [];
-    nolaRuntime.configure({ providers: { default: probeProvider(seen) } });
+    nolaRuntime.configure({ model: { default: probeProvider(seen) } });
     const frame = openTestFrame({ options: { params: { temperature: 1, maxOutputTokens: 9 } } });
     await extract().withParams({ temperature: 0 }).run(frame);
     expect(seen).toEqual([{ temperature: 0, maxOutputTokens: 9 }]);
@@ -38,14 +38,14 @@ describe("ProviderParams", () => {
 
   it("no params anywhere means none on the wire", async () => {
     const seen: (ProviderParams | undefined)[] = [];
-    nolaRuntime.configure({ providers: { default: probeProvider(seen) } });
+    nolaRuntime.configure({ model: { default: probeProvider(seen) } });
     await extract().run(openTestFrame());
     expect(seen).toEqual([undefined]);
   });
 
   it("providerOptions merge per key across clones and frames", async () => {
     const seen: (ProviderParams | undefined)[] = [];
-    nolaRuntime.configure({ providers: { default: probeProvider(seen) } });
+    nolaRuntime.configure({ model: { default: probeProvider(seen) } });
     const frame = openTestFrame({
       options: { params: { providerOptions: { top_p: 0.5, reasoning: "low" } } },
     });
@@ -57,11 +57,13 @@ describe("ProviderParams", () => {
   });
 
   it("params are part of the request fingerprint", () => {
-    const base = {
-      system: "s",
-      messages: [{ role: "user" as const, content: "m" }],
-      output: { syntax: "json" as const, schema: { type: "string" as const } },
-    };
+    const modelOf = () =>
+      ({
+        intent: "extract",
+        input: { instruction: "m" },
+        output: { syntax: "json", schema: { type: "string" } },
+      }) as const satisfies InferenceModel;
+    const base = { payload: modelOf() };
     const a = fingerprintRequest(base);
     const b = fingerprintRequest({ ...base, params: { temperature: 0 } });
     const c = fingerprintRequest({ ...base, params: { temperature: 1 } });

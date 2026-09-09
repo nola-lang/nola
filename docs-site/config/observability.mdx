@@ -1,13 +1,15 @@
 ---
-title: Observability — hooks, receipts, logging
-description: Observe every ask with hooks (onAskStart … onInvocationEnd), read the receipt (prompt, servedBy, attempts, tokens, site), and tune the built-in logger.
+title: Telemetry — observers, receipts, tracers
+description: The telemetry list — console and terminalTrace, nola.tracer() for a Nola console, your own observers — plus every event payload and the receipt.
 sidebar:
   order: 60
 ---
 
-Every ask emits events, and every finished ask produces a *receipt*. Hooks observe both; the built-in logger is one such hook.
+Every ask emits events, and every finished ask produces a *receipt*. `telemetry` says who receives them: the terminal (`{ level }`), one observer, or an ordered list of observers. Observers only observe — nothing here can change an ask.
 
-## Hooks
+## The terminal
+
+With no `telemetry` at all, every event prints to the terminal — the default is `terminalTrace()` at level `debug`. `telemetry: { level }` is the same terminal at another level: `silent` · `error` (failed asks) · `warn` (adds validation failures and retries) · `info` (adds ask start/end and infer-function start/end) · `debug` (adds every provider request and reply).
 
 ```ts
 // nola.config.ts
@@ -15,8 +17,25 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
-  hooks: [
+  model: openai({ model: "gpt-5-mini" }),
+  telemetry: { level: "info" },
+});
+```
+
+The lines are the ones `nola console` prints for the same events — time, kind, site, provider, duration; attempt-level lines indented under their ask — in the same colours on a TTY (`NO_COLOR` turns them off; `terminalTrace({ color })` forces either way), so the terminal and the console show one stream. They go to **stderr**: your program's stdout stays its own at any level.
+
+## The telemetry list
+
+```ts
+// nola.config.ts
+import { openai } from "@nola-lang/providers";
+import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: openai({ model: "gpt-5-mini" }),
+  telemetry: [
+    nola.tracer("http://localhost:4141"),   // a local Nola console
+    terminalTrace({ level: "info" }),       // keep the terminal — a list implies nothing
     {
       name: "timing",
       onAskEnd: ({ receipt }) => {
@@ -27,21 +46,33 @@ export default defineConfig({
 });
 ```
 
-- A hook is an object with any of `onAskStart`, `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`, `onAskEnd`, `onInvocationEnd` (and an optional `name`).
-- All hooks receive all events; their order in the array is not meaningful.
-- Hooks observe only — they cannot mutate payloads or short-circuit an ask. A hook that throws is swallowed and warned about once; it can never break resolution.
+- An entry is `terminalTrace({ level })`, `nola.tracer(...)`, or any object with some of `onAskStart`, `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`, `onAskEnd`, `onInvocationStart`, `onInvocationEnd` (and an optional `name`). That object shape is `NolaTelemetry`, exported from `@nola-lang/runtime` — a third-party exporter is one of them. A single observer may be given without the array.
+- Every entry receives every event, in list order.
+- An observer or a list replaces the terminal: nothing is implied, so list `terminalTrace()` to keep it. An empty list is silent.
+- An observer that throws is swallowed and warned about once; it can never break resolution.
+
+## Tracers
+
+`nola.tracer()` posts every event to a Nola-Protocol server, one fire-and-forget POST per event: it never blocks or fails an ask, an unreachable server warns once per process and later events keep trying, nothing is buffered, and content is redacted before it leaves the process. With no argument the target is `NOLA_API_URL`, then `https://api.nola.sh`; a URL string or `{ baseUrl, apiKey?, apiKeyEnv?, fetch? }` names another (keyless on loopback, `NOLA_API_KEY` otherwise). Listing a tracer is the whole decision: inference on the platform does not imply traces to it, and a listed tracer sends whether or not the server stores them.
+
+**`NOLA_TRACING_URL`** is the zero-config attach for development: when set, the runtime appends `nola.tracer(<url>)` to the list. A config that lists a tracer itself wins, and the variable is ignored with one notice. Unsetting it disconnects.
+
+Every envelope carries the app's **project** name — the `project` config key, defaulting to the nearest `package.json` `name` — so a console receiving several apps' traces groups each run under its project. It is deployment metadata: never part of the ask fingerprint.
+
+Sending traces to a non-loopback host prints a once-per-process notice naming the host — traces carry prompts and outputs, so leaving the machine is never invisible.
 
 ## Event payloads
 
 | Event | Payload |
 | --- | --- |
-| `onAskStart` | `askId`, `site`, `provider` |
-| `onProviderRequest` | `askId`, `attempt`, `provider`, `messages` (the conversation as sent) |
+| `onAskStart` | `askId`, `site`, `provider`, `invocationId`, `spanPath` (invocation ids from the root frame to the ask site — `spanPath[0]` identifies the whole invocation, which the console shows as one trace), `def` (compiler-stamped identity of the authored ask — stable across line shifts, so executions group by definition), `instruction`, `kind` (`extract` or `call`), `callee` and `hint` (call intents — the function name and the authored hint), `typeText` (extract intents — the target type as TypeScript text, e.g. `"quote" \| "order"` or `Ticket`) |
+| `onProviderRequest` | `askId`, `attempt`, `provider`, `payload` (what was sent — the rendered chat prompt, or the inference model for `nola.infer()`; narrow with `isInferenceModel(e.payload)` from `@nola-lang/runtime`; carries the correction turn on the retry), `params`, `profile` (the `ask with <name>` name when the platform serves inference) |
 | `onProviderResponse` | `askId`, `attempt`, `provider`, `text`, `durationMs` |
 | `onValidationFailed` | `askId`, `attempt`, `error`, `site` — the answer did not match the schema; a correction attempt follows |
 | `onRetry` | `askId`, `attempt`, `reason`, `site` |
 | `onAskEnd` | `askId`, `receipt` (below) |
-| `onInvocationEnd` | `invocationId`, `trace` — the invocation's spans (asks and nested invocations) |
+| `onInvocationStart` | `invocationId`, `parentInvocationId` (absent on a root — a bare `await`, a plain-TS call, or `.detached()`), `spanPath`, `fn`, `file`, `detached` — fires the moment an infer function's frame opens, for every frame |
+| `onInvocationEnd` | `invocationId`, `parentInvocationId`, `status` (`ok` or `error`), `durationMs`, `trace` — this frame's spans (asks and nested invocations); fires for every frame, so filter on a missing `parentInvocationId` to see each trace once |
 
 ## The receipt
 
@@ -60,27 +91,11 @@ export default defineConfig({
 | `durationMs` | wall-clock time of the ask |
 | `invocationId`, `spanPath` | the invocation this ask belongs to, and the chain from the root frame |
 | `fingerprint` | the canonical ask fingerprint — the replay key |
+| `profile` | the inference profile sent with the request (`ask with <name>` when the platform serves inference); absent otherwise |
+| `def` | the ask's compiler-stamped source identity — a hash of the authored text (file, instruction, type; never line numbers), so executions of the same ask group together across runs and edits elsewhere in the file |
+| `kind` | `extract` for an extractor, `call` for the slot-filling ask of a call intent |
 | `meta` | scratch space for middleware stages; always `{}` while middleware is unwired |
 
 The receipt's `outcome.error` string is redacted (`redactError`); the prompt fields are **not** — `originalPrompt` and `effectivePrompt` hold the conversation exactly as composed, so a key that reached a contextual value is in the receipt. Keep secrets out of contextual parameters; see [Environments and secrets](/docs/config/environments-and-secrets/).
-
-## The built-in logger
-
-A logger ships as a hook. Its level comes from `observability.logLevel` (`silent` · `error` · `warn` · `info` · `debug`; default `warn`), and the `NOLA_LOG` environment variable overrides the configured level when set to a valid value:
-
-```ts
-// nola.config.ts
-import { openai } from "@nola-lang/providers";
-import { defineConfig } from "@nola-lang/runtime";
-
-export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
-  observability: { logLevel: "info" },
-});
-```
-
-```sh
-NOLA_LOG=debug nola run src/main.ts
-```
 
 Next: [Record and replay](/docs/config/record-and-replay/)

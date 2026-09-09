@@ -6,14 +6,14 @@ import { describe, expect, it } from "vitest";
 
 const INLINE_CONFIG = [
   "const provider = { name: 'inline', complete: async () => ({ text: '\"x\"' }) };",
-  "export default { providers: { default: provider } };",
+  "export default { model: { default: provider } };",
   "",
 ].join("\n");
 
 // Reads an env var at config-eval time so tests can observe whether .env was applied.
 const CONFIG_READS_ENV = [
   "const provider = { name: process.env.NOLA_TEST_ENV_VAR ?? 'unset', complete: async () => ({ text: '\"x\"' }) };",
-  "export default { providers: { default: provider } };",
+  "export default { model: { default: provider } };",
   "",
 ].join("\n");
 
@@ -28,8 +28,8 @@ describe("loadNolaConfig", () => {
     const tsConfig = `const n: number = 1;\n${INLINE_CONFIG}`;
     await writeFile(join(dir, "nola.config.ts"), tsConfig);
     const cfg = await loadNolaConfig(dir);
-    expect(cfg?.providers.default.name).toBe("inline");
-    expect((await cfg?.providers.default.complete({ system: "", messages: [] }))?.text).toBe('"x"');
+    expect(cfg?.model.default.name).toBe("inline");
+    expect((await cfg?.model.default.complete({ system: "", messages: [] }))?.text).toBe('"x"');
   });
 
   it("finds the config in a parent directory", async () => {
@@ -38,24 +38,26 @@ describe("loadNolaConfig", () => {
     const child = join(dir, "a", "b");
     await mkdir(child, { recursive: true });
     const cfg = await loadNolaConfig(child);
-    expect(cfg?.providers.default.name).toBe("inline");
+    expect(cfg?.model.default.name).toBe("inline");
   });
 
-  it("rejects configs without providers, naming the config path", async () => {
+  it("rejects configs without a model, naming the config path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "nola-badcfg-"));
     await writeFile(join(dir, "nola.config.ts"), "export default {};\n");
     const err = (await loadNolaConfig(dir).catch((e: unknown) => e)) as Error;
-    expect(err.message).toMatch(/`providers`/);
+    expect(err.message).toMatch(/`model`/);
     expect(err.message).toMatch(/nola\.config\.ts/);
   });
 
-  it("rejects the legacy { provider } shape with a migration hint", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "nola-legacy-"));
+  it("accepts a bare model (shorthand for { default })", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nola-bare-"));
     await writeFile(
       join(dir, "nola.config.ts"),
-      "export default { provider: { name: 'x', complete: async () => ({ text: '\"x\"' }) } };\n",
+      "export default { model: { name: 'bare', complete: async () => ({ text: '\"x\"' }) } };\n",
     );
-    await expect(loadNolaConfig(dir)).rejects.toThrow(/providers: \{ default:/);
+    const cfg = await loadNolaConfig(dir);
+    expect(Object.keys(cfg?.model ?? {})).toEqual(["default"]);
+    expect(cfg?.model.default.name).toBe("bare");
   });
 
   it("loads .env from the config directory before evaluating the config", async () => {
@@ -65,7 +67,7 @@ describe("loadNolaConfig", () => {
     delete process.env.NOLA_TEST_ENV_VAR;
     try {
       const cfg = await loadNolaConfig(dir);
-      expect(cfg?.providers.default.name).toBe("from-dotenv");
+      expect(cfg?.model.default.name).toBe("from-dotenv");
     } finally {
       delete process.env.NOLA_TEST_ENV_VAR;
     }
@@ -86,10 +88,10 @@ describe("loadNolaConfig", () => {
     );
     await writeFile(
       join(dir, "nola.config.ts"),
-      "import { canned } from '@cfg/provider.ts';\nexport default { providers: { default: canned } };\n",
+      "import { canned } from '@cfg/provider.ts';\nexport default { model: { default: canned } };\n",
     );
     const cfg = await loadNolaConfig(dir);
-    expect(cfg?.providers.default.name).toBe("from-src");
+    expect(cfg?.model.default.name).toBe("from-src");
   });
 
   it("carries a validated compiler section", async () => {
@@ -109,7 +111,7 @@ describe("loadNolaConfig", () => {
     process.env.NOLA_TEST_ENV_VAR = "from-shell";
     try {
       const cfg = await loadNolaConfig(dir);
-      expect(cfg?.providers.default.name).toBe("from-shell");
+      expect(cfg?.model.default.name).toBe("from-shell");
     } finally {
       delete process.env.NOLA_TEST_ENV_VAR;
     }
@@ -123,7 +125,7 @@ describe("loadCompilerOptions", () => {
   });
 
   it("reads the compiler section WITHOUT demanding a runtime-valid config", async () => {
-    // No providers at all: `nola build`/`check` must still work on this project.
+    // No provider at all: `nola build`/`check` must still work on this project.
     const dir = await mkdtemp(join(tmpdir(), "nola-copt-"));
     await writeFile(join(dir, "nola.config.ts"), "export default { compiler: { underivableContextType: 'omit' } };\n");
     expect(await loadCompilerOptions(dir)).toEqual({ underivableContextType: "omit" });

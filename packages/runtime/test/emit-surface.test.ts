@@ -6,7 +6,8 @@ describe("emit-contract bump enforcement", () => {
   // If this test fails because you changed the __nola surface:
   //   1. bump NOLA_EMIT in packages/core/src/index.ts,
   //   2. update `emit` and the key lists below,
-  //   3. update BOTH ambient stubs (tshost.ts / typecheck.ts) and RUNTIME_IMPORT's assert literal in tests.
+  //   3. update the ambient stub (packages/compiler/src/ambient-stub.ts) and the
+  //      `__nola.useRuntime(<N>)` literals pinned in the compiler lowering tests.
   // Never change the surface without bumping — stale builds would misbehave silently.
   // Runtime-only surfaces (config, hooks, middleware, logger) are NOT part of the
   // emit contract — only the `__nola` namespace the compiler emits calls into is.
@@ -33,7 +34,7 @@ describe("emit-contract bump enforcement", () => {
       // emit 7: ExtractIntent's init renames — the InferType expression moves
       // under `type` (was `schema` — a misnomer since the emit-5 carrier
       // switch) and the backtick text under `instruction` (was `message`),
-      // unifying with FunctionCallingIntent and the infer-function scope.
+      // unifying with FunctionCallIntent and the infer-function scope.
       // emit 8: the function scope factory moves from InferContext.scope to
       // FileInferContext.func({ fn, instruction, args }) — args carry every
       // param's name (+ InferType when derivable), and `value` only for
@@ -49,10 +50,19 @@ describe("emit-contract bump enforcement", () => {
       // `template: (__nola_s) => __nola.tpl`…`` closure on the func / extract /
       // call inits (instruction stays a string), rendered through the new
       // __nola.tpl tag. An emit-10 runtime has no tpl and ignores template.
-      emit: 11,
+      // emit 12: the call-intent factory is __nola.intents.FunctionCallIntent
+      // (was FunctionCallingIntent) — factory keys mirror the class names, and
+      // the class was renamed with the intents/ layout reorganization. An
+      // emit-11 runtime has no FunctionCallIntent key.
+      // emit 13: extract/call inits carry `def` — the compiler-stamped ask
+      // source identity (sha256 over file + raw instruction/callee + type
+      // text; line/col excluded; AskDefinition spec 2026-09-01). Namespace
+      // keys unchanged — an emit-12 runtime would silently DROP the field,
+      // losing definition analytics, hence the bump.
+      emit: 13,
       top: ["ask", "context", "fmt", "intents", "tpl", "types", "useRuntime"],
       context: ["file"],
-      intents: ["ExtractIntent", "FunctionCallingIntent", "Intent"],
+      intents: ["ExtractIntent", "FunctionCallIntent", "Intent"],
       types: ["array", "boolean", "date", "enum", "number", "object", "optional", "ref", "string", "unsupported"],
     });
   });

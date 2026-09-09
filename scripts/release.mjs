@@ -107,6 +107,20 @@ if (doNpm) {
   if (touched === 0) console.log("docs-site/skill samples: already at this version");
 }
 
+// packages/runtime/src/version.ts — the `version` the nola() provider sends
+// on every /v1/infer request so the server can render at the client's version.
+if (doNpm) {
+  const file = join(process.cwd(), "packages", "runtime", "src", "version.ts");
+  if (existsSync(file)) {
+    const before = readFileSync(file, "utf8");
+    const after = before.replace(/NOLA_VERSION = "[^"]*"/, `NOLA_VERSION = "${version}"`);
+    if (after !== before) {
+      writeFileSync(file, after);
+      console.log(`packages/runtime/src/version.ts -> ${version}`);
+    }
+  }
+}
+
 console.log(`\nbumped: ${[doNpm && "npm lockstep", doVscode && "vscode"].filter(Boolean).join(" + ")} -> ${version}. Now run: npm install`);
 console.log("Then commit, and publish with: node scripts/sync.mjs --release --push \"release: v<version>\"");
 console.log("(the v<version> tag triggers publish-npm.yml; vscode-v<version> triggers publish-vscode.yml;");

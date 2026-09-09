@@ -12,36 +12,36 @@ const ask = () => askViaInference({ frame: frame(), prompt: "p", schema: { type:
 
 describe("config latch", () => {
   it("nolaRuntime.configure may be called repeatedly before the first ask (last wins)", () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["a"]) } });
-    nolaRuntime.configure({ providers: { default: { ...mockProvider(["b"]), name: "second" } } });
-    expect(nolaRuntime.current().resolveProvider().name).toBe("second");
+    nolaRuntime.configure({ model: { default: mockProvider(["a"]) } });
+    nolaRuntime.configure({ model: { default: { ...mockProvider(["b"]), name: "second" } } });
+    expect(nolaRuntime.current().resolveModel().name).toBe("second");
   });
 
   it("the first successful ask latches: nolaRuntime.configure then throws NolaConfigError", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) } });
     await ask();
-    expect(() => nolaRuntime.configure({ providers: { default: mockProvider(["y"]) } })).toThrow(NolaConfigError);
-    expect(() => nolaRuntime.configure({ providers: { default: mockProvider(["y"]) } })).toThrow(/nolaRuntime\.reset/);
+    expect(() => nolaRuntime.configure({ model: { default: mockProvider(["y"]) } })).toThrow(NolaConfigError);
+    expect(() => nolaRuntime.configure({ model: { default: mockProvider(["y"]) } })).toThrow(/nolaRuntime\.reset/);
   });
 
   it("an unconfigured ask fails without latching — configure-and-retry works", async () => {
-    await expect(ask()).rejects.toThrow(/No Nola provider configured/);
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) } });
+    await expect(ask()).rejects.toThrow(/No Nola model configured/);
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) } });
     await expect(ask()).resolves.toBe("x");
   });
 
   it("a failed ask still latches a present config (the config was used)", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["nope", "still nope"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["nope", "still nope"]) } });
     await expect(
       askViaInference({ frame: frame(), prompt: "p", schema: { type: "number" }, loc: "1:1" }),
     ).rejects.toThrow();
-    expect(() => nolaRuntime.configure({ providers: { default: mockProvider([1]) } })).toThrow(NolaConfigError);
+    expect(() => nolaRuntime.configure({ model: { default: mockProvider([1]) } })).toThrow(NolaConfigError);
   });
 
   it("nolaRuntime.reset() clears the latch", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) } });
     await ask();
     nolaRuntime.reset();
-    expect(() => nolaRuntime.configure({ providers: { default: mockProvider(["y"]) } })).not.toThrow();
+    expect(() => nolaRuntime.configure({ model: { default: mockProvider(["y"]) } })).not.toThrow();
   });
 });

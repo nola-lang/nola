@@ -11,7 +11,7 @@ describe("compileCompanion", () => {
     ].join("\n");
     const r = compileCompanion(src, "/proj/src/models.ts", { sourceRoot: "/proj" });
     expect(r.diagnostics).toEqual([]);
-    expect(r.code).toContain("__nola.useRuntime(11);");
+    expect(r.code).toContain("__nola.useRuntime(13);");
     expect(r.code).toContain("function __nola_type_User(): InferType<unknown>");
     expect(r.code).toContain('__nola.types.ref("src/models#Secret", __nola_type_Secret)');
     expect(r.code).toContain("function __nola_type_Secret(): InferType<unknown>");

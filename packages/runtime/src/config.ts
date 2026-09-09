@@ -1,21 +1,34 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Codes } from "@nola-lang/ast";
 import type {
+  LanguageModel,
+  ModelConfigEntry,
   NolaCacheStore,
   NolaConfig,
-  NolaHook,
   NolaLogLevel,
   NolaMiddleware,
-  NolaProvider,
+  NolaTelemetry,
   UnderivableContextTypeMode,
 } from "@nola-lang/core";
-import { NolaConfigError } from "@nola-lang/core";
+import { isPlatformModel, NolaConfigError } from "@nola-lang/core";
 import { memoryCacheStore } from "./cache.js";
+import { terminalTrace } from "./terminal-trace.js";
+import { TRACER_HOOK, tracer } from "./tracer.js";
 
 export interface ResolvedNolaConfig {
-  providers: Readonly<Record<string, NolaProvider>>;
-  forceProvider?: string;
-  observability: Readonly<{ logLevel: NolaLogLevel }>;
-  hooks: readonly NolaHook[];
+  /** always the normalized map — a bare `model` resolves to `{ default }` */
+  model: Readonly<Record<string, ModelConfigEntry>>;
+  /**
+   * The app's project name — rides trace envelopes and platform infer
+   * requests (never the fingerprint). Explicit config wins; otherwise the
+   * nearest package.json `name` walking up from the working directory;
+   * absent when neither exists.
+   */
+  project?: string;
+  forceModel?: string;
+  /** The observer list in order — `console` already converted to the terminal sink; the NOLA_TRACING_URL tracer appended when the variable applies. */
+  telemetry: readonly NolaTelemetry[];
   middleware: readonly NolaMiddleware[];
   /** present iff `cache` was configured; store always concrete (default in-memory) */
   cache?: Readonly<{ store: NolaCacheStore }>;
@@ -41,10 +54,10 @@ export function defineConfig(config: NolaConfig): NolaConfig {
 const LOG_LEVELS: readonly NolaLogLevel[] = ["silent", "error", "warn", "info", "debug"];
 const RESERVED_KEYS = ["plugins"] as const;
 const ALLOWED_KEYS = new Set([
-  "providers",
-  "forceProvider",
-  "observability",
-  "hooks",
+  "model",
+  "project",
+  "forceModel",
+  "telemetry",
   "middleware",
   "cache",
   "system",
@@ -60,6 +73,7 @@ const HOOK_METHODS = [
   "onValidationFailed",
   "onRetry",
   "onAskEnd",
+  "onInvocationStart",
   "onInvocationEnd",
 ] as const;
 
@@ -67,19 +81,80 @@ function fail(source: string | undefined, message: string, code: string = Codes.
   throw new NolaConfigError(`${source ? `${source}: ` : ""}${message}`, code);
 }
 
-function validateHooks(source: string | undefined, raw: unknown): readonly NolaHook[] {
-  if (raw === undefined) return Object.freeze([]);
-  if (!Array.isArray(raw)) fail(source, "`hooks` must be an array of hook objects.");
-  raw.forEach((entry, i) => {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      fail(source, `hooks[${i}] is not a hook object (need { onAskStart?, onAskEnd?, ... }).`);
+/**
+ * The default project name: the nearest package.json `name`, walking up from
+ * the working directory. A package.json without a usable name keeps walking;
+ * no hit anywhere means no project (everything downstream omits it).
+ */
+function defaultProject(): string | undefined {
+  let dir = process.cwd();
+  for (;;) {
+    try {
+      const name = (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: unknown }).name;
+      if (typeof name === "string" && name.trim() !== "") return name;
+    } catch {
+      // no package.json here (or unreadable/invalid) — keep walking up
     }
-    for (const method of HOOK_METHODS) {
-      const fn = (entry as Record<string, unknown>)[method];
-      if (fn !== undefined && typeof fn !== "function") fail(source, `hooks[${i}].${method} must be a function.`);
-    }
-  });
-  return Object.freeze([...(raw as NolaHook[])]);
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function validateProject(source: string | undefined, raw: unknown): string | undefined {
+  if (raw === undefined) return defaultProject();
+  if (typeof raw !== "string" || raw.trim() === "") {
+    fail(source, "`project` must be a non-empty string — it names this app in traces and managed requests.");
+  }
+  return raw;
+}
+
+const TELEMETRY_SHAPE =
+  "`telemetry` must be { level } (the terminal), an observer, or an array of observers — e.g. { level: \"info\" } or [nola.tracer(), terminalTrace()].";
+
+function hasObserverMethod(source: string | undefined, entry: Record<string, unknown>, label: string): boolean {
+  let any = false;
+  for (const method of HOOK_METHODS) {
+    const fn = entry[method];
+    if (fn === undefined) continue;
+    if (typeof fn !== "function") fail(source, `${label}.${method} must be a function.`);
+    any = true;
+  }
+  return any;
+}
+
+/**
+ * `telemetry` (config v2 §3, amended 2026-09-08): `{ level? }` is the
+ * terminal alone; one observer or an array of observers replaces it and
+ * implies nothing else. Absent = `{}` = `terminalTrace()` (every event, at
+ * `debug`); `[]` = silent.
+ */
+function validateTelemetry(source: string | undefined, raw: unknown): readonly NolaTelemetry[] {
+  if (raw === undefined) return Object.freeze([terminalTrace()]);
+  if (Array.isArray(raw)) {
+    const out = raw.map((entry, i): NolaTelemetry => {
+      const label = `telemetry[${i}]`;
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        fail(source, `${label} is not an observer (need an object with at least one on* method; the terminal is terminalTrace({ level })).`);
+      }
+      if (!hasObserverMethod(source, entry as Record<string, unknown>, label)) {
+        fail(source, `${label} is not an observer (need an object with at least one on* method; the terminal is terminalTrace({ level })).`);
+      }
+      return entry as NolaTelemetry;
+    });
+    return Object.freeze(out);
+  }
+  if (raw === null || typeof raw !== "object") fail(source, TELEMETRY_SHAPE);
+  const obj = raw as Record<string, unknown>;
+  if (hasObserverMethod(source, obj, "telemetry")) return Object.freeze([obj as NolaTelemetry]);
+  for (const key of Object.keys(obj)) {
+    if (key !== "level") fail(source, `telemetry.${key} is not a terminal option — ${TELEMETRY_SHAPE}`);
+  }
+  const level = obj.level;
+  if (level !== undefined && (typeof level !== "string" || !LOG_LEVELS.includes(level as NolaLogLevel))) {
+    fail(source, `telemetry.level must be one of ${LOG_LEVELS.join(", ")}.`);
+  }
+  return Object.freeze([terminalTrace(level === undefined ? {} : { level: level as NolaLogLevel })]);
 }
 
 function validateCache(source: string | undefined, raw: unknown): Readonly<{ store: NolaCacheStore }> | undefined {
@@ -191,63 +266,119 @@ function validateMiddleware(source: string | undefined, raw: unknown): readonly 
   return Object.freeze([...(raw as NolaMiddleware[])]);
 }
 
+function isModelShaped(value: unknown): value is LanguageModel {
+  const m = value as { name?: unknown; complete?: unknown } | null;
+  return !!m && typeof m === "object" && typeof m.name === "string" && typeof m.complete === "function";
+}
+
+/** Rejects a string in the slot with its fix; returns the value otherwise. */
+function admitModelValue(source: string | undefined, value: unknown, label: string): unknown {
+  if (typeof value === "string") {
+    fail(
+      source,
+      `${label}: a string is not a model — import a provider factory from @nola-lang/providers (e.g. openai("gpt-5-mini")), or use nola.infer("<provider>/<model>") for a platform-served upstream.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `model` accepts a bare LanguageModel (→ { default }), the platform model
+ * `nola.infer()` (bare or as the map's `default` — root-only), or a named
+ * map that must carry `default`. The platform model nested anywhere else is
+ * the position error.
+ */
+function normalizeModelMap(source: string | undefined, raw: unknown): Record<string, ModelConfigEntry> {
+  const bare = admitModelValue(source, raw, "`model`");
+  if (isPlatformModel(bare)) return { default: bare };
+  if (isModelShaped(bare)) return { default: bare };
+  if (bare === null || typeof bare !== "object" || Array.isArray(bare)) {
+    fail(
+      source,
+      "`model` must be a model (need { name: string, complete(req) } — a provider factory result, or nola.infer()), or a map with at least a `default` entry.",
+    );
+  }
+  const map = bare as Record<string, unknown>;
+  if (!("default" in map)) fail(source, "a `model` map must include a `default` entry.");
+  const out: Record<string, ModelConfigEntry> = {};
+  for (const [name, value] of Object.entries(map)) {
+    const entry = admitModelValue(source, value, `model.${name}`);
+    if (isPlatformModel(entry)) {
+      if (name !== "default") {
+        fail(
+          source,
+          `model.${name}: the platform model can only be the root \`default\` — route locally with provider-factory models, or put \`nola.infer()\` in \`default\`.`,
+        );
+      }
+      out[name] = entry;
+      continue;
+    }
+    if (!isModelShaped(entry)) fail(source, `model.${name} is not a model (need { name: string, complete(req) }).`);
+    out[name] = entry;
+  }
+  return out;
+}
+
+/** Marks a config `resolveNolaConfig` produced, so re-resolution neither re-applies nor re-notices the env tracer. */
+const RESOLVED: unique symbol = Symbol.for("nola.resolvedConfig");
+
+let tracingEnvIgnoredNoticed = false;
+function noticeTracingEnvIgnored(): void {
+  if (tracingEnvIgnoredNoticed) return;
+  tracingEnvIgnoredNoticed = true;
+  console.warn("[nola] NOLA_TRACING_URL ignored — nola.config.ts lists a nola.tracer() entry.");
+}
+
 /** Validate a raw config value and freeze it. Idempotent on already-resolved configs. */
 export function resolveNolaConfig(raw: unknown, opts: { source?: string } = {}): ResolvedNolaConfig {
   const { source } = opts;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    fail(source, "config must be an object — export default defineConfig({ providers: { default: <provider> } }).");
+    fail(source, "config must be an object — export default defineConfig({ model: <model> }).");
   }
   const cfg = raw as Record<string, unknown>;
-  if ("provider" in cfg) {
-    fail(source, "`provider` was replaced by `providers` — write providers: { default: <your provider> }.");
-  }
   for (const key of RESERVED_KEYS) {
     if (cfg[key] !== undefined)
       fail(source, `\`${key}\` is reserved for a future Nola version.`, Codes.ConfigReservedKey);
+  }
+  if (cfg.hooks !== undefined) {
+    fail(
+      source,
+      "unknown config key `hooks` — observers are listed under `telemetry` ({ level } for the terminal, or a tracer / an object with on* methods).",
+    );
   }
   for (const key of Object.keys(cfg)) {
     if (!ALLOWED_KEYS.has(key)) {
       fail(
         source,
-        `unknown config key \`${key}\` — allowed keys: providers, forceProvider, observability, hooks, middleware, cache, system, ask, compiler, build.`,
+        `unknown config key \`${key}\` — allowed keys: model, project, forceModel, telemetry, middleware, cache, system, ask, compiler, build.`,
       );
     }
   }
-  const providers = cfg.providers;
-  if (providers === null || typeof providers !== "object" || Array.isArray(providers)) {
-    fail(source, "`providers` must be an object with at least a `default` entry.");
-  }
-  const map = providers as Record<string, unknown>;
+  const map = normalizeModelMap(source, cfg.model);
+  const project = validateProject(source, cfg.project);
   const names = Object.keys(map);
-  if (!("default" in map)) fail(source, "`providers` must include a `default` entry.");
-  for (const [name, value] of Object.entries(map)) {
-    const p = value as { name?: unknown; complete?: unknown } | null;
-    if (!p || typeof p !== "object" || typeof p.name !== "string" || typeof p.complete !== "function") {
-      fail(source, `providers.${name} is not a NolaProvider (need { name: string, complete(req) }).`);
-    }
-  }
-  if (cfg.forceProvider !== undefined) {
-    if (typeof cfg.forceProvider !== "string" || !(cfg.forceProvider in map)) {
+  if (cfg.forceModel !== undefined) {
+    if (typeof cfg.forceModel !== "string" || !(cfg.forceModel in map)) {
       fail(
         source,
-        `forceProvider ${JSON.stringify(cfg.forceProvider)} does not name a configured provider — configured: ${names.join(", ")}.`,
-        Codes.ConfigUnknownProvider,
+        `forceModel ${JSON.stringify(cfg.forceModel)} does not name a configured model — configured: ${names.join(", ")}.`,
+        Codes.ConfigUnknownModel,
       );
     }
   }
-  let logLevel: NolaLogLevel = "warn";
-  if (cfg.observability !== undefined) {
-    const obs = cfg.observability;
-    if (obs === null || typeof obs !== "object") fail(source, "`observability` must be an object.");
-    const level = (obs as Record<string, unknown>).logLevel;
-    if (level !== undefined) {
-      if (typeof level !== "string" || !LOG_LEVELS.includes(level as NolaLogLevel)) {
-        fail(source, `observability.logLevel must be one of ${LOG_LEVELS.join(", ")}.`);
-      }
-      logLevel = level as NolaLogLevel;
+  // NOLA_TRACING_URL = "append the default tracer": it yields, with one
+  // notice, to a tracer the config lists itself. A resolved config is left
+  // alone — its env tracer is already there.
+  let telemetry = validateTelemetry(source, cfg.telemetry);
+  const envUrl = process.env.NOLA_TRACING_URL;
+  const alreadyResolved = (cfg as { [RESOLVED]?: unknown })[RESOLVED] === true;
+  if (envUrl && !alreadyResolved) {
+    if (telemetry.some((t) => t.name === TRACER_HOOK)) {
+      noticeTracingEnvIgnored();
+    } else {
+      telemetry = Object.freeze([...telemetry, tracer(envUrl)]);
     }
   }
-  const hooks = validateHooks(source, cfg.hooks);
   const middleware = validateMiddleware(source, cfg.middleware);
   const cache = validateCache(source, cfg.cache);
   const system = validateSystem(source, cfg.system);
@@ -255,10 +386,11 @@ export function resolveNolaConfig(raw: unknown, opts: { source?: string } = {}):
   const compiler = resolveCompilerConfig(cfg.compiler, source);
   const build = resolveBuildConfig(cfg.build, source);
   return Object.freeze({
-    providers: Object.freeze({ ...(map as Record<string, NolaProvider>) }),
-    forceProvider: cfg.forceProvider as string | undefined,
-    observability: Object.freeze({ logLevel }),
-    hooks,
+    [RESOLVED]: true,
+    model: Object.freeze({ ...map }),
+    ...(project !== undefined ? { project } : {}),
+    forceModel: cfg.forceModel as string | undefined,
+    telemetry,
     middleware,
     cache,
     system,

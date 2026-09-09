@@ -73,7 +73,7 @@ const INLINE_PROVIDER = "{ name: 'p', complete: async () => ({ text: '\"x\"' }) 
 
 async function makeAppProject(): Promise<string> {
   const dir = await makeProject();
-  await writeFile(join(dir, "nola.config.ts"), `export default { providers: { default: ${INLINE_PROVIDER} } };\n`);
+  await writeFile(join(dir, "nola.config.ts"), `export default { model: { default: ${INLINE_PROVIDER} } };\n`);
   return dir;
 }
 
@@ -103,7 +103,7 @@ describe("cmdBuild config wiring", () => {
     const dir = await makeProject();
     await writeFile(
       join(dir, "nola.config.ts"),
-      `export default { build: { target: 'lib' }, providers: { default: ${INLINE_PROVIDER} } };\n`,
+      `export default { build: { target: 'lib' }, model: { default: ${INLINE_PROVIDER} } };\n`,
     );
     const { errors } = await cmdBuild(dir, join(dir, "dist"));
     expect(errors).toEqual([]);

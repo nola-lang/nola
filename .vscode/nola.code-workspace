@@ -21,6 +21,18 @@
 			"path": "../examples"
 		},
 		{
+			"name": "CONSOLE",
+			"path": "<not exists88>"
+		},
+		{
+			"name": " - console",
+			"path": "../packages/console"
+		},
+		{
+			"name": " - console-ui",
+			"path": "../packages/console-ui"
+		},
+		{
 			"name": "CLI",
 			"path": "<not exists8>"
 		},
@@ -36,6 +48,7 @@
 			"name": " - unplugin",
 			"path": "../packages/unplugin"
 		},
+		
 		{
 			"name": "PARSING",
 			"path": "<not exists1>",

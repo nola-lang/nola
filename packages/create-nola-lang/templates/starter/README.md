@@ -6,12 +6,10 @@ into typed values.
 
 ```bash
 npm install
-npm start        # runs src/main.ts — works offline, no API key needed
+npm start        # runs src/main.ts — __START_NOTE__
 npm run check    # type-checks the .tsi and .ts files together
 npm run build    # compiles to plain JS + d.ts in dist/
+npx nola-lang console   # traces every ask in your browser (it prints the config line to add)
 ```
 
-The starter runs offline: `nola.config.ts` replays answers from the committed
-`nola.replay.jsonl` ledger. The ledger is keyed by the exact prompt, so once
-you edit `src/person.tsi` or add your own asks, switch the config to a real
-provider (see the comment in `nola.config.ts`) and set `OPENAI_API_KEY`.
+__PROVIDER_NOTE__

@@ -13,7 +13,7 @@ afterEach(() => {
 
 /** The smallest end-to-end ask: mock provider, one extract through the real path. */
 function runOneMockAsk(): Promise<unknown> {
-  nolaRuntime.configure({ providers: { default: mockProvider(["hello"]) } });
+  nolaRuntime.configure({ model: { default: mockProvider(["hello"]) } });
   return askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" });
 }
 

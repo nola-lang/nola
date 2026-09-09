@@ -20,40 +20,40 @@ afterEach(() => nolaRuntime.reset());
 describe("__nola.ask provider alias (ask with <name> lowering)", () => {
   it("routes resolution through the named provider", async () => {
     nolaRuntime.configure({
-      providers: { default: named("d", "from-default"), fast: named("f", "from-fast") },
+      model: { default: named("d", "from-default"), fast: named("f", "from-fast") },
     });
     await expect(__nola.ask(intent(), ctx(), "fast")).resolves.toBe("from-fast");
   });
 
   it("uses the default provider when no alias is given", async () => {
     nolaRuntime.configure({
-      providers: { default: named("d", "from-default"), fast: named("f", "from-fast") },
+      model: { default: named("d", "from-default"), fast: named("f", "from-fast") },
     });
     await expect(__nola.ask(intent(), ctx())).resolves.toBe("from-default");
   });
 
-  it("the ask-site alias wins over the intent's own .withProvider pin", async () => {
+  it("the ask-site alias wins over the intent's own .withModel pin", async () => {
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: named("d", "from-default"),
         slow: named("s", "from-slow"),
         fast: named("f", "from-fast"),
       },
     });
-    const pinned = intent().withProvider("slow");
+    const pinned = intent().withModel("slow");
     await expect(__nola.ask(pinned, ctx(), "fast")).resolves.toBe("from-fast");
   });
 
-  it("forceProvider stays hermetic: it beats the ask-site alias", async () => {
+  it("forceModel stays hermetic: it beats the ask-site alias", async () => {
     nolaRuntime.configure({
-      providers: { default: named("d", "from-default"), fast: named("f", "from-fast"), mock: named("m", "from-mock") },
-      forceProvider: "mock",
+      model: { default: named("d", "from-default"), fast: named("f", "from-fast"), mock: named("m", "from-mock") },
+      forceModel: "mock",
     });
     await expect(__nola.ask(intent(), ctx(), "fast")).resolves.toBe("from-mock");
   });
 
-  it("an unknown alias rejects with ConfigUnknownProvider at resolve time", async () => {
-    nolaRuntime.configure({ providers: { default: named("d", "from-default") } });
+  it("an unknown alias rejects with ConfigUnknownModel at resolve time", async () => {
+    nolaRuntime.configure({ model: { default: named("d", "from-default") } });
     await expect(__nola.ask(intent(), ctx(), "slow")).rejects.toThrow(NolaConfigError);
   });
 });

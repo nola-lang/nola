@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
-import type { HistoryRecord, JsonSchema, Message, ProviderOutput, ProviderParams } from "./index.js";
+import type { ProviderParams } from "./index.js";
+import { isInferenceModel, type ProviderPayload } from "./provider-dialect.js";
+import { type ClassicPrompt, renderClassic } from "./render-classic.js";
 
 /**
  * Version baked into every ask fingerprint. Bump when the canonical
  * serialization changes shape — old caches/ledgers must not silently match.
- * v3: fingerprintRequest hashes the full ProviderOutput (was bare schema) and
- * ProviderParams.
+ * v5: the fingerprint is taken over the CLASSIC RENDERING of the ask plus
+ * ProviderParams — a model payload is rendered first — so a model-dialect
+ * provider (nola) and a chat provider key the same ask identically and one
+ * ledger serves both. The cost: a Nola release that rephrases the classic
+ * prompt re-keys every ledger.
  */
-export const FINGERPRINT_VERSION = 3;
+export const FINGERPRINT_VERSION = 5;
 
 function sortValue(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortValue);
@@ -28,54 +33,34 @@ export function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-export interface AskFingerprintInput {
-  lineage: ReadonlyArray<Readonly<Record<string, unknown>>>;
-  history: ReadonlyArray<HistoryRecord>;
-  prompt: string;
-  schema: JsonSchema;
-  provider: string;
-  preamble: string;
+/**
+ * The rendering as first composed: a model's `correction` is stripped before
+ * rendering; a classic prompt keeps only its first user turn (the correction
+ * pair is appended after it), so both shapes of one ask agree.
+ */
+function firstComposed(payload: ProviderPayload): ClassicPrompt {
+  if (isInferenceModel(payload)) {
+    const { correction: _correction, ...model } = payload;
+    return renderClassic(model);
+  }
+  return { system: payload.system, messages: payload.messages.slice(0, 1), output: payload.output };
 }
 
 /**
- * Everything that determines a provider exchange, nothing volatile (no askId,
- * no timestamps, no invocationId). History is hashed as the prompt sees it.
+ * Fingerprint of the ask as first composed. Extra properties on `req`
+ * (signal, trace) are ignored — only `payload`, `params` and `profile` are
+ * hashed. `profile` (the managed-mode ask-site name) joins ONLY when
+ * present, so profile-free asks keep their v5 hashes and existing ledgers
+ * stay valid — an addition here must follow the same present-only pattern
+ * or bump FINGERPRINT_VERSION.
  */
-export function fingerprintAsk(input: AskFingerprintInput): string {
-  const payload = {
-    v: FINGERPRINT_VERSION,
-    lineage: input.lineage,
-    history: input.history.map((h) => ({
-      prompt: h.prompt,
-      value: h.promptValue !== undefined ? h.promptValue : h.value,
-    })),
-    prompt: input.prompt,
-    schema: input.schema,
-    provider: input.provider,
-    preamble: input.preamble,
-  };
-  return sha256Hex(canonicalize(payload));
-}
-
-/**
- * Fingerprint of exactly what crosses the NolaProvider.complete seam: the
- * system text plus what composeInferParams returned (messages + output
- * contract). Extra properties on `req` (e.g. a full ProviderRequest with its
- * signal) are ignored — only the three named fields are hashed.
- */
-export function fingerprintRequest(req: {
-  system: string;
-  messages: ReadonlyArray<Message>;
-  output: ProviderOutput;
-  params?: ProviderParams;
-}): string {
+export function fingerprintRequest(req: { payload: ProviderPayload; params?: ProviderParams; profile?: string }): string {
   return sha256Hex(
     canonicalize({
       v: FINGERPRINT_VERSION,
-      system: req.system,
-      messages: req.messages,
-      output: req.output,
+      prompt: firstComposed(req.payload),
       params: req.params ?? null,
+      ...(req.profile !== undefined ? { profile: req.profile } : {}),
     }),
   );
 }

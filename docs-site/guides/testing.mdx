@@ -1,11 +1,11 @@
 ---
 title: Testing without a network
-description: Test Nola code deterministically — mockProvider, forceProvider for hermetic CI, node:test or vitest, and record/replay ledgers.
+description: Test Nola code deterministically — mockProvider, forceModel for hermetic CI, node:test or vitest, and record/replay ledgers.
 sidebar:
   order: 60
 ---
 
-Nola code is deterministic to test when the provider is: a `mockProvider` or a replay ledger answers every ask, `forceProvider` guarantees nothing escapes to the network, and your test runner imports the `.tsi` file like any other module. Every recipe on this page was run against a fresh starter project.
+Nola code is deterministic to test when the provider is: a `mockProvider` or a replay ledger answers every ask, `forceModel` guarantees nothing escapes to the network, and your test runner imports the `.tsi` file like any other module. Every recipe on this page was run against a fresh starter project.
 
 ## mockProvider
 
@@ -17,17 +17,17 @@ import { mockProvider, openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: {
+  model: {
     default: openai({ model: "gpt-5-mini" }),
     mock: mockProvider([{ name: "Alice Smith", age: 32, employer: "Acme Corp", job: "engineer" }]),
-    echo: mockProvider((req) => ({ messages: req.messages.length })),
+    echo: mockProvider((req) => ({ prompt: req.payload.messages[0]?.content })),
   },
-  // hermetic: with NOLA_TEST=1 EVERY ask goes to `mock`, even ones pinned with ask with / .withProvider()
-  forceProvider: process.env.NOLA_TEST === "1" ? "mock" : undefined,
+  // hermetic: with NOLA_TEST=1 EVERY ask goes to `mock`, even ones pinned with ask with / .withModel()
+  forceModel: process.env.NOLA_TEST === "1" ? "mock" : undefined,
 });
 ```
 
-`forceProvider` is the one runtime-enforced switch: a provider pinned inside a dependency cannot leak a real call into a test run. Values returned by a mock are still validated against the extractor's schema, so a mock that returns the wrong shape fails the test — useful in itself.
+`forceModel` is the one runtime-enforced switch: a provider pinned inside a dependency cannot leak a real call into a test run. Values returned by a mock are still validated against the extractor's schema, so a mock that returns the wrong shape fails the test — useful in itself.
 
 ## A test under the loader (node:test)
 
@@ -67,7 +67,7 @@ afterEach(() => nolaRuntime.reset());
 
 test("configure in code with a mock provider", async () => {
   nolaRuntime.reset();   // the loader may already have applied nola.config.ts — the config is frozen after the first ask
-  nolaRuntime.configure({ providers: { default: mockProvider([{ name: "Bob", age: 40, employer: "Initech", job: "dev" }]) } });
+  nolaRuntime.configure({ model: mockProvider([{ name: "Bob", age: 40, employer: "Initech", job: "dev" }]) });
   const person = await extractPerson("whatever");
   assert.equal(person.name, "Bob");
 });
@@ -120,11 +120,9 @@ import { defineConfig } from "@nola-lang/runtime";
 const live = process.env.NOLA_RECORD === "1";
 
 export default defineConfig({
-  providers: {
-    default: live
-      ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
-      : replay("./nola.replay.jsonl"),
-  },
+  model: live
+    ? record(openai({ model: "gpt-5-mini" }), "./nola.replay.jsonl")
+    : replay("./nola.replay.jsonl"),
 });
 ```
 

@@ -9,6 +9,8 @@
   "references": [
     { "path": "../ast" },
     { "path": "../compiler" },
+    { "path": "../console" },
+    { "path": "../core" },
     { "path": "../create-nola-lang" },
     { "path": "../node-loader" },
     { "path": "../parser" },

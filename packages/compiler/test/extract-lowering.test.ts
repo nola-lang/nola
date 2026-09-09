@@ -2,16 +2,17 @@
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
+import { defHash } from "../src/lower/templates.js";
 
 describe("extract lowering v2", () => {
   it("lowers a typed extractor to an ExtractIntent factory call", () => {
     const { code, diagnostics } = compileNola("const i = ..`ticket id`<string>;\n", "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      '__nola.intents.ExtractIntent<string>({ instruction: `ticket id`, type: __nola.types.string(), loc: "1:11" })',
+      `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola.types.string(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
     );
     expect(code).toContain('import { __nola } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(11);");
+    expect(code).toContain("__nola.useRuntime(13);");
   });
 
   it("wraps each ${} substitution in __nola.fmt and keeps the template", () => {
@@ -37,7 +38,7 @@ describe("extract lowering v2", () => {
     const { code, diagnostics } = compileNola("const i = ..`when`<Date>;\n", "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      '__nola.intents.ExtractIntent<Date>({ instruction: `when`, type: __nola.types.date(), loc: "1:11" })',
+      `__nola.intents.ExtractIntent<Date>({ instruction: \`when\`, type: __nola.types.date(), loc: "1:11", def: "${defHash("x.tsi", "extract", "when", "Date")}" })`,
     );
   });
 
@@ -78,7 +79,7 @@ describe("extractor prompt templates (${.member})", () => {
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      'await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: "type: ${.type} for ${a}", template: (__nola_s) => __nola.tpl`type: ${__nola_s.type} for ${a}`, type: __nola.types.string(), loc: "2:17" }), __frame)',
+      `await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: "type: \${.type} for \${a}", template: (__nola_s) => __nola.tpl\`type: \${__nola_s.type} for \${a}\`, type: __nola.types.string(), loc: "2:17", def: "${defHash("x.tsi", "extract", "type: ${.type} for ${a}", "string")}" }), __frame)`,
     );
     // a lexical hole inside a template is NOT fmt-wrapped (tpl formats)
     expect(code).not.toContain("__nola.fmt(a)");

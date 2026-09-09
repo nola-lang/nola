@@ -1,7 +1,9 @@
 import type { JsonSchema } from "@nola-lang/core";
+import { SYSTEM_PREAMBLE } from "@nola-lang/core";
 import { openai } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
 import { describe, expect, it, vi } from "vitest";
+import { requestOf } from "./helpers/model.js";
 
 type FetchArgs = { url: string; init: RequestInit };
 
@@ -21,14 +23,29 @@ const chatReply = (content: unknown) => ({
 });
 
 describe("openai provider", () => {
+  it("sends req.payload's system and messages verbatim — the runtime rendered them, the provider never re-renders", async () => {
+    const { fn, calls } = fakeFetch(() => chatReply({ value: "x" }));
+    await openai({ apiKey: "k", fetch: fn, model: "m" }).complete({
+      payload: {
+        system: "hand-written system",
+        messages: [{ role: "user", content: "hand-written turn" }, { role: "assistant", content: "reply" }, { role: "user", content: "again" }],
+        // an object schema: no {value} envelope, so nothing is appended to the system text
+        output: { syntax: "json", schema: { type: "object", properties: { v: { type: "string" } }, required: ["v"], additionalProperties: false } },
+      },
+    });
+    const body = JSON.parse(String(calls[0]?.init.body)) as { messages: { role: string; content: string }[] };
+    expect(body.messages).toEqual([
+      { role: "system", content: "hand-written system" },
+      { role: "user", content: "hand-written turn" },
+      { role: "assistant", content: "reply" },
+      { role: "user", content: "again" },
+    ]);
+  });
+
   it("wraps scalar schemas in a {value} envelope and unwraps the reply", async () => {
     const { fn, calls } = fakeFetch(() => chatReply({ value: "John" }));
     const p = openai({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete({
-      system: "s",
-      messages: [{ role: "user", content: "m" }],
-      output: { syntax: "json", schema: { type: "string" } },
-    });
+    const { text } = await p.complete(requestOf({ system: "s", schema: { type: "string" } }));
     expect(text).toBe('"John"');
     const body = JSON.parse(String(calls[0]?.init.body)) as {
       model: string;
@@ -42,7 +59,7 @@ describe("openai provider", () => {
     expect(body.messages[0]?.role).toBe("system");
     // Enveloped scalars: the model is instructed to wrap its answer so that
     // generate-then-validate backends don't emit a bare value failing the {value} schema.
-    expect(body.messages[0]?.content).toContain("s");
+    expect(body.messages[0]?.content).toContain(`${SYSTEM_PREAMBLE}\n\ns`);
     expect(body.messages[0]?.content).toContain('"value"');
     expect(body.response_format.type).toBe("json_schema");
     expect(body.response_format.json_schema.strict).toBe(true);
@@ -58,7 +75,7 @@ describe("openai provider", () => {
     };
     const { fn, calls } = fakeFetch(() => chatReply({ id: "1", name: null }));
     const p = openai({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete({ system: "s", messages: [], output: { syntax: "json", schema } });
+    const { text } = await p.complete(requestOf({ system: "s", schema }));
     expect(JSON.parse(text)).toEqual({ id: "1" });
     const sent = JSON.parse(String(calls[0]?.init.body)).response_format.json_schema.schema as {
       required: string[];
@@ -71,11 +88,7 @@ describe("openai provider", () => {
   it("carries enum through the strict transport", async () => {
     const { fn, calls } = fakeFetch(() => chatReply({ value: "billing" }));
     const p = openai({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json", schema: { type: "string", enum: ["billing", "refund"] } },
-    });
+    const { text } = await p.complete(requestOf({ system: "s", schema: { type: "string", enum: ["billing", "refund"] } }));
     expect(text).toBe('"billing"');
     const sent = JSON.parse(String(calls[0]?.init.body)).response_format.json_schema.schema as {
       properties: { value: unknown };
@@ -92,7 +105,7 @@ describe("openai provider", () => {
     };
     const { fn } = fakeFetch(() => chatReply({ ok: true }));
     const p = openai({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete({ system: "s", messages: [], output: { syntax: "json", schema } });
+    const { text } = await p.complete(requestOf({ system: "s", schema }));
     expect(JSON.parse(text)).toEqual({ ok: true });
   });
 
@@ -104,9 +117,9 @@ describe("openai provider", () => {
       additionalProperties: false,
     };
     const { fn, calls } = fakeFetch(() => chatReply({ ok: true }));
-    await openai({ apiKey: "k", fetch: fn, model: "m" }).complete({ system: "s", messages: [], output: { syntax: "json", schema } });
+    await openai({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema }));
     const body = JSON.parse(String(calls[0]?.init.body)) as { messages: Array<{ content: string }> };
-    expect(body.messages[0]?.content).toBe("s");
+    expect(body.messages[0]?.content).toBe(`${SYSTEM_PREAMBLE}\n\ns`);
   });
 
   it("recovers the model answer from a Groq json_validate_failed 400 (bare value)", async () => {
@@ -119,40 +132,40 @@ describe("openai provider", () => {
       },
     };
     const { fn } = fakeFetch(() => ({ status: 400, body: groqError }));
-    const { text } = await openai({ apiKey: "k", fetch: fn, model: "m" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json", schema: { type: "string" } },
-    });
+    const { text } = await openai({ apiKey: "k", fetch: fn, model: "m" }).complete(
+      requestOf({ system: "s", schema: { type: "string" } }),
+    );
     expect(text).toBe('"two"');
   });
 
   it("recovers an enveloped object from failed_generation", async () => {
     const groqError = { error: { code: "json_validate_failed", failed_generation: JSON.stringify({ value: "two" }) } };
     const { fn } = fakeFetch(() => ({ status: 400, body: groqError }));
-    const { text } = await openai({ apiKey: "k", fetch: fn, model: "m" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json", schema: { type: "string" } },
-    });
+    const { text } = await openai({ apiKey: "k", fetch: fn, model: "m" }).complete(
+      requestOf({ system: "s", schema: { type: "string" } }),
+    );
     expect(text).toBe('"two"');
   });
 
   it("still throws on a 400 with no recoverable failed_generation", async () => {
     const { fn } = fakeFetch(() => ({ status: 400, body: { error: { message: "bad request" } } }));
     await expect(
-      openai({ apiKey: "k", fetch: fn, model: "m" }).complete({
-        system: "s",
-        messages: [],
-        output: { syntax: "json", schema: { type: "string" } },
-      }),
+      openai({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema: { type: "string" } })),
     ).rejects.toBeInstanceOf(NolaProviderError);
+  });
+
+  it("requests structured output for the default (bare-string) schema when none is given", async () => {
+    const { fn, calls } = fakeFetch(() => chatReply({ value: "free text answer" }));
+    const p = openai({ apiKey: "k", fetch: fn, model: "m" });
+    const { text } = await p.complete(requestOf({ system: "s" }));
+    expect(text).toBe('"free text answer"');
+    expect(JSON.parse(String(calls[0]?.init.body))).toHaveProperty("response_format");
   });
 
   it("omits response_format when no schema requested and returns raw text", async () => {
     const { fn, calls } = fakeFetch(() => chatReply("free text answer"));
     const p = openai({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete({ system: "s", messages: [], output: { syntax: "json" } });
+    const { text } = await p.complete(requestOf({ system: "s", schema: null }));
     expect(text).toBe("free text answer");
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("response_format");
   });
@@ -162,7 +175,7 @@ describe("openai provider", () => {
     delete process.env.OPENAI_API_KEY;
     try {
       const { fn } = fakeFetch(() => chatReply("x"));
-      await expect(openai({ fetch: fn, model: "m" }).complete({ system: "s", messages: [], output: { syntax: "json" } })).rejects.toBeInstanceOf(
+      await expect(openai({ fetch: fn, model: "m" }).complete(requestOf({ system: "s" }))).rejects.toBeInstanceOf(
         NolaProviderError,
       );
     } finally {
@@ -173,7 +186,7 @@ describe("openai provider", () => {
   it("wraps HTTP failures with status and body excerpt", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: { error: { message: "rate limited" } } }));
     const err = await openai({ apiKey: "k", fetch: fn, model: "m" })
-      .complete({ system: "s", messages: [], output: { syntax: "json" } })
+      .complete(requestOf({ system: "s" }))
       .catch((e) => e);
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.message).toContain("429");
@@ -183,7 +196,7 @@ describe("openai provider", () => {
   it("carries a delta-seconds Retry-After header as retryAfterMs", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: "rate limited", headers: { "retry-after": "2" } }));
     const err = await openai({ apiKey: "k", fetch: fn, model: "m" })
-      .complete({ system: "s", messages: [], output: { syntax: "json" } })
+      .complete(requestOf({ system: "s" }))
       .catch((e) => e);
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.retryAfterMs).toBe(2000);
@@ -193,7 +206,7 @@ describe("openai provider", () => {
     const date = new Date(Date.now() + 5_000).toUTCString();
     const { fn } = fakeFetch(() => ({ status: 429, body: "rate limited", headers: { "retry-after": date } }));
     const err = await openai({ apiKey: "k", fetch: fn, model: "m" })
-      .complete({ system: "s", messages: [], output: { syntax: "json" } })
+      .complete(requestOf({ system: "s" }))
       .catch((e) => e);
     expect(err.retryAfterMs).toBeGreaterThan(0);
     expect(err.retryAfterMs).toBeLessThanOrEqual(5_000);
@@ -204,7 +217,7 @@ describe("openai provider", () => {
     const bad = fakeFetch(() => ({ status: 429, body: "rate limited", headers: { "retry-after": "soon" } }));
     for (const { fn } of [missing, bad]) {
       const err = await openai({ apiKey: "k", fetch: fn, model: "m" })
-        .complete({ system: "s", messages: [], output: { syntax: "json" } })
+        .complete(requestOf({ system: "s" }))
         .catch((e) => e);
       expect(err.retryAfterMs).toBeUndefined();
     }
@@ -213,11 +226,11 @@ describe("openai provider", () => {
   it("accepts a bare model string as shorthand for { model } with all other options defaulted", async () => {
     const original = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "k-short";
-    const { fn, calls } = fakeFetch(() => chatReply("x"));
+    const { fn, calls } = fakeFetch(() => chatReply({ value: "x" }));
     vi.stubGlobal("fetch", fn);
     try {
-      const { text } = await openai("gpt-5-mini").complete({ system: "s", messages: [], output: { syntax: "json" } });
-      expect(text).toBe("x");
+      const { text } = await openai("gpt-5-mini").complete(requestOf({ system: "s" }));
+      expect(text).toBe('"x"');
       expect(calls[0]?.url).toBe("https://api.openai.com/v1/chat/completions");
       expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer k-short");
       expect(JSON.parse(String(calls[0]?.init.body)).model).toBe("gpt-5-mini");
@@ -232,13 +245,13 @@ describe("openai provider", () => {
     // The documented recipe shape for Ollama / OpenRouter / Groq / DeepSeek / xAI.
     process.env.NOLA_TEST_COMPAT_KEY = "sk-or-abc";
     try {
-      const { fn, calls } = fakeFetch(() => chatReply("x"));
+      const { fn, calls } = fakeFetch(() => chatReply({ value: "x" }));
       await openai({
         baseUrl: "https://openrouter.ai/api/v1",
         apiKeyEnv: "NOLA_TEST_COMPAT_KEY",
         model: "deepseek/deepseek-chat",
         fetch: fn,
-      }).complete({ system: "s", messages: [], output: { syntax: "json" } });
+      }).complete(requestOf({ system: "s" }));
       expect(calls[0]?.url).toBe("https://openrouter.ai/api/v1/chat/completions");
       expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer sk-or-abc");
       expect(JSON.parse(String(calls[0]?.init.body)).model).toBe("deepseek/deepseek-chat");
@@ -248,13 +261,24 @@ describe("openai provider", () => {
   });
 
   it("honors model and baseUrl options", async () => {
-    const { fn, calls } = fakeFetch(() => chatReply("x"));
-    await openai({ apiKey: "k", fetch: fn, model: "gpt-4.1", baseUrl: "https://proxy.local/v1" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json" },
-    });
+    const { fn, calls } = fakeFetch(() => chatReply({ value: "x" }));
+    await openai({ apiKey: "k", fetch: fn, model: "gpt-4.1", baseUrl: "https://proxy.local/v1" }).complete(
+      requestOf({ system: "s" }),
+    );
     expect(calls[0]?.url).toBe("https://proxy.local/v1/chat/completions");
     expect(JSON.parse(String(calls[0]?.init.body)).model).toBe("gpt-4.1");
+  });
+
+  it("renders the model into the chat body: system, one user message, and the correction pair when present", async () => {
+    const { fn, calls } = fakeFetch(() => chatReply({ ok: true }));
+    const schema: JsonSchema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
+    await openai({ apiKey: "k", fetch: fn, model: "m" }).complete(
+      requestOf({ instruction: "is it ok", schema, correction: { response: "nope", error: "$: expected object" } }),
+    );
+    const body = JSON.parse(String(calls[0]?.init.body)) as { messages: Array<{ role: string; content: string }> };
+    expect(body.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(body.messages[1]?.content).toContain("<request>\nis it ok\n</request>");
+    expect(body.messages[2]?.content).toBe("nope");
+    expect(body.messages[3]?.content).toContain("Your previous reply was invalid: $: expected object.");
   });
 });

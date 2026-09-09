@@ -1,13 +1,13 @@
 ---
 title: Quick start
-description: From zero to a running .tsi file in five minutes — scaffold, run offline, switch on a real provider, type-check.
+description: From zero to a running .tsi file in five minutes — scaffold, take the 25 free runs or run offline, switch providers, type-check.
 sidebar:
   order: 10
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-This page takes you from nothing to a running Nola program — and the first run needs no API key.
+This page takes you from nothing to a running Nola program — and the first run needs no account and no provider key.
 
 ## 1. Create a project
 
@@ -34,11 +34,15 @@ This page takes you from nothing to a running Nola program — and the first run
   </TabItem>
 </Tabs>
 
-The scaffolder asks for a name and a template — `starter` (the default: typed extraction that runs offline), `empty` (the same `package.json`, `tsconfig.json` and `.gitignore` plus a stub `src/main.ts` — no `.tsi`, no replay ledger), or one of the curated examples. Non-interactive: `npm create nola my-app -- --template extract-resume`. Nola needs **Node ≥ 22**.
+The scaffolder asks for a name (Enter keeps `nola-app`) and a template — `starter` (the default: typed extraction that runs offline), `empty` (the same `package.json`, `tsconfig.json` and `.gitignore` plus a stub `src/main.ts` — no `.tsi`, no replay ledger), or one of the curated examples. Non-interactive: `npm create nola my-app -- --template extract-resume`. Nola needs **Node ≥ 22**.
 
-Pick **VS Code** at the editor prompt (or pass `--ide vscode`) to get a `launch.json` for F5 debugging and a recommendation for the Nola extension — see [Editor setup](/docs/start/editor-setup/).
+Next it asks *Set up your editor and coding agents?* — **no** skips the whole step; **yes** (the default) opens one list with two sections. Keep **VS Code** ticked under *Editor* (or pass `--ide vscode`) to get a `launch.json` for F5 debugging and a recommendation for the Nola extension — see [Editor setup](/docs/start/editor-setup/). Under *Coding agents* tick the assistants you use (**Claude Code** is preselected; pass `--agents` non-interactively) to get the Nola skill written into the project — see [The nola CLI](/docs/tooling/cli/#nola-skill-install). Enter accepts both defaults at once.
 
-## 2. Run it — offline
+Right after the template it asks *Select an inference provider:* — **Nola** (highlighted: 25 free runs, no account or provider key needed), **OpenAI**, **Anthropic**, **Gemini**, or *Skip for now*. Choose Nola and the scaffolder gets an anonymous trial key from the Nola API, writes it to `.env` as `NOLA_API_KEY` (git-ignored), and writes a config with `model: nola.infer()` — the platform serves inference and picks the model. Choose a vendor and the config names that vendor's model (`openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")` or `google("gemini-2.5-flash")`) and reads its key from `.env` — put `OPENAI_API_KEY=…` (or `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) there before the first run. Skip and the starter runs offline from its replay ledger instead. Non-interactive runs never call the network unless you pass `--provider nola` (`--trial` is the same; `--provider none` / `--no-trial` skips explicitly). A machine gets one anonymous trial. On your next project here the Nola row says so — *Trial key already issued. Get another? Enter to sign in.* — and Enter on it opens the browser right there, before the remaining questions (`npx nola-lang login` does the same on its own); the key is then minted on your account, which has its own free runs and balance and lists every key you make. If the sign-in fails, the menu comes back so you can skip or pick a vendor.
+
+When you chose VS Code, the scaffolder ends with one more question once the files are written — *Install dependencies and open VS Code?* — and a yes runs the install for you and opens the new folder in VS Code (so the `cd` / install below are already done).
+
+## 2. Run it
 
 ```sh
 cd my-app
@@ -46,7 +50,7 @@ npm install
 npm start
 ```
 
-`npm start` runs `nola run src/main.ts`. The starter's `nola.config.ts` uses `replay("./nola.replay.jsonl")`, so the answers come from a ledger committed with the project — no key, no network. These are the two files it runs:
+`npm start` runs `nola run src/main.ts`. With Nola as the provider, `nola.config.ts` sets `model: nola.infer()` and the answer comes from the Nola API on your free runs; with a vendor, it comes from that vendor on the key in `.env`; if you skipped, the starter's config is `replay("./nola.replay.jsonl")` and the answers come from a ledger committed with the project — no key, no network. These are the two files it runs:
 
 ```tsi
 // src/person.tsi
@@ -85,7 +89,7 @@ Expected output:
 
 ## 3. Switch on a real provider
 
-Edit `nola.config.ts`:
+Bring your own key whenever you like — the Nola API is a convenience, never a requirement. Edit `nola.config.ts`:
 
 ```ts
 // nola.config.ts
@@ -93,22 +97,20 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: {
-    // Reads OPENAI_API_KEY from the environment at the first ask.
-    default: openai({ model: "gpt-5-mini" }),
-  },
+  // Reads OPENAI_API_KEY from the environment at the first ask.
+  model: openai({ model: "gpt-5-mini" }),
 });
 ```
 
 Put `OPENAI_API_KEY=…` in a `.env` file at the project root (the dev loader reads it; production reads the real environment) and run `npm start` again. `anthropic({ model })` and `google({ model })` work the same way — see [Providers](/docs/config/providers/).
 
-Why switch now? The replay ledger is strict: once you edit a prompt or a type, the recorded entry no longer matches and replay fails with `NOLA3008` instead of silently calling the network. Either switch to a live provider or re-record the ledger — see [Record and replay](/docs/config/record-and-replay/).
+Need a key in another project? `npx nola-lang key` gets one — signing you in first once this machine's trial is used — and offers to write it to that project's `.env` (`--print` shows only the key); see [The nola CLI](/docs/tooling/cli/#nola-key). When the free runs are used up, an ask fails with the quota message (`Your 25 free Nola runs are complete.`) — `npx nola-lang account` signs you in when needed and opens your account page on the console (balance, top-ups, your keys), and nothing in the project changes; see [The nola CLI](/docs/tooling/cli/#nola-account). If you scaffolded offline instead, the replay ledger is strict: once you edit a prompt or a type, the recorded entry no longer matches and replay fails with `NOLA3008` instead of silently calling the network — switch to a live provider or re-record, see [Record and replay](/docs/config/record-and-replay/).
 
 ## 4. Check and build
 
 ```sh
-npx nola check          # type-checks .tsi and .ts together, positions mapped back to .tsi
-npx nola build          # lowers every .tsi into dist/ (+ a self-configuring dist/nola.config.js)
+npx nola-lang check          # type-checks .tsi and .ts together, positions mapped back to .tsi
+npx nola-lang build          # lowers every .tsi into dist/ (+ a self-configuring dist/nola.config.js)
 ```
 
 `nola build` writes `dist/src/person.tsi.js` (with a source map and a `.tsi.d.ts` next to it) and a `dist/nola.config.js` that the built modules import, so they run under plain `node` with no loader. It compiles `.tsi` files only — a plain `.ts` entry like `src/main.ts` is not part of its output; see [Deploying](/docs/guides/deploying/) for the production recipe.

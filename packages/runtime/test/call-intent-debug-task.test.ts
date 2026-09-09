@@ -1,5 +1,5 @@
 import { mockProvider } from "@nola-lang/providers";
-import { ask, ExtractIntent, FunctionCallingIntent, nolaRuntime } from "@nola-lang/runtime";
+import { ask, ExtractIntent, FunctionCallIntent, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
 
@@ -15,7 +15,7 @@ const slot = (instruction: string) => new ExtractIntent<string>({ instruction, t
  * (inside the ask site's step window) and runs the TARGET INVOCATION inside
  * it, so stepInto {breakOnAsyncCall} pauses right before user code.
  */
-describe("FunctionCallingIntent debugger task", () => {
+describe("FunctionCallIntent debugger task", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     nolaRuntime.reset();
@@ -37,12 +37,12 @@ describe("FunctionCallingIntent debugger task", () => {
     const original = holder.createTask;
     holder.createTask = createTask;
     try {
-      nolaRuntime.configure({ providers: { default: mockProvider([{ arg0: "hi" }]) } });
+      nolaRuntime.configure({ model: { default: mockProvider([{ arg0: "hi" }]) } });
       const target = vi.fn((s: string) => {
         expect(insideRun).toBe(true); // the invocation, not the whole execute
         return s.toUpperCase();
       });
-      const intent = new FunctionCallingIntent<string>({ fn: target, name: "target", args: [slot("greeting")] });
+      const intent = new FunctionCallIntent<string>({ fn: target, name: "target", args: [slot("greeting")] });
       expect(createTask).toHaveBeenCalledWith("nola call");
       expect(run).not.toHaveBeenCalled(); // still lazy
 
@@ -60,8 +60,8 @@ describe("FunctionCallingIntent debugger task", () => {
     const original = holder.createTask;
     holder.createTask = vi.fn(() => ({ run }));
     try {
-      nolaRuntime.configure({ providers: { default: mockProvider([]) } });
-      const intent = new FunctionCallingIntent<number>({ fn: (a: number) => a + 1, name: "inc", args: [41] });
+      nolaRuntime.configure({ model: { default: mockProvider([]) } });
+      const intent = new FunctionCallIntent<number>({ fn: (a: number) => a + 1, name: "inc", args: [41] });
       await expect(ask(intent, ctx())).resolves.toBe(42);
       expect(run).toHaveBeenCalledTimes(1);
     } finally {
@@ -70,8 +70,8 @@ describe("FunctionCallingIntent debugger task", () => {
   });
 
   it("target failures propagate unchanged through the task wrapper", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider([]) } });
-    const intent = new FunctionCallingIntent({
+    nolaRuntime.configure({ model: { default: mockProvider([]) } });
+    const intent = new FunctionCallIntent({
       fn: () => {
         throw new Error("boom");
       },
@@ -86,8 +86,8 @@ describe("FunctionCallingIntent debugger task", () => {
     const original = holder.createTask;
     holder.createTask = undefined;
     try {
-      nolaRuntime.configure({ providers: { default: mockProvider([]) } });
-      const intent = new FunctionCallingIntent<number>({ fn: () => 7, name: "seven", args: [] });
+      nolaRuntime.configure({ model: { default: mockProvider([]) } });
+      const intent = new FunctionCallIntent<number>({ fn: () => 7, name: "seven", args: [] });
       await expect(ask(intent, ctx())).resolves.toBe(7);
     } finally {
       holder.createTask = original;

@@ -1,11 +1,11 @@
 ---
 title: Examples
-description: Ten runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
+description: Eleven runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
 sidebar:
   order: 0
 ---
 
-The repository ships ten standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key.
+The repository ships eleven standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key.
 
 | Example | Demonstrates | Scaffold |
 | --- | --- | --- |
@@ -19,6 +19,7 @@ The repository ships ten standalone example projects, each built around one cano
 | [cross-file-types](https://github.com/nola-lang/nola/tree/main/examples/cross-file-types) | A type imported from another file (companion module), self-recursive | — |
 | [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
 | [prompt-template](https://github.com/nola-lang/nola/tree/main/examples/prompt-template) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor | — |
+| [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` |
 
 ## Running an example
 
@@ -28,7 +29,7 @@ Scaffold one with its template (above), or run it inside a clone of the reposito
 git clone https://github.com/nola-lang/nola
 cd nola && npm install && npm run build
 cd examples/extract-person
-npx nola run src/main.ts      # mock provider, deterministic
+npx nola-lang run src/main.ts      # mock provider, deterministic
 ```
 
 Most examples' `nola.config.ts` carry the commented one-line switch to a real provider (`openai({ model: "gpt-5-mini" })` with `OPENAI_API_KEY` set); for the rest, replace the `mockProvider(...)` default with that call — see [Providers](/docs/config/providers/).

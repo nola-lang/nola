@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { ownVersion } from "./scaffold.js";
+import { type ProviderId, providerById } from "./providers.js";
+import { ownVersion, providerConfigUrl } from "./scaffold.js";
 
 export interface AddResult {
   /** files written, e.g. ["nola.config.ts", "package.json"] */
@@ -17,6 +18,26 @@ export interface AddResult {
 /** The retrofit config is the empty template's — a retrofit has no replay ledger. */
 const EMPTY_CONFIG_URL = new URL("../templates/empty/nola.config.ts", import.meta.url);
 
+export interface AddOptions {
+  version?: string;
+  /**
+   * The wizard's provider choice: a vendor writes its own config (and names
+   * the `model:` line when a config already exists); nola and none write the
+   * empty template's — the nola key step rewrites it afterwards (`applyTrial`).
+   */
+  provider?: ProviderId;
+}
+
+type VendorId = Exclude<ProviderId, "nola" | "none">;
+
+/** The vendor a retrofit configures, or undefined for nola/none (which keep the empty template's config). */
+function vendorOf(provider: ProviderId | undefined): { id: VendorId; label: string; model: string } | undefined {
+  if (provider === undefined || provider === "nola" || provider === "none") return undefined;
+  const def = providerById(provider);
+  if (!def?.model) throw new Error(`provider "${provider}" has no vendor config`);
+  return { id: provider, label: def.label, model: def.model };
+}
+
 /** null range = "^<lockstep version>"; typescript is NOT lockstep, it keeps the template pin. */
 const REQUIRED: readonly ["dependencies" | "devDependencies", string, string | null][] = [
   ["dependencies", "@nola-lang/runtime", null],
@@ -29,7 +50,7 @@ const REQUIRED: readonly ["dependencies" | "devDependencies", string, string | n
  * Retrofit an existing npm project: write nola.config.ts (unless present) and
  * additively merge the required packages. Never rewrites existing entries.
  */
-export async function addNola(targetDir: string, opts: { version?: string } = {}): Promise<AddResult> {
+export async function addNola(targetDir: string, opts: AddOptions = {}): Promise<AddResult> {
   const absRoot = resolve(targetDir);
   const manifestPath = join(absRoot, "package.json");
   if (!existsSync(manifestPath)) {
@@ -56,10 +77,15 @@ export async function addNola(targetDir: string, opts: { version?: string } = {}
   };
 
   const configPath = join(absRoot, "nola.config.ts");
+  const vendor = vendorOf(opts.provider);
   if (existsSync(configPath)) {
-    skipped.push("nola.config.ts already exists — left untouched");
+    skipped.push(
+      vendor
+        ? `nola.config.ts already exists — set \`model: ${vendor.model}\` (${vendor.id} from @nola-lang/providers) to use ${vendor.label}`
+        : "nola.config.ts already exists — left untouched",
+    );
   } else {
-    await writeFile(configPath, await readFile(EMPTY_CONFIG_URL, "utf8"));
+    await writeFile(configPath, await readFile(vendor ? providerConfigUrl(vendor.id) : EMPTY_CONFIG_URL, "utf8"));
     wrote.push("nola.config.ts");
   }
 

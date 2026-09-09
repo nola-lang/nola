@@ -1,7 +1,9 @@
 import type { JsonSchema } from "@nola-lang/core";
+import { SYSTEM_PREAMBLE } from "@nola-lang/core";
 import { google } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
 import { describe, expect, it, vi } from "vitest";
+import { requestOf } from "./helpers/model.js";
 
 type FetchArgs = { url: string; init: RequestInit };
 
@@ -21,18 +23,32 @@ const candidateReply = (content: unknown) => ({
 });
 
 describe("google provider", () => {
-  it("speaks the generateContent dialect: url, x-goog-api-key, system_instruction, role mapping", async () => {
-    const { fn, calls } = fakeFetch(() => candidateReply("free text answer"));
-    const p = google({ apiKey: "k", fetch: fn, model: "gemini-x" });
-    const { text } = await p.complete({
-      system: "s",
-      messages: [
-        { role: "user", content: "u" },
-        { role: "assistant", content: "a" },
-      ],
-      output: { syntax: "json" },
+  it("sends req.payload's system and messages verbatim — never re-renders", async () => {
+    const { fn, calls } = fakeFetch(() => candidateReply({ v: "x" }));
+    await google({ apiKey: "k", fetch: fn, model: "m" }).complete({
+      payload: {
+        system: "hand-written system",
+        messages: [{ role: "user", content: "hand-written turn" }, { role: "assistant", content: "reply" }, { role: "user", content: "again" }],
+        output: { syntax: "json", schema: { type: "object", properties: { v: { type: "string" } }, required: ["v"], additionalProperties: false } },
+      },
     });
-    expect(text).toBe("free text answer");
+    const body = JSON.parse(String(calls[0]?.init.body)) as {
+      system_instruction: { parts: { text: string }[] };
+      contents: { role: string; parts: { text: string }[] }[];
+    };
+    expect(body.system_instruction.parts[0]?.text).toBe("hand-written system");
+    expect(body.contents.map((c) => [c.role, c.parts[0]?.text])).toEqual([
+      ["user", "hand-written turn"],
+      ["model", "reply"],
+      ["user", "again"],
+    ]);
+  });
+
+  it("speaks the generateContent dialect: url, x-goog-api-key, system_instruction, role mapping", async () => {
+    const { fn, calls } = fakeFetch(() => candidateReply({ value: "free text answer" }));
+    const p = google({ apiKey: "k", fetch: fn, model: "gemini-x" });
+    const { text } = await p.complete(requestOf({ system: "s", correction: { response: "bad", error: "oops" } }));
+    expect(text).toBe('"free text answer"');
     expect(p.name).toBe("google");
     expect(calls[0]?.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent");
     expect(new Headers(calls[0]?.init.headers).get("x-goog-api-key")).toBe("k");
@@ -40,12 +56,10 @@ describe("google provider", () => {
       system_instruction: { parts: Array<{ text: string }> };
       contents: Array<{ role: string; parts: Array<{ text: string }> }>;
     };
-    expect(body.system_instruction.parts[0]?.text).toBe("s");
-    // Gemini's dialogue roles are user/model, not user/assistant.
-    expect(body.contents).toEqual([
-      { role: "user", parts: [{ text: "u" }] },
-      { role: "model", parts: [{ text: "a" }] },
-    ]);
+    expect(body.system_instruction.parts[0]?.text).toContain(`${SYSTEM_PREAMBLE}\n\ns`);
+    // Gemini's dialogue roles are user/model, not user/assistant; the correction
+    // pair exercises the role-mapped assistant turn.
+    expect(body.contents.map((c) => c.role)).toEqual(["user", "model", "user"]);
   });
 
   it("requests structured output via generationConfig.responseJsonSchema and passes object schemas through", async () => {
@@ -56,11 +70,7 @@ describe("google provider", () => {
       additionalProperties: false,
     };
     const { fn, calls } = fakeFetch(() => candidateReply({ id: "1" }));
-    const { text } = await google({ apiKey: "k", fetch: fn, model: "m" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json", schema },
-    });
+    const { text } = await google({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema }));
     expect(JSON.parse(text)).toEqual({ id: "1" });
     const body = JSON.parse(String(calls[0]?.init.body)) as {
       generationConfig: { responseMimeType: string; responseJsonSchema: unknown };
@@ -71,17 +81,15 @@ describe("google provider", () => {
 
   it("wraps scalar schemas in a {value} envelope with a system note and unwraps the reply", async () => {
     const { fn, calls } = fakeFetch(() => candidateReply({ value: "billing" }));
-    const { text } = await google({ apiKey: "k", fetch: fn, model: "m" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json", schema: { type: "string", enum: ["billing", "refund"] } },
-    });
+    const { text } = await google({ apiKey: "k", fetch: fn, model: "m" }).complete(
+      requestOf({ system: "s", schema: { type: "string", enum: ["billing", "refund"] } }),
+    );
     expect(text).toBe('"billing"');
     const body = JSON.parse(String(calls[0]?.init.body)) as {
       system_instruction: { parts: Array<{ text: string }> };
       generationConfig: { responseJsonSchema: { type: string; properties: { value: unknown }; required: string[] } };
     };
-    expect(body.system_instruction.parts[0]?.text).toContain("s");
+    expect(body.system_instruction.parts[0]?.text).toContain(`${SYSTEM_PREAMBLE}\n\ns`);
     expect(body.system_instruction.parts[0]?.text).toContain('"value"');
     const sent = body.generationConfig.responseJsonSchema;
     expect(sent.type).toBe("object");
@@ -89,28 +97,30 @@ describe("google provider", () => {
     expect(sent.properties.value).toEqual({ type: "string", enum: ["billing", "refund"] });
   });
 
+  it("requests structured output for the default (bare-string) schema when none is given", async () => {
+    const { fn, calls } = fakeFetch(() => candidateReply({ value: "x" }));
+    await google({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }));
+    expect(JSON.parse(String(calls[0]?.init.body))).toHaveProperty("generationConfig");
+  });
+
   it("omits generationConfig when no schema requested", async () => {
     const { fn, calls } = fakeFetch(() => candidateReply("x"));
-    await google({ apiKey: "k", fetch: fn, model: "m" }).complete({ system: "s", messages: [], output: { syntax: "json" } });
+    await google({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema: null }));
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("generationConfig");
   });
 
   it("throws NolaProviderError when the response has no candidate text", async () => {
     const { fn } = fakeFetch(() => ({ body: { candidates: [] } }));
-    await expect(
-      google({ apiKey: "k", fetch: fn, model: "m" }).complete({ system: "s", messages: [], output: { syntax: "json" } }),
-    ).rejects.toBeInstanceOf(NolaProviderError);
+    await expect(google({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }))).rejects.toBeInstanceOf(
+      NolaProviderError,
+    );
   });
 
   it("reads the key from a custom apiKeyEnv and sends it as x-goog-api-key", async () => {
     process.env.NOLA_TEST_GOOGLE_KEY = "k-789";
     try {
-      const { fn, calls } = fakeFetch(() => candidateReply("x"));
-      await google({ apiKeyEnv: "NOLA_TEST_GOOGLE_KEY", fetch: fn, model: "m" }).complete({
-        system: "s",
-        messages: [],
-        output: { syntax: "json" },
-      });
+      const { fn, calls } = fakeFetch(() => candidateReply({ value: "x" }));
+      await google({ apiKeyEnv: "NOLA_TEST_GOOGLE_KEY", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }));
       expect(new Headers(calls[0]?.init.headers).get("x-goog-api-key")).toBe("k-789");
     } finally {
       delete process.env.NOLA_TEST_GOOGLE_KEY;
@@ -123,7 +133,7 @@ describe("google provider", () => {
     try {
       const { fn } = fakeFetch(() => candidateReply("x"));
       const err = (await google({ fetch: fn, model: "m" })
-        .complete({ system: "s", messages: [], output: { syntax: "json" } })
+        .complete(requestOf({ system: "s" }))
         .catch((e: unknown) => e)) as NolaProviderError;
       expect(err).toBeInstanceOf(NolaProviderError);
       expect(err.message).toMatch(/GEMINI_API_KEY/);
@@ -137,7 +147,7 @@ describe("google provider", () => {
   it("wraps HTTP failures with status and body excerpt", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: { error: { message: "quota exceeded" } } }));
     const err = (await google({ apiKey: "k", fetch: fn, model: "m" })
-      .complete({ system: "s", messages: [], output: { syntax: "json" } })
+      .complete(requestOf({ system: "s" }))
       .catch((e: unknown) => e)) as NolaProviderError;
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.status).toBe(429);
@@ -148,7 +158,7 @@ describe("google provider", () => {
   it("carries a delta-seconds Retry-After header as retryAfterMs", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: "quota", headers: { "retry-after": "3" } }));
     const err = (await google({ apiKey: "k", fetch: fn, model: "m" })
-      .complete({ system: "s", messages: [], output: { syntax: "json" } })
+      .complete(requestOf({ system: "s" }))
       .catch((e: unknown) => e)) as NolaProviderError;
     expect(err.retryAfterMs).toBe(3000);
   });
@@ -156,11 +166,11 @@ describe("google provider", () => {
   it("accepts a bare model string as shorthand for { model } with all other options defaulted", async () => {
     const original = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = "k-short";
-    const { fn, calls } = fakeFetch(() => candidateReply("x"));
+    const { fn, calls } = fakeFetch(() => candidateReply({ value: "x" }));
     vi.stubGlobal("fetch", fn);
     try {
-      const { text } = await google("gemini-2.5-flash").complete({ system: "s", messages: [], output: { syntax: "json" } });
-      expect(text).toBe("x");
+      const { text } = await google("gemini-2.5-flash").complete(requestOf({ system: "s" }));
+      expect(text).toBe('"x"');
       expect(calls[0]?.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
       expect(new Headers(calls[0]?.init.headers).get("x-goog-api-key")).toBe("k-short");
     } finally {
@@ -171,12 +181,8 @@ describe("google provider", () => {
   });
 
   it("honors the baseUrl option", async () => {
-    const { fn, calls } = fakeFetch(() => candidateReply("x"));
-    await google({ apiKey: "k", fetch: fn, model: "m", baseUrl: "https://proxy.local/" }).complete({
-      system: "s",
-      messages: [],
-      output: { syntax: "json" },
-    });
+    const { fn, calls } = fakeFetch(() => candidateReply({ value: "x" }));
+    await google({ apiKey: "k", fetch: fn, model: "m", baseUrl: "https://proxy.local/" }).complete(requestOf({ system: "s" }));
     expect(calls[0]?.url).toBe("https://proxy.local/v1beta/models/m:generateContent");
   });
 });

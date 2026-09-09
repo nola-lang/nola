@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ClassicPrompt } from "@nola-lang/core";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,14 +9,14 @@ import { afterEach, describe, expect, it } from "vitest";
 afterEach(() => nolaRuntime.reset());
 
 /** Configure a probe provider capturing each request payload (inline object so
- * NolaProvider contextual typing applies, as in stack-frames.test.ts). */
+ * LanguageModel contextual typing applies, as in stack-frames.test.ts). */
 function configureProbe(payloads: string[]) {
   nolaRuntime.configure({
-    providers: {
+    model: {
       default: {
         name: "probe",
         complete: async (req) => {
-          payloads.push(req.messages[0]?.content ?? "");
+          payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
           return { text: JSON.stringify(`v${payloads.length}`) };
         },
       },

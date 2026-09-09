@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
-import type { Prompter, PrompterOption } from "./flow.js";
+import type { Prompter, PrompterGroup, PrompterOption } from "./flow.js";
+import { styleOutro } from "./style.js";
 
 /** The real UI. Bundled into dist by esbuild — @clack/prompts stays a devDep. */
 export function clackPrompter(): Prompter {
@@ -32,8 +33,31 @@ export function clackPrompter(): Prompter {
       });
       return p.isCancel(answer) ? null : (answer as string[]);
     },
+    async groupMultiselect(message: string, groups: PrompterGroup[], initialValues: string[]): Promise<string[] | null> {
+      const answer = await p.groupMultiselect({
+        message,
+        options: Object.fromEntries(
+          groups.map((g) => [g.label, g.options.map((o) => ({ value: o.value, label: o.label, hint: o.hint }))]),
+        ),
+        initialValues,
+        required: false,
+        // the group labels are headings, not "tick the whole section" toggles
+        selectableGroups: false,
+      });
+      return p.isCancel(answer) ? null : (answer as string[]);
+    },
+    progress(title: string) {
+      // the timer indicator shows elapsed seconds — an install has no better progress signal
+      const s = p.spinner({ indicator: "timer" });
+      s.start(title);
+      return {
+        update: (m: string) => s.message(`${title} — ${m}`),
+        done: (m: string) => s.stop(m),
+        fail: (m: string) => s.error(m),
+      };
+    },
     note: (message: string) => p.log.message(message),
     intro: (title: string) => p.intro(title),
-    outro: (message: string) => p.outro(message),
+    outro: (message: string) => p.outro(styleOutro(message)),
   };
 }

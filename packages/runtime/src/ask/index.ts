@@ -1,31 +1,18 @@
-export {
-  type AskFingerprintInput,
-  canonicalize,
-  FINGERPRINT_VERSION,
-  fingerprintAsk,
-  fingerprintRequest,
-  sha256Hex,
-} from "@nola-lang/core";
+export { canonicalize, FINGERPRINT_VERSION, fingerprintRequest, sha256Hex } from "@nola-lang/core";
 export { ask, fmt, tpl } from "./ask.js";
-export type { InferenceComposer } from "./composer.js";
-export { Inference, type InferenceRequest } from "./inference.js";
+export type { InferenceComposer, IntentComposer, IntentInput, ScopeComposer, ScopeDescription } from "./composer.js";
+export { type CorrectionRequest, describeModel, Inference, type InferenceTask } from "./inference.js";
 export { JsonInference } from "./inference-json.js";
+export { buildInferenceModel, ModelBuilder } from "./model-builder.js";
 export { runPipeline } from "./pipeline.js";
-export { type BuiltPrompt, PromptBuilder } from "./prompt-builder.js";
 export {
-  defaultPromptRenderer,
-  type ExtractPromptData,
   type ExtractPromptScope,
-  extractFormat,
-  type FunctionPromptArg,
-  type FunctionPromptData,
   type FunctionPromptScope,
   type FunctionPromptScopeArg,
   isTrivialStringSchema,
   joinBlocks,
-  type PromptData,
-  type PromptRenderer,
   type PromptTemplate,
   renderTemplate,
 } from "./prompt-render.js";
 export { type ValidationResult, validate } from "./validate.js";
+export { wireSchema } from "./wire-schema.js";

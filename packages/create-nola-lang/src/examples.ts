@@ -1,26 +1,15 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { checkoutRoot } from "./checkout.js";
 
 /** Build/install output never copied from a dev checkout's example dir. */
 const COPY_EXCLUDE = new Set(["node_modules", "dist"]);
 
-/**
- * The repo's examples/ dir when running inside the nola-monorepo checkout
- * (dev mode), else null. Both this module's src/ and dist/ locations sit two
- * levels below the repo root's packages/ dir.
- */
+/** The repo's examples/ dir when running inside the nola-monorepo checkout (dev mode), else null. */
 export async function devExamplesDir(): Promise<string | null> {
-  const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-  const rootManifest = join(repoRoot, "package.json");
-  if (!existsSync(rootManifest)) return null;
-  try {
-    const pkg = JSON.parse(await readFile(rootManifest, "utf8")) as { name?: string };
-    if (pkg.name !== "nola-monorepo") return null;
-  } catch {
-    return null;
-  }
+  const repoRoot = await checkoutRoot();
+  if (repoRoot === null) return null;
   const dir = join(repoRoot, "examples");
   return existsSync(dir) ? dir : null;
 }

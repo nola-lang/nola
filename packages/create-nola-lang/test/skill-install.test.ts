@@ -20,6 +20,12 @@ function scripted(multiselect: (string[] | null)[]): Prompter & { notes: string[
     select: unavailable,
     confirm: unavailable,
     multiselect: async () => (queue.length > 0 ? (queue.shift() as string[] | null) : null),
+    groupMultiselect: async () => {
+      throw new Error("skill install has no editor half — never a grouped list");
+    },
+    progress: () => {
+      throw new Error("skill install runs nothing long enough for a spinner");
+    },
     note: (m) => {
       notes.push(m);
     },

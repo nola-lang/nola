@@ -21,11 +21,14 @@ v2 surface at a glance: `infer function name(...)` (optionally
 `` name`instruction`(...) ``) declares a nola function that lowers to a plain
 function returning a lazy, thenable `Intent<T>`; `ask` resolves intents like
 `await` resolves promises (and `await` is legal in infer bodies for ordinary
-promises); `ask with <name> <operand>` routes the ask through a named provider
+promises); `ask with <name> <operand>` routes the ask through a named model
 from `nola.config.ts` (static identifier only — NOLA1009 otherwise; lowers to
-`__nola.ask`'s third argument, emit contract 3); `` ..`prompt`<T> `` extractors
+`__nola.ask`'s third argument, emit contract 3; when the platform serves
+inference — `model: nola.infer()` — an UNCONFIGURED
+name is legal and rides the request as a free-form `profile` for the
+platform, see the routing bullet below); `` ..`prompt`<T> `` extractors
 support `${}` interpolation; `` fn``(...) `` call intents lower to
-`FunctionCallingIntent`; since the 2026-08-14 sigil-less spec the empty marker
+`FunctionCallIntent`; since the 2026-08-14 sigil-less spec the empty marker
 is optional — a plain call with an Identifier/MemberExpression callee whose
 arguments contain a well-formed extractor (directly or nested in plain
 object/array literals) is a call intent too, while `` fn`hint`(...) `` remains
@@ -35,7 +38,7 @@ fn>>`) — a raw promise cannot escape through `ask` anyway (promise
 assimilation), and the settled value is what receipts/history/error
 attribution need. Consequences, documented in the skill: `.withRetry` re-runs
 the callee; the ask timeout bounds provider calls only, not the callee. Phase 1 implements `ExtractIntent` and
-`FunctionCallingIntent` only.
+`FunctionCallIntent` only.
 
 ## Commands
 
@@ -93,7 +96,9 @@ ast, core                    # leaf types + shared utilities (errors, redact, fi
   → babel-parser (vendored)  # private, never published
   → parser                   # parseNola(): source → { ast, diagnostics }
   → compiler                 # compileNola(): AST → { code, map, meta, diagnostics }
-  → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); language-core = compiler + Volar, NO runtime dep
+  → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
+  → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (original amber/panel/mono tokens mapped onto shadcn names — keep the look)
+  → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); the runtime renders for classic providers (they receive a ClassicPrompt), only the platform model gets the InferenceModel — its `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
   → node-loader, typescript-plugin  # typescript-plugin: language-core + @volar/typescript
   → nola-lang                # the dev tool users install: nola bin (build/run/check/declarations) + ./register
   → unplugin                 # bundler-plugin core (deps node-loader + nola-lang); adapters via subpath exports
@@ -106,13 +111,28 @@ Vite-style packaging (spec `docs/superpowers/specs/2026-08-10-vite-style-packagi
 surface is FROZEN — do not add subpaths or re-exports that fork it:
 
 ```ts
-import { defineConfig } from "@nola-lang/runtime";
+import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 ```
 
-Everything provider-shaped (factories, resilience combinators, record/replay) lives in
-`@nola-lang/providers`; `packages/runtime/test/public-surface.test.ts` pins that the
-runtime index does NOT re-export it. `nola-lang` never ships to production — the
+Everything bring-your-own (vendor factories, resilience combinators, record/replay)
+lives in `@nola-lang/providers`; `packages/runtime/test/public-surface.test.ts` pins
+that the runtime index does NOT re-export it. The naming rule (platform-config
+design 2026-09-03): the PROVIDER is the vendor (`openai`), the MODEL is the
+configured instance (`openai("gpt-5")`) — the config slot is `model`
+(`forceModel`, `.withModel()`, `LanguageModel` is the instance type users
+implement), while everything about the vendor wire keeps "provider"
+(`onProviderRequest`, `ProviderRequest`, `NolaProviderError`, the package).
+The platform enters like any vendor, by slot (config v2 spec
+2026-09-08, superseding the 09-03 entry points): `nola` (`src/nola.ts`) is a
+FROZEN NON-CALLABLE namespace — `nola.infer(model?)` is `platformModel`
+(`src/platform-model.ts`, the `/v1/infer` client; absent ⇒ the platform
+chooses, a string ⇒ the upstream selector, an object ⇒ `PlatformOptions` +
+`model`; `PLATFORM_MODEL`-branded, the ONLY `infer`-dialect model, legal
+only as the bare `model` or the map's `default`), and `nola.tracer(target?)`
+is the ungated tracer (absent target ⇒ `NOLA_API_URL` → api.nola.sh). There
+is no `nola()` call: the callable preset is reserved for a later design.
+`defineConfig` is the only root and `model` is always required. `nola-lang` never ships to production — the
 built output imports only `@nola-lang/runtime` (running `.tsi` directly in prod
 via `node --import nola-lang/register` is the documented tsx-style exception).
 Scaffolding (spec 2026-08-12-interactive-init-design.md): `create-nola-lang`
@@ -120,7 +140,13 @@ owns the builtin templates (`templates/starter` + `templates/empty`), the
 static template registry (`src/registry.ts` — the menu; extract-person is
 deliberately absent, the starter IS it), and the shared interactive flow
 (`runFlow`; args fill prompts, non-TTY or dir+`--template` means zero
-prompts). `npm create nola-lang` runs its bin (`create-nola` is a bin-only ALIAS package —
+prompts). The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
+`defineCommand` entry per command, each with its OWN parseArgs option map)
+routed by the zero-dep dispatcher in create-nola-lang (`src/cli.ts` —
+generated help, `--help`/`--version`, per-command flag scoping); `nola init`
+and the create bin declare their flags once as `FLOW_OPTIONS` (flow.ts). A
+new command is one table entry, never a switch case.
+`npm create nola-lang` runs its bin (`create-nola` is a bin-only ALIAS package —
 `npm create nola` — whose bin imports `create-nola-lang/main`; never put
 logic there); `nola init` delegates to the
 same `runFlow`. Add mode (spec 2026-08-12-add-to-existing-project-design.md):
@@ -137,10 +163,110 @@ resolved to `src/main.ts`, keeping the mandatory resolveSourceMapLocations +
 skipFiles invariants) and `.vscode/extensions.json` (recommends
 `nola.nola-vscode`) on both the scaffold and add paths — existing files
 are skipped with a note, never merged.
+The provider step (2026-09-08, reshaping the trial step of spec
+2026-08-24-trial-onboarding-design.md): right after the template,
+`resolveExtras` asks `PROVIDER_QUESTION` ("Select an inference provider:"),
+a select over the static `PROVIDERS` menu (`src/providers.ts`, sibling of
+the template registry): `nola` first and highlighted, then `openai` /
+`anthropic` / `google` (label "Gemini"), then `none` ("Skip for now"). It
+is asked BEFORE the editor/agents setup. `--provider <id>` answers it;
+`--trial` / `--no-trial` (`parseArgs allowNegative`) stay as shorthands for
+`nola` / `none` and a disagreeing pair throws; the non-interactive default is
+`none` — the e2e suites depend on that. `FlowOutcome.provider` is a
+`ProviderId` (was `trial: boolean`). A vendor choice writes
+`templates/_providers/<id>.config.ts` over the template's `nola.config.ts`
+(`scaffold({ provider })`, `providerConfigUrl`), skips the starter's replay
+ledger, renders vendor README notes naming the env var (`OPENAI_API_KEY` /
+`ANTHROPIC_API_KEY` / `GEMINI_API_KEY`), and the outro says "set <ENV> in
+.env first" — no key prompt, no network. The add path passes the provider to
+`addNola({ provider })`: a vendor config is written when the project has
+none, otherwise the skipped note names the `model:` line. Only `nola` runs
+the key ladder: `runFlow` calls `obtainTrial` BEFORE writing files, a note-on-failure
+wrapper over `acquireKey` (`create-nola-lang/src/key.ts`, spec
+2026-09-04-cli-sign-in-design.md): a stored Auth0 session in
+`~/.nola/credentials.json` (`src/credentials.ts`, version 1, mode 0600,
+`{ version: 1, sessions: { [apiUrl]: { accessToken, refreshToken, expiresAt,
+email } } }`; refreshed by `accessTokenFor` when stale; an unparsable or
+unknown-version file is left alone, no migration) → `POST /v1/console/keys` `{ name: "cli" }`; no
+session but a `config.json` account for the API URL (this machine used its
+one anonymous trial) → interactive: the Auth0 Device Authorization Grant
+(`src/auth.ts`: tenant from `GET /v1/capabilities` `auth: { issuer,
+clientId, audience }`, `POST {issuer}/oauth/device/code`, poll
+`/oauth/token`, URL + code noted, browser via `openBrowser` — `NOLA_NO_BROWSER`
+disables it — then `writeSession`), non-interactive: `SignInRequiredError`
+("Sign in with `npx nola-lang login`"); neither → `POST /v1/trial`
+(`requestTrial`, `src/api.ts`, zero-dep global-fetch client, `NOLA_API_URL`
+override, `user-agent: create-nola-lang/<version>`) with an EMPTY body —
+nothing on the machine identifies it to the server — recorded in
+`~/.nola/config.json` (`src/home-config.ts`: `{ version: 1, accounts: {
+[apiUrl]: { accountId, issuedAt } } }`, identifiers only, NEVER a
+credential, unknown keys preserved; spec
+2026-09-02-home-config-trial-identity-design.md). The nola row's HINT follows
+`FlowInput.keyPath` (`nolaHint`): the free runs on a fresh machine, "Trial
+key already issued. Get another? Enter to sign in." once the trial is used,
+"a key on your Nola account (signed in as …)" when signed in. On the `sign-in` path Enter on the
+Nola row runs the browser sign-in AT THE SELECT (`FlowInput.signIn`, a
+`runFlow`-built wrapper over `auth.signIn`; `resolveProvider` loops back to
+the menu when it fails, after a "Could not sign in to Nola: …" note) — the
+browser must never open after later questions; the KEY is still minted after
+every question by `acquireKey`, which then finds the stored session, so a
+cancelled flow consumes nothing (`SIGN_IN_QUESTION` survives only for `nola
+key`'s confirm). Then
+`scaffold({ provider: "nola" })` (skips `nola.replay.jsonl`, renders
+`__START_NOTE__` / `__PROVIDER_NOTE__` in the starter README) and
+`applyTrial` (`src/trial.ts`: `.env` append-never-overwrite via
+`writeEnvKey`, the `.gitignore` guard `.env` + `.env.*` via
+`ensureEnvIgnored`, and `templates/_providers/nola.config.ts` — the
+`_providers` dir is not in the template registry). Any API failure notes the
+reason + `npx nola-lang key` and scaffolds the plain (`none`) template with
+exit 0. The add path applies the key to an existing config only by note. `nola key [--print]` (`nola-lang/src/key.ts`,
+spec 2026-09-04-nola-key-command-design.md) runs the same `acquireKey` and
+writes `.env` through `writeEnvKey` (`{ replace }` rewrites an existing line;
+it touches NOTHING else): key FIRST, then the clack confirms "Add it to
+.env?" (Yes) and, on an existing key, "replace it?" (No); `--print` puts ONLY
+the key on stdout (sign-in instructions to stderr). `nola login` /
+`nola logout` (`nola-lang/src/login.ts`) run `signIn` / `signOut`
+(`/oauth/revoke` best-effort); login also claims the cwd project's trial key
+into the account (`claimProjectKey`: `POST /v1/billing/session` with the key
+→ `POST /v1/console/sessions/:id/claim` with the access token, the id read
+from the session URL's `?session=`). `nola account`
+(`nola-lang/src/account.ts`, was `nola billing` until 2026-09-05 — the
+command shows an account, and the platform's `/billing` route is the
+accountless session card) signs in when needed (non-interactive: exit 1
+naming `nola login`), claims the cwd project's key, prints `GET
+/v1/console/me` (`Nola account: <email> — N / 25 free runs used`, `Balance
+$X.XX`), and opens `<consoleUrl>/account` (`consoleUrl` from capabilities,
+fallback `CONSOLE_URL`) — the browser holds its own Auth0 session, no
+CLI-minted billing session, no `--key`; the device token (2026-09-03) is
+GONE on both sides. its `WIRE_MIRROR` constant pins create-nola-lang's structural copies of the
+core wire types at `tsc -b` time — keep both sides identical. The session
+`url` is OPAQUE: since the platform's console split (2026-08-25) it points at
+`https://platform.nola.sh/billing?session=…`, a different origin from the
+API — never derive it from `baseUrl`/`NOLA_API_URL`, and never assert its
+shape in tests. Since 2026-09-04 the CLI's account is the Auth0
+user (console API ON in production is a platform prerequisite — until then
+`GET /v1/capabilities` carries no `auth` and the CLI says sign-in is not
+available yet); web-address copy offers `npx nola-lang key` or
+bring-your-own-provider (https://nola.sh/docs/reference/providers-api/). Web-address copy: `CONSOLE_URL` stays exported but unused by
+any message; every refusal, the missing-key error and the trial notes point
+at `PROVIDER_DOCS_URL` (account.ts), https://nola.sh/docs/reference/providers-api/;
+there is no free-credits promise anywhere — the offer is "25 free runs".
 Example templates are served from `examples/` on disk inside
 this checkout (root manifest name `nola-monorepo`) and from GitHub in
 production (Trees API at tag `v<version>`, `main` fallback — release tagging
-matters; all files buffer before any write). The curated examples are
+matters; all files buffer before any write). DEV-MODE RELINKING (`src/checkout.ts`): the
+scaffold always writes the published range (`^<lockstep>`, what users get),
+so a checkout-linked or locally installed CLI's install fetches the last npm
+release — with `NOLA_LINK_CHECKOUT=<nola-private root>` set, a successful
+interactive install is followed by replacing `node_modules/@nola-lang/runtime`,
+`@nola-lang/providers` and `nola-lang` with junctions into that checkout's
+`packages/*` (`linkCheckoutPackages`; internal deps resolve through the
+junction's real path into the checkout's hoisted node_modules) plus an outro
+note. An env var, not detection, so a CLI installed OUTSIDE the monorepo can
+be pointed at it while testing; unset = never. Declining the install, the add
+path and non-interactive runs never install, so they never relink (the e2e's
+`linkDeps` covers that case by hand); a
+later `npm install` in the scaffold restores the registry copies. The curated examples are
 scaffold-ready: start/build/check scripts, mock-only configs (the OpenAI smoke
 e2e swaps in its own config override in a tmp copy). The published manifest
 keeps ZERO runtime deps — `@clack/prompts` is a devDep inlined by
@@ -314,12 +440,24 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **`__nola` lowering factories live under `__nola.intents` and mirror the class
   names** — `__nola.intents.Intent(...)` builds an `InvocationIntent` (the
   frame-opening intent an infer function returns),
-  `__nola.intents.ExtractIntent(...)`, `__nola.intents.FunctionCallingIntent(...)`
+  `__nola.intents.ExtractIntent(...)`, `__nola.intents.FunctionCallIntent(...)`
   (no mapping layer; the `Intent` key is kept for emit-surface stability); non-class
   helpers stay lower-case — `__nola.ask`, `__nola.fmt`, `__nola.useRuntime` at the
   top, context accessors under `__nola.context` (since emit 8: `__nola.context.file`,
-  was top-level `fileContext`). The classes themselves live in
-  `packages/runtime/src/intents/`.
+  was top-level `fileContext`). The classes live in
+  `packages/runtime/src/intents/`, ONE SUBFOLDER PER INTENT, each holding the
+  intent next to the context node that backs it: `extract/` (`ExtractIntent`
+  + `ExtractContext`), `function-call/` (`FunctionCallIntent` +
+  `FunctionCallContext` — "call", not "calling", since emit 12),
+  `invocation/` (`InvocationIntent` + `InvocationContext`, the infer
+  function's frame node — was `FunctionInferContext` under `infer-context/`);
+  the folder root keeps the intent-less bases (`intent.ts`,
+  `executable-intent.ts`) and the single barrel `index.ts`.
+  `packages/runtime/src/infer-context/` holds ONLY nodes with no intent
+  behind them — `InferContext` (base), `SystemInferContext`,
+  `FileInferContext`. Rule of thumb: a node that composes an `intent(...)`
+  or opens a frame lives with its intent; a pure lineage node lives in
+  `infer-context/`.
 - **Context is a frozen static tree plus one dynamic `Frame` per invocation.**
   `InferContext` (immutable construction lineage: `data`, `parent`, owning
   `runtime`; system → file → function) is written by lowering and never
@@ -349,46 +487,89 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **Fingerprints, cache, record/replay.** Every ask that reaches the terminal is
   stamped with `fingerprintRequest` (`packages/core/src/fingerprint.ts` — in core so
   `@nola-lang/providers`' record/replay can consume it without a runtime dep) —
-  sha256 over the canonicalized `{system, messages, output, params}` that crosses
-  `NolaProvider.complete`, i.e. exactly what `composeInferParams` produced plus the
-  system text. `FINGERPRINT_VERSION` is a compatibility surface — bump it when the
-  serialization changes shape (it is 3: v3 hashes the full ProviderOutput and
-  ProviderParams; the legacy `fingerprintAsk` shape survives only for tests). The
-  fingerprint CACHE is deliberately unwired right now (`cache.test.ts` is skipped;
-  see TODO(cache) in `inference.ts`) — the `cache: { store? }` config section
-  validates but is not served. `record(inner, path)` / `replay(path)` stay live:
-  fingerprinted JSONL ledgers keyed by request fingerprint — replay is strict
-  (unknown fingerprint = NOLA3008 definitive error, never a silent live call);
-  ledger content is redacted but fingerprints are not (`redactSecrets` eats
-  32+-char hex, so never redact a whole ledger line). Any prompt-wording or
-  params change re-keys every ledger/cache by content. Codes: NOLA3006
-  CacheStoreInvalid, NOLA3007 ReplayLedgerInvalid, NOLA3008
-  ReplayFingerprintMismatch.
+  sha256 over the canonicalized `{ prompt, params }` (plus `profile` ONLY
+  when a managed-mode profile is present — profile-free asks keep their v5
+  hashes, so ledgers never re-keyed) where `prompt` is the
+  CLASSIC RENDERING of the ask as first composed — a model payload is
+  rendered through `renderClassic` with its `correction` stripped, a
+  `ClassicPrompt` payload keeps only its first user turn — so a model-dialect
+  provider (nola) and a chat provider key the same ask identically and one
+  ledger serves both (the fingerprint identifies the ask as first composed,
+  never the retry). `FINGERPRINT_VERSION` is a compatibility surface — bump
+  it when the serialization changes shape (it is 5; the deliberate cost of
+  hashing the rendering is that a Nola release rephrasing the classic prompt
+  re-keys every ledger — accepted so the model never has to leave the
+  runtime through a chat provider). The fingerprint
+  CACHE is deliberately unwired right now (`cache.test.ts` is skipped; see
+  TODO(cache) in `inference.ts`) — the `cache: { store? }` config section
+  validates but is not served. `record(inner, path)` / `replay(path)` stay
+  live: fingerprinted JSONL ledgers keyed by request fingerprint and storing
+  the payload as sent (the rendering for a chat provider, the model for
+  nola) — `record` inherits the inner provider's dialect brand; replay is
+  dialect-agnostic and strict (unknown
+  fingerprint = NOLA3008 definitive error, never a silent live call); entries
+  with the SAME key — an ask's first attempt and its correction turn hash
+  identically, since the fingerprint strips the correction — replay in
+  recorded (FIFO) order, so a correction pair replays as a correction instead
+  of collapsing to the last line; ledger content is redacted but fingerprints
+  are not (`redactSecrets` eats 32+-char hex, so never redact a whole ledger
+  line). Any change to the rendered prompt or to params re-keys every
+  ledger/cache by content. Codes: NOLA3006 CacheStoreInvalid, NOLA3007
+  ReplayLedgerInvalid, NOLA3008 ReplayFingerprintMismatch.
 - **The ask boundary is `Inference`** (`packages/runtime/src/ask/inference.ts`) — a
-  per-ask, single-shot strategy object. The base owns span lifecycle, hook events,
-  the request fingerprint, the one-correction retry loop, the contract check, and
-  receipt emission; subclasses own the wire dialect through four seams:
-  `composeInferParams` / `parse` / `validateResult` / `correctionRequest`.
+  per-ask, single-shot strategy object. The base owns model composition
+  (`buildModel` → `buildInferenceModel`, the `ModelBuilder`), span lifecycle,
+  hook events, the request fingerprint, the one-correction retry loop, the
+  contract check, and receipt emission; subclasses own the wire dialect
+  through three seams: `parse` / `validateResult` / `correctionRequest`.
   There is NO strategy-selection layer — each intent constructs its Inference
-  directly (`new JsonInference(request)` in ExtractIntent/FunctionCallingIntent).
-  `InferenceRequest` = `{frame, site, options, context?}` — `context` is the
-  ask-site node composed after the frame chain; there is no separate prompt
-  field. The receipt's `originalPrompt`/`effectivePrompt` pair holds the
-  COMPOSED conversation (role-labeled transcript): `originalPrompt` as first
-  composed, `effectivePrompt` as last sent — they diverge exactly when a
-  correction retry ran (and under future middleware rewrites).
-- **Prompt composition is polymorphic.** `PromptBuilder` (`ask/prompt-builder.ts`,
-  implements the node-facing `InferenceComposer` seam in `ask/composer.ts`) walks
-  the frame chain outer→inner, calling `composeInferenceData(composer, opts)` on
-  each frame's static node, then on the ask-site node. `FunctionInferContext`
-  renders one `CONTEXT` block (signature + file, optional `Purpose:`, argument
-  list — plain params as `(value not available)`, long/multiline strings as
-  `<value>` blocks); the extract node renders the `TASK` block (`<request>`-tagged
-  instruction, inlined `RESPONSE SCHEMA` unless trivially `{type:"string"}`).
-  `ComposeOptions` carries frame/builder hints (`nested`, `hasContext`). The
-  composed text is fingerprint input — keep it deterministic, land wording changes
-  in one commit, and prefer the record/replay eval loop over armchair iteration.
-  History does NOT reach the prompt yet (TODO(history) markers in tests).
+  directly (`new JsonInference(task)` in ExtractIntent/FunctionCallIntent).
+  `InferenceTask` = `{frame, site, options, context}` — `context` is the
+  ask-site node composed before the frame chain; there is no separate prompt
+  field, only the model. What crosses to `LanguageModel.complete` is
+  `ProviderRequest = { payload, params?, signal?, trace? }` where `payload`
+  is `ClassicPrompt | InferenceModel`, picked by the provider's DIALECT:
+  `isModelProvider(provider)` (core `provider-dialect.ts` — the
+  `MODEL_PROVIDER` global-symbol brand that `nola.infer()` sets and
+  `withRetry`/`record` copy forward; `fallback`/`roundRobin` demand one
+  shared dialect and throw NolaConfigError otherwise) gets the canonical
+  model, everyone else gets `renderClassic(model)`. There is deliberately NO
+  public `dialect` option: a custom provider always receives the rendering,
+  `mockProvider`'s callback is typed on it (`MockRequest`), and
+  `classicPayload(req)` (providers) is the typed accessor that fails
+  definitively on a model. The model leaves the runtime only through
+  `nola.infer()` — friction against reuse of the structured ask, not a security
+  boundary (the runtime is open source). `onProviderRequest` carries the
+  `payload` as sent. `trace` carries `{askId,
+  invocationId, spanPath}` for providers (like `nola`) that want it. The
+  receipt's `originalPrompt`/`effectivePrompt` pair still holds the composed
+  conversation (role-labeled transcript, via `describeModel`/`renderClassic`):
+  `originalPrompt` as first composed, `effectivePrompt` as last sent — they
+  diverge exactly when a correction retry ran (and under future middleware
+  rewrites).
+- **Prompt composition is the `ModelBuilder`.** One composer
+  (`ask/model-builder.ts`, implementing the node-facing `InferenceComposer`
+  seam in `ask/composer.ts`) builds the `InferenceModel` in two passes: pass 1
+  walks the ask-site node, then the frame chain inner→outer (`context.compose`,
+  then `frame.compose` describing the asking frame and recursing to its
+  caller via `composer.outer()`); `build()` reverses into the outer→inner
+  scope chain (innermost is `model.scope`, callers via `parent`), collecting
+  scope/input/output into pure JSON — no wording yet. Pass 2 renders any
+  prompt templates outer→inner from a scope built OVER
+  the finished model — `.default` is that node's classic block, `.next` /
+  `.format` the classic remainder — into per-node `text` overrides
+  (`scope.text`, `model.input.text`); the built-in wording never reaches the
+  model at all unless a template reads `.default`/`.next`. That wording lives
+  in `renderClassic` (`@nola-lang/core/render-classic.ts`), a pure function
+  `InferenceModel → ClassicPrompt` that the RUNTIME calls once per attempt
+  for every provider without the model-dialect brand (providers receive the
+  result as `req.payload`; none renders itself) and that reproduces the old
+  composed text byte-identically. `describeModel` (`ask/inference.ts`)
+  renders a model through `renderClassic` into the role-labeled transcript
+  the receipt's `originalPrompt`/`effectivePrompt` and `NolaResolutionError`
+  still carry; the ask fingerprint is taken over that same rendering as
+  first composed — see Fingerprints below. History does NOT reach the model
+  yet (TODO(history) markers in tests).
 - **Timeout + provider params ride `IntentOptions`.** `timeout` (ms; 0 disables;
   default `ask.timeoutMs` in config, `DEFAULT_ASK_TIMEOUT_MS` 60s) arms an
   AbortController on the ROOT frame only — every provider call in the invocation
@@ -419,6 +600,57 @@ plugin expects, adapt the *plugin*, never the test expectations.
   history accumulate on one invocation), while bare-`await` retries of an
   infer-function intent mint a fresh root frame per attempt (each re-arms its
   own timeout).
+- **Tracers are telemetry entries** (config v2 spec 2026-09-08 + same-day
+  amendment). `telemetry` is `{ level?: NolaLogLevel } | NolaTelemetry |
+  ReadonlyArray<NolaTelemetry>`: `{ level }` is the terminal ALONE
+  (`terminalTrace({ level })`), one observer or an array REPLACES it and
+  implies nothing (list `terminalTrace()` to keep the terminal); absent =
+  `{}` = `terminalTrace()` at `debug` (every event); `[]` silent; the global
+  `console` is NOT an entry; `hooks` is a NOLA3003 naming `telemetry`;
+  `NolaTelemetry` is the observer interface, was `NolaHook`; the resolved
+  shape is always the observer array. `terminalTrace({ level?, color? })`
+  (`src/terminal-trace.ts`, name `nola:terminal`) prints core's
+  `formatIngestLine` (`packages/core/src/ingest-line.ts`, shared with the
+  `nola console` process) over the same envelopes the tracer posts
+  (`src/ingest-envelope.ts` — `envelopeObserver`), to STDERR (stdout stays
+  the program's — the e2e suites parse it as JSON), in colour on a TTY
+  (core's `ansiPalette`; `NO_COLOR` or `color: false` gives `plainPalette`,
+  text identical), so the app terminal and the console process print
+  identical lines; the level gates by kind (error: failed asks; warn: +
+  validation/retry; info: + ask start/end and invocation start/end; debug: +
+  provider request/reply). `nola.tracer(url |
+  { baseUrl?, apiKey?, apiKeyEnv?, fetch? })` (`src/tracer.ts`, name
+  `nola:tracer`) turns every event into one kind-discriminated
+  `NolaIngestEnvelope` (seq-ordered under one runId, project read from the
+  latched config at send time, sender-side redaction preserving
+  `fingerprint`/`def`) and fire-and-forget POSTs it to `/v1/ingest` (1.5 s
+  timeout, warn once when unreachable, once-per-process notice off-loopback;
+  keyless on loopback). A listed tracer is never gated — `nola.infer()` does
+  NOT imply one (the capability-probed platform tracer is gone).
+  `NOLA_TRACING_URL` = "append `nola.tracer(url)`": it yields, with one
+  notice, to a listed `nola:tracer`; a resolved config (stamped `RESOLVED`)
+  is left alone. The runtime's observer list is the resolved `telemetry` and
+  nothing else — there is no always-first built-in logger.
+- **The platform model** posts a `NolaInferRequest` — `{ protocol: 1,
+  version, askId, invocationId, spanPath, intent: InferenceModel, model?,
+  profile?, params }` — to `/v1/infer` and reads a `NolaInferResponse` (`{ text }`).
+  `model` is OPTIONAL: `nola.infer()` sends none and the server chooses (trial keys
+  are restricted server-side); `nola.infer("provider/model")` sends the
+  selector. Base URL: `baseUrl` → `NOLA_API_URL` env →
+  `https://api.nola.sh`, read at request time. Non-2xx bodies are the
+  platform's `NolaErrorResponse` (`{ error: { code, message, details? } }`):
+  the message is surfaced VERBATIM on `NolaProviderError` with `code` /
+  `details` (402 `quota_exceeded` carries `{ runsUsed, runsLimit }`), and
+  `definitive` is every 4xx except 408/429 — a non-JSON body keeps the generic
+  `Nola API request failed: …` form. The `x-nola-runs-used` /
+  `x-nola-runs-limit` reply headers drive a `console.warn` usage line once
+  per count while ≤ `LOW_RUNS_NOTICE` (5) runs remain. The wire types
+  (`NolaInferRequest`, `NolaErrorResponse`, `NolaTrialRequest/Response`,
+  `NolaAccountResponse`, `NolaBillingSessionResponse`, `NOLA_USAGE_HEADERS`,
+  `NOLA_API_URL`, `NOLA_PROTOCOL`) live in `@nola-lang/core`
+  (`nola-protocol.ts`) because the platform repo imports them verbatim.
+  `version` is `packages/runtime/src/version.ts` (the client lives in the
+  runtime — `src/platform-model.ts`), rewritten by `release.mjs`.
 - **Intent inits carry no `file`.** Since emit 3 the display path is emitted once
   per file, in `__nola_file_ctx`. The ask boundary derives it at ask time from
   the frame (`frame.sourceFile()`: the static `InferContext` chain first — the
@@ -426,7 +658,13 @@ plugin expects, adapt the *plugin*, never the test expectations.
   extract/call asks); a lineage with no file root anywhere reports `<unknown>`. Since emit 4
   the lowered EOF insert opens with
   `__nola.useRuntime(<NOLA_EMIT>)` (was `__nola.assertEmit(3)` through emit 3; the
-  contract is 11 today — since emit 11 the func/extract/call inits accept an
+  contract is 13 today — emit 13 stamps `def` on the extract/call inits: the
+  compiler-hashed ask source identity (`defHash` in lower/templates.ts —
+  sha256 over displayFile + raw instruction/callee text + type source text,
+  line/col excluded; AskDefinition spec 2026-09-01; NEVER part of the ask
+  fingerprint); emit 12 renamed the call-intent factory key to
+  `__nola.intents.FunctionCallIntent` (was `FunctionCallingIntent`) with the
+  class; since emit 11 the func/extract/call inits accept an
   optional `template` closure and `__nola.tpl` renders it (prompt templates,
   spec 2026-08-17); since emit 10 the appendix imports `@nola-lang/runtime`,
   the real runtime package, not the retired `nola-lang/runtime` brand subpath) —
@@ -500,8 +738,20 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **The lowered `__nola` shape is declared in ONE ambient stub** —
   `packages/compiler/src/ambient-stub.ts` (`RUNTIME_AMBIENT_STUB`, mapped to
   `@nola-lang/runtime` in bare projects), imported by `tshost.ts` (`nola check`),
-  the tsc-clean test helper, and the headless editor harness. Keep it in lockstep
-  with `__nola.ts` and `emit-surface.test.ts` when the emit surface changes.
+  the tsc-clean test helper, the headless editor harness, AND the editor host
+  decoration `decorateHostWithRuntimeStub` (typescript-plugin, applied by the
+  language server): when `@nola-lang/runtime` does not resolve from a file —
+  a scaffold opened before `npm install`, a bare `.tsi` — the lowered appendix
+  import is served the stub under `/__nola_stubs__/runtime.d.ts` (tshost's
+  path) as an external-library file; the installed package wins whenever it
+  resolves. Without it the appendix TS2307 stays invisible (unmapped) and only
+  its derivative surfaces — "Parameter '__frame' implicitly has an 'any' type"
+  on the infer header (`editor-lsp-no-install.test.ts`). Volar's server caches
+  a failed lookup until a watched-file event for that path and VS Code never
+  reports `node_modules` changes (files.watcherExclude), so after the install
+  the stub keeps serving until a window reload — benign, because the stub and
+  `__nola.ts` are held in lockstep. Keep it in lockstep with `__nola.ts` and
+  `emit-surface.test.ts` when the emit surface changes.
 - **Cross-file consumption of `.tsi`: no adjacent declarations, ever.** `nola build`
   emits declarations ONLY into `--out` (`<name>.tsi.js` + `<name>.tsi.d.ts`, a
   NodeNext pair for consumers of the built output); nothing is written next to
@@ -684,16 +934,26 @@ plugin expects, adapt the *plugin*, never the test expectations.
   scope dot), marker/call hint copied into the wrapper closer / args head
   with ANCHORS (`templateCopy`, `SpanRecorder.appendLeft` anchors) so the
   editor completes after `${.`; a lexical-only marker/hint becomes a
-  `__nola.fmt` template literal (NOLA1008/2005 retired). Runtime:
-  `PromptBuilder` is a continuation walk (`ComposeOptions.next`,
-  `contributesText()`); nodes build `FunctionPromptScope` /
-  `ExtractPromptScope` over their PromptData and call `renderTemplate` —
-  unread `.next` (function) / `.format` (extractor) is appended (safe by
-  default), `.default` is the built-in block, empty/throwing template =
-  NOLA3014. `instruction` stays a string everywhere (history, describe,
-  errors). Codes: NOLA1015 (tolerant `${.` placeholder — lowers to
-  `__nola_s.` so TS still completes), NOLA2009 (scope access outside a Nola
-  literal), NOLA2010 (Nola construct in a copied hole). Emit 11.
+  `__nola.fmt` template literal. Runtime: the
+  `ModelBuilder`'s pass 2 (see Prompt composition above) renders each
+  template into an override on the already-built model — `scope.text` for a
+  function template, `model.input.text` for an extractor — building
+  `FunctionPromptScope` / `ExtractPromptScope` over the finished node and
+  calling `renderTemplate` (`ask/prompt-render.ts`). For a function template,
+  READING `.next` renders the remainder (callee scopes + TASK) into the
+  template's own output and sets `scope.coversRemainder`, which then stops
+  `renderClassicText` from walking further INWARD — it will not append the
+  callee scopes/TASK again (`@nola-lang/core/render-classic.ts`); leaving
+  `.next` unread leaves `coversRemainder` unset, so the renderer continues
+  rendering the remainder after the scope's own text, same as today. For an
+  extractor template, an unread `.format` is appended after the template's
+  own text instead (safe by default), so the response-discipline lines are
+  never dropped by omission. `.default` is the built-in block;
+  empty/throwing template = NOLA3014. `instruction` stays a string everywhere
+  (history, describe, errors). Codes: NOLA1015 (tolerant `${.` placeholder —
+  lowers to `__nola_s.` so TS still completes), NOLA2009 (scope access
+  outside a Nola literal), NOLA2010 (Nola construct in a copied hole). Emit
+  11.
 - **`__nola`-prefixed identifiers are reserved** in `.tsi`; `ask` is a reserved word
   there (but legal as a member/property name). `infer` is contextual — only a
   keyword directly before `function` at statement/export position.
@@ -753,7 +1013,7 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `__nola.intents.*` factories declare the narrow tiers from `@nola-lang/core`
   so class internals (`run`, `spec`, `reviveValue`, `then`, `__nolaBrand`)
   never reach user completion: `Askable<T>` (raw extract/call intents —
-  `withRetry`/`withProvider`/`withParams` only; not thenable, since bare await
+  `withRetry`/`withModel`/`withParams` only; not thenable, since bare await
   throws NOLA3010, and no root-only knobs) and `Intent<T> extends Askable<T>,
   PromiseLike<T>` (infer-function returns — adds `withTimeout`/`detached`).
   `Askable`'s T is deliberately phantom — do NOT add an anchor member, even
@@ -772,21 +1032,34 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **The runtime is one entity: `NolaRuntime`.** The process-wide slot
   (`globalThis[Symbol.for("nola.runtime")]`) holds a `NolaRuntime` instance — claimed at
   runtime-module import (duplicate incompatible copies fail there, NOLA3002). It owns the
-  resolved config, provider resolution, hook dispatch (+ warn-once ledger), and the
+  resolved config, model resolution, hook dispatch (+ warn-once ledger), and the
   `fileContext` memo; `nolaRuntime.reset()` discards the instance wholesale. Config **latches on the
   first ask**: `nolaRuntime.configure()` may be called freely before it, throws `NolaConfigError`
   after it (a failed unconfigured ask does not latch). Routing precedence, highest first:
-  `forceProvider` → a middleware `ctx.provider` reassignment → the ask-site pin
-  (`ask with <name>` / `.withProvider()`) → `providers.default`.
-  `NolaRuntime.resolveProvider(ref?)` owns that ladder — never read the provider map
-  directly. `plugins` is the only remaining reserved config key.
-- **Hooks observe; middleware is currently UNWIRED.** Events are emitted from fixed
-  points in `Inference` so hooks can never miss an ask: `askEnd` always fires with a
-  receipt. A throwing hook is swallowed and warned about once per hook+method. The
+  `forceModel` → a middleware `ctx.model` reassignment → the ask-site pin
+  (`ask with <name>` / `.withModel()`) → `model.default`. The config key
+  `model` takes a bare model (normalized to `{ default }`) or a named map;
+  `ResolvedNolaConfig.model` is always the map.
+  `NolaRuntime.resolveModelProfile(ref?)` owns that ladder (`resolveModel`
+  delegates) — never read the model map directly. Platform profiles: with
+  `isPlatformModel(model.default)` (core's `PLATFORM_MODEL` brand + `infer`),
+  an ask-site name that names no map key is NOT NOLA3004 — the ask resolves
+  to the serving model (default, or forceModel) and the name rides
+  `ProviderRequest.profile` → `NolaInferRequest.profile` (additive optional;
+  the platform's routing resolves it to a model and params), joins the
+  fingerprint (present-only), and lands on `ProviderRequestEvent.profile` +
+  `AskReceipt.profile`. The profile is computed from (name, map) alone —
+  force or not — so record/replay fingerprints agree between live and forced
+  runs (the forced-replay shape is `{ default: nola.infer(), replayed:
+  replay() }` + `forceModel`). `plugins` is the only remaining reserved
+  config key.
+- **Telemetry observes; middleware is currently UNWIRED.** Events are emitted from fixed
+  points in `Inference` so observers can never miss an ask: `askEnd` always fires with a
+  receipt. Observers run in `telemetry` list order; a tracer is an observer. A throwing observer is swallowed and warned about once per observer+method. The
   middleware pipeline (`ask/pipeline.ts`, the `middleware` config section, the
   `ask-middleware.test.ts` suite — skipped) is infrastructure kept for
   re-introduction, but the ask path calls its terminal directly today; when it
-  returns, a throwing middleware fails the ask and `ctx.provider` reassignment
+  returns, a throwing middleware fails the ask and `ctx.model` reassignment
   re-enters the routing ladder. `AskContext`'s runtime-owned fields (`askId`,
   `site`, `abortSignal`) are `readonly` *and* non-writable, so mutating them is a
   compile error and a `TypeError`. Anything logged or persisted into a receipt goes

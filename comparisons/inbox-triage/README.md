@@ -23,7 +23,7 @@ Counted from the files in this repo (non-blank lines, hand-written files only �
 
 | | **Nola** | **BAML** | **LangChain.js** | **Ax** | **Vercel AI** | **OpenAI SDK** |
 |---|---|---|---|---|---|---|
-| Lines you write | **87**¹ | 112 | 118 | **87** | 114 | 131 |
+| Lines you write | **85**¹ | 112 | 118 | 87 | 114 | 131 |
 | Files you write | 5 | 5 | 4 | 4 | 4 | 4 |
 | Times the domain model is declared | **1** | 1² | 2 | 2 | 2 | 2 |
 | Hand-written wire schema | **none** | `.baml` classes | zod | signature string | zod | zod, `.nullable()`³ |
@@ -35,8 +35,8 @@ Counted from the files in this repo (non-blank lines, hand-written files only �
 | First run with no API key | **yes** | no | no | no | no | no |
 | Breakpoint inside the LLM function | **yes** | no | n/a | n/a | n/a | n/a |
 
-¹ 30 of Nola's 87 lines are the offline mock fixture in `nola.config.ts` that lets the demo
-run with zero API keys. With a real provider that config is ~8 lines — total ≈ 65.
+¹ 28 of Nola's 85 lines are the offline mock fixture in `nola.config.ts` that lets the demo
+run with zero API keys. With a real provider that config is ~6 lines — total ≈ 63.
 
 ² BAML avoids a second declaration only by inverting ownership: the domain model moves *into*
 `baml_src/`, and the rest of the app imports the generated `baml_client/types`. There is no

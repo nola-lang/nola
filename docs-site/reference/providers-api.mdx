@@ -1,11 +1,11 @@
 ---
 title: Providers API
-description: "@nola-lang/providers exports — openai, anthropic, google and options, mockProvider, retry/fallback/roundRobin combinators, record, replay, and NolaProvider."
+description: "nola.infer() and nola.tracer() from the runtime; openai, anthropic, google, mockProvider, combinators and record/replay from the providers package."
 sidebar:
   order: 50
 ---
 
-Everything provider-shaped lives in `@nola-lang/providers`. The package does not depend on the runtime; the types it implements (`NolaProvider`, `ProviderRequest`, …) are exported from `@nola-lang/runtime`.
+Bring-your-own providers live in `@nola-lang/providers`: vendor factories, `mockProvider`, the resilience combinators, `record`/`replay`. The package does not depend on the runtime; the types it implements (`LanguageModel`, `ProviderRequest`, …) are exported from `@nola-lang/runtime`. The Nola platform enters through the [`nola`](#nola) namespace exported by `@nola-lang/runtime` itself: `nola.infer()` in the model slot, [`nola.tracer()`](#tracer) in the telemetry list.
 
 ```ts
 // nola.config.ts
@@ -13,7 +13,7 @@ import { defineConfig } from "@nola-lang/runtime";
 import { anthropic, google, openai, mockProvider, withRetry, exponential, fallback, record, replay } from "@nola-lang/providers";
 
 export default defineConfig({
-  providers: {
+  model: {
     default: withRetry(anthropic("claude-sonnet-4-5"), exponential({ maxRetries: 3 })),
     fast: fallback([google("gemini-2.5-flash"), openai("gpt-5-mini")]),
     test: replay("./nola.replay.jsonl"),   // record(...) once, replay offline forever
@@ -24,7 +24,7 @@ export default defineConfig({
 
 ## Factories
 
-`openai(options)`, `anthropic(options)`, `google(options)` — each returns a `NolaProvider`. A bare model string is shorthand for `{ model }`.
+`openai(options)`, `anthropic(options)`, `google(options)` — each returns an `LanguageModel`. A bare model string is shorthand for `{ model }`.
 
 | Option | Type | openai | anthropic | google |
 | --- | --- | --- | --- | --- |
@@ -37,19 +37,55 @@ export default defineConfig({
 
 Keys are read lazily at the first request. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.mock`.
 
+## nola
+
+`nola` — exported from `@nola-lang/runtime` — is a namespace with two factories, one per config slot a Nola-Protocol server (api.nola.sh by default, or a self-hosted console) can serve. It is an object, not a function.
+
+`nola.infer(model?)` returns the platform model:
+
+```ts
+// nola.config.ts
+import { defineConfig, nola } from "@nola-lang/runtime";
+
+export default defineConfig({ model: nola.infer() });   // the platform serves inference — reads NOLA_API_KEY
+```
+
+- `nola.infer()` — the platform chooses the model (trial keys are restricted to a server-side set). The ask travels as the structured inference model (every classic model receives a rendered chat prompt instead), and an `ask with <name>` that matches no configured map key rides the request as a free-form `profile` for the platform's routing.
+- `nola.infer("<provider>/<model>")` — names the upstream explicitly.
+- `nola.infer({ baseUrl?, apiKey?, apiKeyEnv?, fetch?, retry?, model? })` — the connection: `baseUrl` (default `https://api.nola.sh`, or `NOLA_API_URL`), `apiKey` / `apiKeyEnv` (default `NOLA_API_KEY`, read lazily at the first request), `retry` (the wire retry — on by default, 2 retries with 500 ms exponential backoff capped at 10 s, honouring `Retry-After`; `false` disables), `model` as above.
+
+The platform model can only be the config root — the bare `model`, or the map's `default` beside your own models: `withRetry`/`fallback`/`roundRobin` refuse it (use `retry`; routing and failover live on the server), while `record` mirrors it and `replay` serves any ledger. Server errors surface verbatim as `NolaProviderError` with `code` (`quota_exceeded`, `insufficient_credits`, `unauthorized`, `forbidden`, `model_not_allowed`, `request_too_large`, `rate_limited`) and `details` (`quota_exceeded` carries `{ runsUsed, runsLimit }`; `insufficient_credits` — a paid key whose balance hit zero, HTTP 402 — carries `{ balanceMicro }`); every 4xx other than 408/429 is definitive. On a trial key the model prints `Nola free usage: 22 / 25 runs — 3 left. Run \`nola account\` to add credits.` to stderr once per count while five or fewer runs remain.
+
+Nothing else is implied: traces reach a Nola console only when `telemetry` lists a tracer — see [Telemetry](/docs/config/observability/#tracers).
+
+```ts
+// nola.config.ts — a self-hosted console serves inference and tracing
+import { openai } from "@nola-lang/providers";
+import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: { default: nola.infer({ baseUrl: "http://localhost:8787" }), fast: openai("gpt-5-nano") },
+  telemetry: [nola.tracer("http://localhost:8787"), terminalTrace()],
+});
+```
+
+## tracer
+
+`nola.tracer(target?)` returns a `NolaTelemetry` that posts every event to a Nola-Protocol server's `/v1/ingest`. `target` is absent (`NOLA_API_URL`, then `https://api.nola.sh`), a URL string, or `{ baseUrl?, apiKey?, apiKeyEnv?, fetch? }`. Fire-and-forget, redacted, never gated: list it under `telemetry`. Details on [Telemetry](/docs/config/observability/#tracers).
+
 ## mockProvider
 
-`mockProvider(source: unknown[] | ((req: ProviderRequest) => unknown)): NolaProvider` — a queue of values served one per **provider call** in order (an ask that needs its correction turn, or a `.withRetry()` attempt, consumes the next entry; an empty queue throws), or a function of the request. Deterministic, no network.
+`mockProvider(source: unknown[] | ((req: MockRequest) => unknown)): LanguageModel` — a queue of values served one per **provider call** in order (an ask that needs its correction turn, or a `.withRetry()` attempt, consumes the next entry; an empty queue throws), or a function of the request. `MockRequest` is the request with `payload` typed as the rendered `ClassicPrompt` (see [Custom providers](#custom-providers)), so `req.payload.messages` needs no narrowing. Deterministic, no network.
 
 ## Combinators
 
 | Export | Signature | Meaning |
 | --- | --- | --- |
-| `withRetry` | `(provider: NolaProvider, policy: RetryPolicy) => NolaProvider` | retries the wire call with backoff; fail-fasts on definitive errors; honours `Retry-After` up to `maxDelayMs` |
+| `withRetry` | `(model: LanguageModel, policy: RetryPolicy) => LanguageModel` | retries the wire call with backoff; fail-fasts on definitive errors; honours `Retry-After` up to `maxDelayMs` |
 | `constant` | `({ maxRetries, delayMs? }) => RetryPolicy` | flat delay (default `0`) |
 | `exponential` | `({ maxRetries, delayMs?, multiplier?, maxDelayMs? }) => RetryPolicy` | defaults `200`, `2`, `10_000` |
-| `fallback` | `(providers: NolaProvider[]) => NolaProvider` | first success in order; throws when all fail |
-| `roundRobin` | `(providers: NolaProvider[]) => NolaProvider` | rotating start, then the rest in order |
+| `fallback` | `(providers: LanguageModel[]) => LanguageModel` | first success in order; throws when all fail |
+| `roundRobin` | `(providers: LanguageModel[]) => LanguageModel` | rotating start, then the rest in order |
 | `isDefinitiveProviderError` | `(error: unknown) => boolean` | `true` for a `NolaProviderError` flagged definitive or with an HTTP 4xx status other than 408/429 |
 
 `RetryPolicy` is `{ maxRetries: number; delayMs: number; multiplier: number; maxDelayMs: number }`. An empty provider array is a config error ([`NOLA3003`](/docs/reference/error-codes/#nola3003)). Details and the three retry layers: [Resilience](/docs/config/resilience/).
@@ -58,48 +94,54 @@ Keys are read lazily at the first request. The option interfaces are exported as
 
 | Export | Signature | Meaning |
 | --- | --- | --- |
-| `record` | `(inner: NolaProvider, ledgerPath: string) => NolaProvider` | calls `inner` and appends each exchange to the JSONL ledger |
-| `replay` | `(ledgerPath: string) => NolaProvider` | serves answers from the ledger; a miss is [`NOLA3008`](/docs/reference/error-codes/#nola3008), an unreadable ledger [`NOLA3007`](/docs/reference/error-codes/#nola3007) |
+| `record` | `(inner: LanguageModel, ledgerPath: string) => LanguageModel` | calls `inner` and appends each exchange to the JSONL ledger |
+| `replay` | `(ledgerPath: string) => LanguageModel` | serves answers from the ledger; a miss is [`NOLA3008`](/docs/reference/error-codes/#nola3008), an unreadable ledger [`NOLA3007`](/docs/reference/error-codes/#nola3007) |
 
 See [Record and replay](/docs/config/record-and-replay/).
 
 ## Custom providers
 
-A provider is any object satisfying `NolaProvider`. The contract (types from `@nola-lang/runtime`):
+A provider is any object satisfying `LanguageModel`. The runtime renders the ask into a chat prompt before it reaches you — system text, the conversation, and the output contract — and you answer with the model's reply text. The built-in `openai`, `anthropic` and `google` factories are exactly this; only the platform model `nola.infer()` receives the structured inference model instead, and nothing in a config needs to render anything.
 
 ```ts
 // not-checked — shapes as exported from @nola-lang/runtime
-interface NolaProvider {
+interface LanguageModel {
   name: string;
   complete(req: ProviderRequest): Promise<ProviderResponse>;
 }
 
 interface ProviderRequest {
-  system: string;                                   // composed system text
-  messages: { role: "user" | "assistant"; content: string }[];
-  output: { syntax: "json"; schema?: JsonSchema } | { syntax: "code"; language?: string };
-  params?: ProviderParams;                           // temperature, maxOutputTokens, providerOptions
-  signal?: AbortSignal;                              // the invocation's timeout
+  payload: ClassicPrompt;                      // always the rendering — only the platform model's infer() sees the model
+  params?: ProviderParams;                     // temperature, maxOutputTokens, providerOptions
+  signal?: AbortSignal;                        // the invocation's timeout
+  trace?: { askId: string; invocationId: string; spanPath: readonly string[] };
 }
 
-type ProviderResponse = { text: string; durationMs?: number };   // not re-exported by @nola-lang/runtime — the return type is structural
+interface ClassicPrompt {
+  system: string;                                    // Nola's preamble, then your config `system.message`
+  messages: { role: "user" | "assistant"; content: string }[];   // one user turn; three on the correction attempt
+  output: { syntax: "json"; schema?: JsonSchema } | { syntax: "code"; language?: string };
+}
+
+type ProviderResponse = { text: string; durationMs?: number };
 ```
 
-A minimal implementation over `fetch`:
+`req.payload` IS the `ClassicPrompt` — the type says so, no accessor or narrowing needed. A minimal chat-style implementation over `fetch`:
 
 ```ts
 // my-provider.ts
-import type { NolaProvider, ProviderRequest } from "@nola-lang/runtime";
+import type { LanguageModel, ProviderRequest } from "@nola-lang/runtime";
 
-export function myProvider(endpoint: string): NolaProvider {
+export function myProvider(endpoint: string): LanguageModel {
   return {
     name: "my-provider",
     async complete(req: ProviderRequest) {
       const started = Date.now();
+      const { system, messages, output } = req.payload;
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ system: req.system, messages: req.messages, schema: req.output.syntax === "json" ? req.output.schema : undefined }),
+        body: JSON.stringify({ system, messages, schema: output.syntax === "json" ? output.schema : undefined }),
         signal: req.signal,
       });
       const { text } = (await res.json()) as { text: string };
@@ -109,6 +151,6 @@ export function myProvider(endpoint: string): NolaProvider {
 }
 ```
 
-Return the model's raw reply in `text`; the runtime parses and validates it against the schema, and retries with a correction turn when it does not conform. Throw a `NolaProviderError` (from `@nola-lang/runtime`) with `status` / `definitive` / `retryAfterMs` set so the combinators can tell a retryable failure from a definitive one.
+Return the model's raw reply in `text`; the runtime parses and validates it against the schema, and retries with a correction turn (the conversation gains the failed reply and a correction request) when it does not conform. Throw a `NolaProviderError` (from `@nola-lang/runtime`) with `status` / `definitive` / `retryAfterMs` set so the combinators can tell a retryable failure from a definitive one.
 
 Next: [Config schema](/docs/reference/config-schema/)

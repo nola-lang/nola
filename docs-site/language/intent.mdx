@@ -1,0 +1,179 @@
+---
+title: Intents
+description: An intent is to Nola what a promise is to async/await — a lazy, first-class value for an inference that has not run yet. What produces one, what resolves one.
+sidebar:
+  order: 15
+---
+
+An **intent** is a value that stands for an inference that has not run yet. It is to Nola what a promise is to `async`/`await`: `async` functions return a `Promise<T>` and `await` resolves it; infer functions return an `Intent<T>` and `ask` resolves it. If you know how promises work, you already know most of what an intent is — this page covers the rest.
+
+## The analogy
+
+| `async`/`await` | Nola |
+| --- | --- |
+| `async function f(): Promise<T>` | `infer function f(): Intent<T>` |
+| a `Promise<T>` — a value standing for a `T` that is not here yet | an `Intent<T>` — a value standing for a `T` the model has not produced yet |
+| `await p` resolves the promise to its `T` | `ask i` resolves the intent to its `T` |
+| the body returns `T`; the caller sees `Promise<T>` | the body returns `T`; the caller sees `Intent<T>` |
+| a promise is thenable | an `Intent<T>` is thenable — plain TypeScript `await`s it |
+
+```tsi
+// summarize.tsi
+export infer function summarize(.text: string) {
+  return ask ..`a one-sentence summary`<string>;
+}
+```
+
+```ts
+// main.ts
+import { summarize } from "./summarize.tsi";
+
+const intent = summarize("The quarterly report shows revenue up 12% on lower costs.");  // Intent<string> — nothing has run
+const summary = await intent;                                                           // now it runs
+console.log(summary);
+```
+
+## Two moments: construction and resolution
+
+A promise starts working the moment it is created. An intent does not — and that is the first place the analogy is deliberately broken. The language keeps two moments apart:
+
+- **Construction** is evaluating the expression: calling an infer function captures its arguments; writing an extractor evaluates its `${…}` holes and records the type. Nothing is sent anywhere.
+- **Resolution** is `ask` (or `await`, from plain TypeScript): the prompt is composed from the context *at that moment*, the provider is called, and the answer is validated against `T`.
+
+Because construction is free, you can build intents up front and decide later which ones to resolve:
+
+```tsi
+// triage.tsi
+export infer function triage(.ticket: string) {
+  const severity = ..`the severity: low, medium or high`<"low" | "medium" | "high">;  // constructed, not run
+  const owner = ..`the team that should own this ticket`<string>;                    // constructed, not run
+
+  const s = ask severity;                                                            // one provider call
+  if (s === "low") return { severity: s, owner: "queue" };
+  return { severity: s, owner: ask owner };                                          // a second call, only on this branch
+}
+```
+
+`owner` costs nothing on the `low` branch — it was never resolved.
+
+## What produces an intent
+
+Three expressions produce intents, in two tiers:
+
+| Expression | Produces | Tier |
+| --- | --- | --- |
+| calling an infer function — `summarize(text)` | the function's result | `Intent<T>` |
+| an extractor — `` ..`instruction`<T> `` | a request to pull a `T` from context | `Askable<T>` |
+| a call intent — `` fn`hint`(…) `` or a plain call with an extractor argument | a request to fill the arguments, then call `fn` | `Askable<T>` |
+
+| Tier | What it can do |
+| --- | --- |
+| `Askable<T>` | resolvable only through `ask`; carries `.withRetry(n)`, `.withModel(…)`, `.withParams({…})` |
+| `Intent<T>` extends `Askable<T>`, `PromiseLike<T>` | everything above, plus `.withTimeout(ms)`, `.detached()`, and `then` — so plain TypeScript can `await` it |
+
+The difference between the tiers is *scope*. An infer function's intent carries the function itself — its instruction, its file, its contextual parameters — so it can open an **invocation** on its own. An extractor or a call intent is only a request: it has no context of its own and borrows the invocation of the `ask` that resolves it. That is why only `Intent<T>` is thenable. See [Intent methods](/docs/language/intent-methods/) for the methods and [Intent API](/docs/reference/intent-api/) for the signatures.
+
+## What resolves an intent
+
+| Where you are | Use | Accepts |
+| --- | --- | --- |
+| an infer function body | `ask` | any intent — it runs on the asking invocation |
+| plain TypeScript | `await` | an `Intent<T>` — it opens a fresh invocation |
+
+A raw extractor or call intent cannot be bare-`await`ed: with no invocation to borrow, the runtime throws [`NOLA3010`](/docs/reference/error-codes/#nola3010). From plain TypeScript, `await` the *infer function's* result instead — see [ask vs await](/docs/language/ask/#ask-vs-await).
+
+Because `Intent<T>` is thenable, everything that consumes thenables consumes intents. `Promise.all` runs several invocations concurrently:
+
+```ts
+// batch.ts
+import { summarize } from "./summarize.tsi";
+
+const [a, b] = await Promise.all([
+  summarize("Revenue is up 12% on lower costs."),
+  summarize("Churn fell to 2% after the pricing change."),
+]);
+console.log(a, b);
+```
+
+A failed inference rejects at the resolution site, exactly as a rejected promise does at `await`: wrap the `ask` or the `await` in `try`/`catch`. See [Error handling](/docs/guides/error-handling/).
+
+## Properties
+
+Four properties, all inherited from the promise analogy or deliberately departing from it.
+
+### Lazy
+
+Nothing runs until something resolves the intent. An intent that is never asked never reaches a provider — the `triage` example above depends on that.
+
+### Single-shot
+
+An intent resolves at most once. Resolving it again returns the same result without running again — the way a settled promise always yields the same value. That is convenient when one intent is awaited from two places, and a trap when an intent outlives the invocation it was meant for:
+
+```tsi
+// shared.tsi
+const nameIntent = ..`the person's full name`<string>;   // one intent for the life of the module
+
+export infer function whoIsIt(.text: string) {
+  return ask nameIntent;   // the first invocation runs it; every later invocation gets that FIRST answer
+}
+```
+
+Build intents where you use them, or behind a function that returns a fresh one:
+
+```tsi
+// fresh.tsi
+const nameIntent = () => ..`the person's full name`<string>;
+
+export infer function whoIsIt(.text: string) {
+  return ask nameIntent();   // a new intent per invocation
+}
+```
+
+### Methods clone
+
+Every `.with*` method returns a **new, unstarted** intent with the option merged in; the original is untouched. Chain what you need, then resolve the result:
+
+```tsi
+// tuned.tsi
+export infer function tuned(.text: string) {
+  const base = ..`the title of the text`<string>;
+  const careful = base.withModel("careful").withRetry(2);   // two clones; base is still unstarted
+  return ask careful;
+}
+```
+
+### Thenable, not a Promise
+
+`Intent<T>` is `PromiseLike<T>`, not a `Promise`. It has `then`, so `await`, `Promise.all`, `Promise.race` and returning it from an `async` function all work. It does **not** have `catch` or `finally` — use `try`/`catch` around the `await`, or `Promise.resolve(intent)` when you need the full `Promise` surface. Two consequences for the type-checker:
+
+- Annotate an infer function with `Intent<T>`, never `Promise<T>` — `nola check` reports `TS2739` otherwise ([return type](/docs/language/infer-functions/#return-type)).
+- `isIntent(value)` from `@nola-lang/runtime` is the runtime guard for "is this any kind of intent" ([Intent API](/docs/reference/intent-api/#isintent)).
+
+## Where the analogy ends
+
+| A promise… | An intent… |
+| --- | --- |
+| is eager — its work starts at creation | is lazy — its work starts at `ask`/`await` |
+| carries no settings | carries settings — provider, retries, params, timeout — that travel with the value and merge as you chain |
+| resolves the same wherever it is awaited | resolves *in the invocation that asks it*: the ask site lends its context, history and provider pin to the intent |
+| can be awaited anywhere | as an `Askable<T>`, can be resolved only by `ask` inside an infer function |
+
+The third row is the one to internalize. Context enters an intent at resolution, not construction — so an extractor built in one place and asked in another reads the context of the *asking* invocation:
+
+```tsi
+// values.tsi
+import type { Askable } from "@nola-lang/runtime";
+
+export infer function answer(.document: string, question: Askable<string>) {
+  return ask question;   // resolves against answer's context — the document
+}
+
+export infer function headline(.text: string) {
+  const question = ..`a headline for the document`<string>;   // built here, no document in sight
+  return ask answer(text, question);                           // resolved there, with the document
+}
+```
+
+Intents are ordinary values: store them, pass them, return them from helpers. Only `ask` is restricted to infer function bodies ([`NOLA2001`](/docs/reference/error-codes/#nola2001)); construction is legal anywhere.
+
+Next: [infer functions](/docs/language/infer-functions/)

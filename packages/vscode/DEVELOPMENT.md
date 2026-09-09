@@ -72,6 +72,18 @@ can't):
     rather than an LSP one, so this checks the two lists coexist; the bodies
     themselves are parse-checked in `test/snippets.test.ts`.
 
+## Scaffolding against the workspace build
+
+Set `NOLA_LINK_CHECKOUT` to this checkout's root (the folder holding
+`packages/`), then run `nola init` anywhere — from an `npm link`ed CLI or one
+installed from the packages — and accept "Install dependencies and open VS
+Code?". The scaffold is what a user gets (its `package.json` pins the
+published range), but after the install the flow relinks `@nola-lang/runtime`,
+`@nola-lang/providers` and `nola-lang` in the new project's `node_modules` to
+that checkout's `packages/*` and says so in the outro. `npm run build` first —
+the links point at `dist/`. A later `npm install` in that project restores the
+npm copies (re-run `nola init` over it, or relink by hand).
+
 ## Installed-VSIX smoke (before a Marketplace publish)
 
 The F5 host resolves through the monorepo's hoisted node_modules; an installed

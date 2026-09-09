@@ -8,7 +8,7 @@ import { defineConfig } from "@nola-lang/runtime";
 import { anthropic, google, openai, mockProvider, withRetry, exponential, fallback, record, replay } from "@nola-lang/providers";
 
 export default defineConfig({
-  providers: {
+  provider: {
     default: withRetry(anthropic("claude-sonnet-5"), exponential({ maxRetries: 3 })),
     fast: fallback([google("gemini-2.5-flash"), openai("gpt-5-mini")]),
     test: replay("./nola.replay.jsonl"),   // record(...) once, replay offline forever

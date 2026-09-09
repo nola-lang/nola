@@ -3,6 +3,7 @@
 
 const PATTERNS: readonly RegExp[] = [
   /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g, // OpenAI-family keys
+  /\bnola_sk_[A-Za-z0-9]{8,}/g, // Nola API keys
   /\bAIza[0-9A-Za-z_-]{10,}/g, // Google API keys
   /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, // Authorization values
   /\b[0-9a-f]{32,}\b/gi, // long hex blobs (key fingerprints)
@@ -24,4 +25,16 @@ export function redactSecrets(text: string): string {
 /** Render any thrown value as a redacted single-line string. */
 export function redactError(error: unknown): string {
   return redactSecrets(error instanceof Error ? error.message : String(error));
+}
+
+/** redactSecrets over every string inside a JSON-shaped value; structure and non-strings untouched. */
+export function redactDeep<T>(value: T): T {
+  if (typeof value === "string") return redactSecrets(value) as T;
+  if (Array.isArray(value)) return value.map(redactDeep) as T;
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = redactDeep(v);
+    return out as T;
+  }
+  return value;
 }

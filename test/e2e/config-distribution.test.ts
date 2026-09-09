@@ -34,7 +34,7 @@ describe("zero-ceremony production run", () => {
     );
     writeFileSync(
       join(app, "nola.config.ts"),
-      "import { canned } from './src/provider.ts';\nexport default { providers: { default: canned } };\n",
+      "import { canned } from './src/provider.ts';\nexport default { model: { default: canned } };\n",
     );
     writeFileSync(join(app, "src", "greet.tsi"), GREET_TSI);
     writeFileSync(

@@ -1,11 +1,11 @@
-import { type AskContext, type AskResult, type NolaMiddleware, Site } from "@nola-lang/core";
+import { type AskContext, type AskResult, type InferenceModel, type NolaMiddleware, Site } from "@nola-lang/core";
 import { runPipeline } from "@nola-lang/runtime";
 import { describe, expect, it, vi } from "vitest";
 
 function makeCtx(): AskContext {
   const ctx = {
     prompt: "p",
-    provider: undefined as AskContext["provider"],
+    model: undefined as AskContext["model"],
     meta: {} as Record<string, unknown>,
   } as AskContext;
   for (const [key, value] of Object.entries({
@@ -19,11 +19,12 @@ function makeCtx(): AskContext {
   return ctx;
 }
 
-const terminal = async (ctx: AskContext): Promise<AskResult> => ({ value: ctx.prompt, servedBy: "terminal" });
+const MODEL: InferenceModel = { intent: "extract", input: { instruction: "p" }, output: { syntax: "json", schema: { type: "string" } } };
+const terminal = async (ctx: AskContext): Promise<AskResult> => ({ model: MODEL, value: ctx.prompt, servedBy: "terminal" });
 
 describe("runPipeline", () => {
   it("runs the terminal stage when there is no middleware", async () => {
-    await expect(runPipeline([], makeCtx(), terminal)).resolves.toEqual({ value: "p", servedBy: "terminal" });
+    await expect(runPipeline([], makeCtx(), terminal)).resolves.toEqual({ model: MODEL, value: "p", servedBy: "terminal" });
   });
 
   it("applies stages as an onion — first entry is outermost", async () => {

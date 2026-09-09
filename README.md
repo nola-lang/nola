@@ -52,6 +52,14 @@ const result = await analyzeUserRequest(
 TypeScript type *is* the schema: `<boolean>` is validated, and a `Date` comes back
 as a real `Date`.
 
+## Hosted inference, no account
+
+`npm create nola` offers a free trial key: 25 hosted runs, no sign-up, no
+provider account. When they are used up, `npx nola-lang billing` opens a
+single page to add prepaid balance to the same key. Hosted inference is
+never required — point `nola.config.ts` at any supported provider instead
+([providers](https://nola.sh/docs/reference/providers-api/)).
+
 ## Quick start
 
 Requires **Node ≥ 22**. The starter needs no API key — it runs offline from a

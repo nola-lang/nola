@@ -105,6 +105,17 @@ export async function typedConsumer(): Promise<string> {
 }
 `,
   },
+  {
+    dir: "file-ticket",
+    consumer: `import { fileTicket, fileTicketCarefully } from "./tickets.tsi";
+
+export async function typedConsumer(): Promise<string> {
+  const id = await fileTicket("the site is down");
+  const other = await fileTicketCarefully("the site is down");
+  return id + other; // the call intent settles to the callee's string, not a Promise
+}
+`,
+  },
 ];
 
 /** Copy an example into a tmp dir and link the workspace runtime/providers. */

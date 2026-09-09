@@ -6,10 +6,10 @@ import type { Frame } from "../runtime/index.js";
  * `ask expr` — validate the operand is an Intent and run it against the asking
  * function's frame. Context chains here: this is the only place a parent frame
  * reaches an intent. `provider` is the `ask with <name>` alias; being the
- * ask-site choice it overrides an intent's own .withProvider pin (forceProvider
- * still beats both — resolveProvider owns that precedence).
+ * ask-site choice it overrides an intent's own .withModel pin (forceModel
+ * still beats both — resolveModel owns that precedence).
  */
-export async function ask<T>(value: Askable<T>, frame: Frame, provider?: string): Promise<T> {
+export async function ask<T>(value: Askable<T>, frame: Frame, model?: string): Promise<T> {
   if (!Intent.isIntent(value)) {
     throw new NolaResolutionError("ask operand is not an Intent", {
       prompt: "<not an intent>",
@@ -18,7 +18,7 @@ export async function ask<T>(value: Askable<T>, frame: Frame, provider?: string)
     });
   }
   const intent = value as unknown as Intent<T>;
-  return (provider === undefined ? intent : intent.withProvider(provider)).run(frame);
+  return (model === undefined ? intent : intent.withModel(model)).run(frame);
 }
 
 /** `${expr}` prompt splice: strings verbatim, everything else JSON. */

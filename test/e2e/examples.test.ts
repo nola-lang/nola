@@ -39,7 +39,7 @@ const EXAMPLES: Example[] = [
     tsi: "invoice",
     expected: {
       invoiceNumber: "INV-2042",
-      issuedTo: "LoJell Inc",
+      issuedTo: "Acme Corp",
       lineItems: [
         { description: "widget", quantity: 3, unitPrice: 19.99 },
         { description: "gizmo", quantity: 1, unitPrice: 250 },
@@ -99,6 +99,17 @@ const EXAMPLES: Example[] = [
       ],
     },
   },
+  {
+    dir: "file-ticket",
+    tsi: "tickets",
+    expected: {
+      filed: ["T-1", "T-2"],
+      tickets: [
+        { id: "T-1", title: "Checkout page shows a blank screen after paying", priority: 2 },
+        { id: "T-2", title: "Checkout blank after payment; charged twice", priority: 1 },
+      ],
+    },
+  },
 ];
 
 beforeAll(async () => {
@@ -140,7 +151,7 @@ describe("real OpenAI smoke (extract-person)", () => {
       `import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
-export default defineConfig({ providers: { default: openai() } });
+export default defineConfig({ model: { default: openai() } });
 `,
     );
     const scope = join(dir, "node_modules", "@nola-lang");

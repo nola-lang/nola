@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * The ONLY place colours, fonts and radii are defined. The values are the
+ * console's original palette (amber accent, panel greys, mono type), mapped
+ * onto shadcn's semantic names so the copied components pick them up.
+ */
+:root {
+  --background: #16181d;
+  --foreground: #e8e6e1;
+  --card: #1d2026;
+  --card-foreground: #e8e6e1;
+  --popover: #1d2026;
+  --popover-foreground: #e8e6e1;
+  --primary: #e8a13d; /* the live/selection amber */
+  --primary-foreground: #16181d;
+  --secondary: #1d2026;
+  --secondary-foreground: #e8e6e1;
+  --muted: #1d2026;
+  --muted-foreground: #8a8f98;
+  --accent: #1d2026; /* hover ground — the panel */
+  --accent-foreground: #e8e6e1;
+  --destructive: #d4645c;
+  --border: #2a2e36;
+  --input: #2a2e36;
+  --ring: #e8a13d;
+  --ok: #7fb069;
+  --err: #d4645c;
+  --live: #e8a13d;
+  --brand: #59b9bd; /* the logo teal */
+  --chart-1: #e8a13d;
+  --chart-2: #7fb069;
+  --chart-3: #59b9bd;
+  --chart-4: #8a8f98;
+  --chart-5: #d4645c;
+  --radius: 0.375rem;
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ok: var(--ok);
+  --color-err: var(--err);
+  --color-live: var(--live);
+  --color-brand: var(--brand);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  @keyframes pulse-dot {
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-[13px] leading-normal antialiased;
+  }
+  /* Tailwind v4's preflight gives buttons `cursor: default`; every button here is a real click target. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}

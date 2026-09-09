@@ -41,8 +41,10 @@ infer function extractPerson(.text: string) {
   extractor — is a call intent (the LLM fills the extractor-shaped
   arguments, then the function runs). Only `` fn`hint`(...) `` carries
   instruction text.
-- `ask with <providerName> <intent>` — routes one ask through a named
-  provider from `nola.config.ts`. The name must be a static identifier.
+- `ask with <modelName> <intent>` — routes one ask through a named model
+  from `nola.config.ts`. The name must be a static identifier. When the
+  platform serves inference (`model: nola.infer()`) any unconfigured
+  name is legal — it is sent to the platform as a free-form inference profile.
 - Prompt templates: inside ANY instruction backticks (marker, extractor,
   call hint) a hole that starts with a single dot — `${.member}` — reads
   the intent's prompt scope; a literal containing one REPLACES that

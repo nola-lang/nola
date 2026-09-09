@@ -16,6 +16,6 @@ TypeScript type you already have. Per-label descriptions (a hint attached to
 each variant) have no Nola equivalent yet — a planned follow-up.
 
 ```sh
-npx nola run src/main.ts                      # mock provider (deterministic)
+npx nola-lang run src/main.ts                      # mock provider (deterministic)
 # real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
 ```

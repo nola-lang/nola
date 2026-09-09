@@ -120,7 +120,7 @@ describe("compileNola tolerant mode", () => {
       expect(r.meta.mode).toBe("lowered");
       expect(r.diagnostics.map((d) => d.code)).toContain("NOLA1004");
       expect(r.code).toContain("f((undefined as never))");
-      expect(r.code).not.toContain("FunctionCallingIntent");
+      expect(r.code).not.toContain("FunctionCallIntent");
       expect(typecheckLowered({ "t.ts": r.code })).toEqual([]);
     });
 
@@ -128,7 +128,7 @@ describe("compileNola tolerant mode", () => {
       const src = "declare function f(a: string): void;\nconst i = f(..`a`<string>);\n";
       const r = compileNola(src, "t.tsi", { tolerant: true });
       expect(r.diagnostics).toEqual([]);
-      expect(r.code).toContain("FunctionCallingIntent");
+      expect(r.code).toContain("FunctionCallIntent");
     });
   });
 

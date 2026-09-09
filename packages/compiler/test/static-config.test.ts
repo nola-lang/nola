@@ -11,12 +11,22 @@ describe("staticUnderivableContextType", () => {
     const src = [
       'import { defineConfig } from "nola-lang";',
       "export default defineConfig({",
-      "  providers: { default: someProvider() },",
+      "  model: { default: someModel() },",
       '  compiler: { underivableContextType: "omit" },',
       "});",
       "",
     ].join("\n");
     expect(staticUnderivableContextType(src)).toBe("omit");
+  });
+
+  it("unwraps the nola() platform wrapper like defineConfig", () => {
+    const src = [
+      'import { nola } from "@nola-lang/runtime";',
+      "export default nola({",
+      '  compiler: { underivableContextType: "prune" },',
+      "});",
+    ].join("\n");
+    expect(staticUnderivableContextType(src)).toBe("prune");
   });
 
   it("unwraps as/satisfies and parenthesized expressions", () => {
@@ -42,7 +52,7 @@ describe("staticUnderivableContextType", () => {
   });
 
   it("returns undefined when there is no compiler section, no default export, or an unknown mode", () => {
-    expect(staticUnderivableContextType("export default { providers: {} };\n")).toBeUndefined();
+    expect(staticUnderivableContextType("export default { model: {} };\n")).toBeUndefined();
     expect(staticUnderivableContextType("export const x = 1;\n")).toBeUndefined();
     expect(
       staticUnderivableContextType('export default { compiler: { underivableContextType: "loose" } };\n'),

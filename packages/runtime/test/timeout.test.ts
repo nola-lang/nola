@@ -1,4 +1,4 @@
-import type { NolaProvider } from "@nola-lang/core";
+import type { LanguageModel } from "@nola-lang/core";
 import { ExtractIntent, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
@@ -6,7 +6,7 @@ import { openTestFrame } from "./helpers/frame.js";
 afterEach(() => nolaRuntime.reset());
 
 /** Never resolves on its own; rejects with the abort reason when the signal fires. */
-function hangingProvider(): NolaProvider {
+function hangingProvider(): LanguageModel {
   return {
     name: "hang",
     complete: (req) =>
@@ -21,13 +21,13 @@ const extract = () =>
 
 describe("invocation timeout", () => {
   it("IntentOptions.timeout aborts a hanging provider call", async () => {
-    nolaRuntime.configure({ providers: { default: hangingProvider() } });
+    nolaRuntime.configure({ model: { default: hangingProvider() } });
     const frame = openTestFrame({ options: { timeout: 25 } });
     await expect(extract().run(frame)).rejects.toThrow(/timed out after 25ms/);
   });
 
   it("config ask.timeoutMs is the default when the intent sets none", async () => {
-    nolaRuntime.configure({ providers: { default: hangingProvider() }, ask: { timeoutMs: 25 } });
+    nolaRuntime.configure({ model: { default: hangingProvider() }, ask: { timeoutMs: 25 } });
     const frame = openTestFrame();
     await expect(extract().run(frame)).rejects.toThrow(/timed out after 25ms/);
   });
@@ -40,7 +40,7 @@ describe("invocation timeout", () => {
 
   it("timeout: 0 disables the clock", async () => {
     nolaRuntime.configure({
-      providers: { default: { name: "fast", complete: async () => ({ text: '"ok"' }) } },
+      model: { default: { name: "fast", complete: async () => ({ text: '"ok"' }) } },
     });
     const frame = openTestFrame({ options: { timeout: 0 } });
     await expect(extract().run(frame)).resolves.toBe("ok");
@@ -50,7 +50,7 @@ describe("invocation timeout", () => {
   it("an elapsed timeout fails fast before the provider is called", async () => {
     let calls = 0;
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "count",
           complete: async () => {
@@ -69,7 +69,7 @@ describe("invocation timeout", () => {
   it("rejects a negative or non-numeric ask.timeoutMs", () => {
     expect(() =>
       nolaRuntime.configure({
-        providers: { default: hangingProvider() },
+        model: { default: hangingProvider() },
         ask: { timeoutMs: -1 },
       }),
     ).toThrow(/ask\.timeoutMs/);

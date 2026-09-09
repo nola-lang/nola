@@ -40,6 +40,17 @@ export class InferType<T = unknown> {
     return new InferType<T>(this.node, text);
   }
 
+  /**
+   * The named reference at this type's root (`<Ticket>`), bare of a
+   * companion's `moduleId#` qualifier; undefined for anonymous shapes. Display
+   * only — never identity.
+   */
+  refName(): string | undefined {
+    if (this.node.kind !== "ref") return undefined;
+    const hash = this.node.name.lastIndexOf("#");
+    return hash === -1 ? this.node.name : this.node.name.slice(hash + 1);
+  }
+
   toJsonSchema(): JsonSchema {
     const cyclic = new Set<string>();
     findCycles(this, new Set(), new Set(), cyclic);
@@ -55,6 +66,41 @@ export class InferType<T = unknown> {
 
   toNativeType(): string {
     return this._node.kind === "ref" ? this._node.resolve().toNativeType() : this._node.kind;
+  }
+
+  /**
+   * The type as TypeScript source text — what the author wrote after the
+   * extractor, reconstructed from the carrier: `"quote" | "order"`,
+   * `{ id: string; note?: string }`, `Ticket` (a ref by name, never
+   * expanded, companion qualifier stripped). Display only — never identity.
+   */
+  toTypeText(): string {
+    const n = this.node;
+    switch (n.kind) {
+      case "string":
+        return n.labels ? n.labels.map((l) => JSON.stringify(l)).join(" | ") : "string";
+      case "number":
+      case "boolean":
+        return n.kind;
+      case "date":
+        return "Date";
+      case "array": {
+        const item = n.item.toTypeText();
+        return n.item._node.kind === "string" && n.item._node.labels ? `(${item})[]` : `${item}[]`;
+      }
+      case "optional":
+        return `${n.inner.toTypeText()} | undefined`;
+      case "object": {
+        const props = Object.entries(n.props).map(([key, prop]) =>
+          prop._node.kind === "optional" ? `${key}?: ${prop._node.inner.toTypeText()}` : `${key}: ${prop.toTypeText()}`,
+        );
+        return props.length === 0 ? "{}" : `{ ${props.join("; ")} }`;
+      }
+      case "ref":
+        return this.refName() as string;
+      case "unsupported":
+        return "never";
+    }
   }
 
   /**

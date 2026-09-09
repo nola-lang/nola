@@ -1,7 +1,7 @@
 import { nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // internal class — the public surface is the Askable/Intent interfaces
-import { InvocationIntent } from "../src/intents/invocation-intent.js";
+import { InvocationIntent } from "../src/intents/invocation/invocation-intent.js";
 
 const scope = () => nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go", instruction: "" });
 

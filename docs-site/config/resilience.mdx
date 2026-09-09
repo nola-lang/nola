@@ -5,7 +5,9 @@ sidebar:
   order: 30
 ---
 
-Resilience is composition over the same `NolaProvider` interface: every combinator wraps a provider and returns a provider, so they nest.
+Resilience is composition over the same `LanguageModel` interface: every combinator wraps a provider and returns a provider, so they nest.
+
+One model stands apart: the platform model `nola.infer()` manages its own resilience. The resilience combinators on this page reject it, and it retries the wire itself — see [nola's built-in retry](#nolas-built-in-retry) below.
 
 ```ts
 // nola.config.ts
@@ -13,12 +15,10 @@ import { exponential, fallback, openai, withRetry } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: {
-    default: fallback([
-      withRetry(openai({ model: "gpt-5-mini" }), exponential({ maxRetries: 3 })),
-      openai({ model: "gpt-5-nano" }),
-    ]),
-  },
+  model: fallback([
+    withRetry(openai({ model: "gpt-5-mini" }), exponential({ maxRetries: 3 })),
+    openai({ model: "gpt-5-nano" }),
+  ]),
 });
 ```
 
@@ -45,6 +45,24 @@ export default defineConfig({
 
 Combinators nest freely: `fallback([withRetry(a, …), roundRobin([b, c])])` is a valid provider and a valid `ask with` target.
 
+## nola's built-in retry
+
+`withRetry`, `fallback`, and `roundRobin` refuse to wrap the platform-served model ([`NOLA3003`](/docs/reference/error-codes/#nola3003)): it can only be the config root; it handles routing and failover on the server side and retries its own wire calls. Retry is on by default — 2 retries, 500 ms exponential backoff doubled per attempt and capped at 10 s, honouring `Retry-After` and failing fast on definitive errors — and is tuned or disabled on the wrapper:
+
+```ts
+// nola.config.ts
+import { defineConfig, nola } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: nola.infer({
+    retry: { maxRetries: 4, delayMs: 250 },
+    // retry: false,  // disable entirely
+  }),
+});
+```
+
+`record()` and `replay()` still wrap the platform model — they are recording instruments, not resilience.
+
 ## The three retry layers
 
 Three different things are called "retry". Keep them apart:
@@ -52,7 +70,7 @@ Three different things are called "retry". Keep them apart:
 | Layer | What is retried | Configured by | When to use |
 | --- | --- | --- | --- |
 | **Built-in correction loop** | the model's *answer*: when it fails schema validation, the runtime sends a correction turn and asks again | nothing — automatic; observable through `onValidationFailed` / `onRetry` and the receipt's `attempts` | always on; you do not configure it |
-| **Provider combinator `withRetry(provider, policy)`** | the *wire call* — timeouts, 5xx, 408/429, network faults; definitive errors are not retried | `nola.config.ts` | transient provider trouble |
+| **Provider combinator `withRetry(provider, policy)`** (or `nola.infer({ retry })`) | the *wire call* — timeouts, 5xx, 408/429, network faults; definitive errors are not retried | `nola.config.ts` | transient provider trouble |
 | **Intent method `.withRetry(n)`** | the *whole ask* — composition, provider call, parse, validation — `n` extra flat attempts, no backoff, no definitive-error check | at the ask site | a flaky step you want to give another go; never on a call intent whose callee is not idempotent |
 
 See [Intent methods](/docs/language/intent-methods/) for the third and [Error handling](/docs/guides/error-handling/) for what surfaces when all of them give up.

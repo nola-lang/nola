@@ -1,3 +1,4 @@
+import type { ClassicPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, nolaRuntime } from "@nola-lang/runtime";
@@ -38,11 +39,11 @@ describe("stack-frame semantics", () => {
   it("callee sees caller history and lineage; result composes", async () => {
     const payloads: string[] = [];
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async (req) => {
-            payloads.push(req.messages[0]?.content ?? "");
+            payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
             return { text: JSON.stringify(`v${payloads.length}`) };
           },
         },
@@ -61,7 +62,7 @@ describe("stack-frame semantics", () => {
   });
 
   it("caller history gets one collapsed record for the callee, not the callee's internals", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["v1"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["v1"]) } });
     const fileCtx = nolaRuntime.current().fileContext("x.tsi");
     let callerHistory: unknown;
     const b = () =>
@@ -90,8 +91,8 @@ describe("stack-frame semantics", () => {
   it("callee ask spans nest one frame deeper than the caller's own ask", async () => {
     const spanPaths: (readonly string[] | undefined)[] = [];
     nolaRuntime.configure({
-      providers: { default: mockProvider(["v1", "v2"]) },
-      hooks: [{ name: "cap", onAskEnd: (e) => spanPaths.push(e.receipt.spanPath) }],
+      model: { default: mockProvider(["v1", "v2"]) },
+      telemetry: [{ name: "cap", onAskEnd: (e) => spanPaths.push(e.receipt.spanPath) }],
     });
     const { a } = lowered();
     await a();
@@ -100,7 +101,7 @@ describe("stack-frame semantics", () => {
   });
 
   it("await from plain TS still roots from the file context (no active frame)", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["v1"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["v1"]) } });
     const { b } = lowered();
     const result = await b();
     expect(result).toEqual({ inner: "v1" });
@@ -109,11 +110,11 @@ describe("stack-frame semantics", () => {
   it(".detached() roots from the file context even inside a caller frame", async () => {
     const payloads: string[] = [];
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async (req) => {
-            payloads.push(req.messages[0]?.content ?? "");
+            payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
             return { text: JSON.stringify(`v${payloads.length}`) };
           },
         },

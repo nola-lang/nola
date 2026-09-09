@@ -1,9 +1,12 @@
 import { redactError, redactSecrets } from "@nola-lang/runtime";
 import { describe, expect, it } from "vitest";
 
+/** An obviously fake key that still has a real key's shape (nothing key-shaped is committed as a literal). */
+const FAKE_KEY = `sk-proj-${"A".repeat(24)}`;
+
 describe("redactSecrets", () => {
   it("scrubs sk-family keys", () => {
-    const out = redactSecrets("failed with key sk-proj-AbCd1234EfGh5678IjKl and more");
+    const out = redactSecrets(`failed with key ${FAKE_KEY} and more`);
     expect(out).not.toMatch(/AbCd1234/);
     expect(out).toContain("[redacted]");
     expect(out).toContain("failed with key");
@@ -14,7 +17,7 @@ describe("redactSecrets", () => {
   });
 
   it("scrubs Google-style AIza keys", () => {
-    expect(redactSecrets("key=AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q")).toContain("[redacted]");
+    expect(redactSecrets(`key=AIza${"A".repeat(35)}`)).toContain("[redacted]");
   });
 
   it("scrubs long hex blobs but leaves short hex alone", () => {
@@ -31,7 +34,7 @@ describe("redactSecrets", () => {
 
 describe("redactError", () => {
   it("renders an Error message, redacted", () => {
-    expect(redactError(new Error("bad key sk-proj-AbCd1234EfGh5678IjKl"))).toContain("[redacted]");
+    expect(redactError(new Error(`bad key ${FAKE_KEY}`))).toContain("[redacted]");
   });
 
   it("stringifies non-Errors", () => {

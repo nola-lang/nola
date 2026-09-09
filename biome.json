@@ -1,11 +1,51 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": {
-    "includes": ["packages/**", "examples/**", "test/**", "*.ts", "*.json", "!packages/babel-parser"]
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
   },
-  "formatter": { 
+  "files": {
+    "includes": [
+      "packages/**",
+      "examples/**",
+      "test/**",
+      "*.ts",
+      "*.json",
+      "!packages/babel-parser"
+    ]
+  },
+  "formatter": {
     "enabled": false
   },
-  "linter": { "rules": { "preset": "recommended" } }
+  "linter": {
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "packages/console-ui/src/components/ui/**"
+      ],
+      "linter": {
+        "rules": {
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          },
+          "a11y": {
+            "noRedundantRoles": "off"
+          }
+        }
+      }
+    }
+  ]
 }

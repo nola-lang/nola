@@ -10,7 +10,7 @@ describe("emit contract 5 lowering", () => {
     expect(code).toContain(
       'function __nola_type_User(): import("@nola-lang/runtime").InferType<unknown> { return __nola.types.object({ name: __nola.types.string() }); }',
     );
-    expect(code).toContain("__nola.useRuntime(11);");
+    expect(code).toContain("__nola.useRuntime(13);");
   });
 
   it("recursive same-file type lowers (ban lifted) with a self-ref", () => {

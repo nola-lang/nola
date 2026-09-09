@@ -15,3 +15,5 @@ next-env.d.ts
 .claude/worktrees/
 # public-mirror sync clone (scripts/sync-public.mjs)
 .public-sync/
+.nola
+.superpowers

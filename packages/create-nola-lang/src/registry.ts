@@ -19,6 +19,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
   { name: "classify-message", label: "closed label sets: union alias, string enum, inline union", source: "example" },
   { name: "chain-of-thought", label: "two asks sharing accumulating context", source: "example" },
   { name: "research-notes", label: "TS control flow orchestrating nola functions", source: "example" },
+  { name: "file-ticket", label: "call intents: the model fills a function's arguments", source: "example" },
 ];
 
 export function templateByName(name: string): TemplateDef | undefined {

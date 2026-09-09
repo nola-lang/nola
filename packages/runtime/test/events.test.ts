@@ -1,7 +1,10 @@
-import { type NolaHook, Site } from "@nola-lang/core";
+import { type NolaTelemetry, Site } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+/** An obviously fake key that still has a real key's shape (nothing key-shaped is committed as a literal). */
+const FAKE_KEY = `sk-proj-${"A".repeat(24)}`;
 
 const askStart = {
   askId: "a1",
@@ -23,16 +26,16 @@ describe("NolaRuntime.emitEvent", () => {
 
   it("dispatches to every configured hook, in config order", () => {
     const seen: string[] = [];
-    const a: NolaHook = { name: "a", onAskStart: () => seen.push("a") };
-    const b: NolaHook = { name: "b", onAskStart: () => seen.push("b") };
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, hooks: [a, b] });
+    const a: NolaTelemetry = { name: "a", onAskStart: () => seen.push("a") };
+    const b: NolaTelemetry = { name: "b", onAskStart: () => seen.push("b") };
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [a, b] });
     nolaRuntime.current().emitEvent("onAskStart", askStart);
     expect(seen).toEqual(["a", "b"]);
   });
 
   it("skips hooks that do not implement the method", () => {
-    const hook: NolaHook = { name: "partial", onAskEnd: vi.fn() };
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, hooks: [hook] });
+    const hook: NolaTelemetry = { name: "partial", onAskEnd: vi.fn() };
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [hook] });
     expect(() => nolaRuntime.current().emitEvent("onAskStart", askStart)).not.toThrow();
     expect(hook.onAskEnd).not.toHaveBeenCalled();
   });
@@ -40,13 +43,13 @@ describe("NolaRuntime.emitEvent", () => {
   it("swallows a throwing hook, warns once, and still runs later hooks", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const later = vi.fn();
-    const boom: NolaHook = {
+    const boom: NolaTelemetry = {
       name: "boom",
       onAskStart: () => {
-        throw new Error("hook exploded with sk-proj-AbCd1234EfGh5678IjKl");
+        throw new Error(`hook exploded with ${FAKE_KEY}`);
       },
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, hooks: [boom, { onAskStart: later }] });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [boom, { onAskStart: later }] });
 
     nolaRuntime.current().emitEvent("onAskStart", askStart);
     nolaRuntime.current().emitEvent("onAskStart", askStart);
@@ -61,18 +64,18 @@ describe("NolaRuntime.emitEvent", () => {
 
   it("nolaRuntime.reset() clears the warn-once ledger (fresh instance, fresh ledger)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const boom: NolaHook = {
+    const boom: NolaTelemetry = {
       name: "boom",
       onAskStart: () => {
         throw new Error("kaboom");
       },
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, hooks: [boom] });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [boom] });
     nolaRuntime.current().emitEvent("onAskStart", askStart);
     expect(warn).toHaveBeenCalledTimes(1);
 
     nolaRuntime.reset();
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, hooks: [boom] });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [boom] });
     nolaRuntime.current().emitEvent("onAskStart", askStart);
     expect(warn).toHaveBeenCalledTimes(2);
   });

@@ -10,7 +10,7 @@ const ctx = () => openTestFrame();
 
 describe("ExtractIntent", () => {
   it("resolves via ask and appends to shared history", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["Evgen", 42]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["Evgen", 42]) } });
     const c = ctx();
     const name = await ask(
       new ExtractIntent<string>({ instruction: "user name", type: { type: "string" }, loc: "1:1" }),
@@ -30,8 +30,8 @@ describe("ExtractIntent", () => {
     // the invocation context's root carries it.
     const seen: string[] = [];
     nolaRuntime.configure({
-      providers: { default: mockProvider(["Evgen"]) },
-      hooks: [{ onAskEnd: (e) => seen.push(e.receipt.site.file) }],
+      model: { default: mockProvider(["Evgen"]) },
+      telemetry: [{ onAskEnd: (e) => seen.push(e.receipt.site.file) }],
     });
     await ask(new ExtractIntent<string>({ instruction: "user name", type: { type: "string" }, loc: "1:1" }), ctx());
     expect(seen).toEqual(["x.tsi"]);
@@ -40,8 +40,8 @@ describe("ExtractIntent", () => {
   it("falls back to <unknown> when no context carries a file", async () => {
     const seen: string[] = [];
     nolaRuntime.configure({
-      providers: { default: mockProvider(["free text"]) },
-      hooks: [{ onAskEnd: (e) => seen.push(e.receipt.site.file) }],
+      model: { default: mockProvider(["free text"]) },
+      telemetry: [{ onAskEnd: (e) => seen.push(e.receipt.site.file) }],
     });
     // A scope with no FileInferContext anywhere in the lineage.
     const c = Frame.open(nolaRuntime.current().system.scope({ fn: "go", instruction: "" }));
@@ -50,33 +50,33 @@ describe("ExtractIntent", () => {
   });
 
   it("bare thenable await is a definitive error — extract intents carry no scope, only `ask` supplies a frame", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["free text"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["free text"]) } });
     await expect(new ExtractIntent({ instruction: "anything" })).rejects.toMatchObject({
       name: "NolaIntentError",
       code: Codes.IntentWithoutContext,
     });
   });
 
-  it("withProvider(name) routes the ask to the named provider", async () => {
+  it("withModel(name) routes the ask to the named provider", async () => {
     nolaRuntime.configure({
-      providers: { default: mockProvider(["default-answer"]), fast: mockProvider(["fast-answer"]) },
+      model: { default: mockProvider(["default-answer"]), fast: mockProvider(["fast-answer"]) },
     });
     const intent = new ExtractIntent<string>({ instruction: "m", type: { type: "string" }, loc: "1:1" });
-    await expect(ask(intent.withProvider("fast"), ctx())).resolves.toBe("fast-answer");
+    await expect(ask(intent.withModel("fast"), ctx())).resolves.toBe("fast-answer");
   });
 
-  it("withProvider(instance) uses the instance directly", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["default-answer"]) } });
+  it("withModel(instance) uses the instance directly", async () => {
+    nolaRuntime.configure({ model: { default: mockProvider(["default-answer"]) } });
     const pinned = { name: "pinned", complete: async () => ({ text: '"pinned-answer"' }) };
     const intent = new ExtractIntent<string>({ instruction: "m", type: { type: "string" }, loc: "1:1" });
-    await expect(ask(intent.withProvider(pinned), ctx())).resolves.toBe("pinned-answer");
+    await expect(ask(intent.withModel(pinned), ctx())).resolves.toBe("pinned-answer");
   });
 
-  it("withProvider with an unknown name rejects with ConfigUnknownProvider", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["d"]) } });
+  it("withModel with an unknown name rejects with ConfigUnknownModel", async () => {
+    nolaRuntime.configure({ model: { default: mockProvider(["d"]) } });
     const intent = new ExtractIntent<string>({ instruction: "m", type: { type: "string" }, loc: "1:1" });
-    await expect(ask(intent.withProvider("nope"), ctx())).rejects.toMatchObject({
-      code: Codes.ConfigUnknownProvider,
+    await expect(ask(intent.withModel("nope"), ctx())).rejects.toMatchObject({
+      code: Codes.ConfigUnknownModel,
     });
   });
 });

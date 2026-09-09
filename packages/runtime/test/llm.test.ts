@@ -1,6 +1,6 @@
-import type { AskReceipt } from "@nola-lang/core";
+import type { AskReceipt, ClassicPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
-import { ExtractInferContext, ExtractIntent, Frame, fingerprintRequest, nolaRuntime, PromptBuilder, SYSTEM_PREAMBLE } from "@nola-lang/runtime";
+import { buildInferenceModel, ExtractContext, ExtractIntent, Frame, fingerprintRequest, nolaRuntime, SYSTEM_PREAMBLE } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
 import { askViaInference } from "./helpers/inference.js";
@@ -13,11 +13,11 @@ describe("JsonInference", () => {
   it("returns the validated value and sends the composed context", async () => {
     let seen = "";
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async (req) => {
-            seen = req.messages[0]?.content ?? "";
+            seen = (req.payload as ClassicPrompt).messages[0]?.content ?? "";
             return { text: '"Evgen"' };
           },
         },
@@ -40,7 +40,7 @@ describe("JsonInference", () => {
 
   it("retries once with the validation error, then succeeds", async () => {
     // mock JSON-stringifies each value: first yields `123` (fails string validation), then `"ok"`.
-    nolaRuntime.configure({ providers: { default: mockProvider([123, "ok"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider([123, "ok"]) } });
     const v = await askViaInference({
       frame: ctx(),
       prompt: "p",
@@ -52,7 +52,7 @@ describe("JsonInference", () => {
 
   it("throws NolaResolutionError after the second failure", async () => {
     // both yields are strings — fail number validation twice.
-    nolaRuntime.configure({ providers: { default: mockProvider(["nope", "still nope"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["nope", "still nope"]) } });
     await expect(
       askViaInference({ frame: ctx(), prompt: "p", schema: { type: "number" }, loc: "3:7" }),
     ).rejects.toThrow(/x\.tsi:3:7/);
@@ -60,7 +60,7 @@ describe("JsonInference", () => {
 
   it("routes through the pin argument", async () => {
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: mockProvider(["wrong"]),
         probe: { name: "probe", complete: async () => ({ text: '"routed"' }) },
       },
@@ -77,14 +77,14 @@ describe("JsonInference", () => {
 
   it("an invocation frame's pin covers callee asks (chain lookup)", async () => {
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: mockProvider(["wrong"]),
         probe: { name: "probe", complete: async () => ({ text: '"routed"' }) },
       },
     });
     const infer = nolaRuntime.current().fileContext("t.tsi").scope({ fn: "go" });
     const value = await askViaInference({
-      frame: Frame.open(infer, { provider: "probe" }),
+      frame: Frame.open(infer, { model: "probe" }),
       prompt: "p",
       schema: { type: "string" },
       loc: "1:1",
@@ -97,8 +97,8 @@ describe("JsonInference span recording", () => {
   it("receipt carries invocationId + spanPath from the active frame and per-attempt data lands on the trace", async () => {
     const receipts: AskReceipt[] = [];
     nolaRuntime.configure({
-      providers: { default: mockProvider([123, "ok"]) }, // first attempt fails string validation
-      hooks: [{ name: "cap", onAskEnd: (e) => receipts.push(e.receipt) }],
+      model: { default: mockProvider([123, "ok"]) }, // first attempt fails string validation
+      telemetry: [{ name: "cap", onAskEnd: (e) => receipts.push(e.receipt) }],
     });
     const frame = Frame.open(nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go" }));
     const v = await askViaInference({
@@ -124,8 +124,8 @@ describe("JsonInference span recording", () => {
   it("with no frame (bare thenable await), the ask never starts: no receipt, a definitive NolaIntentError", async () => {
     const receipts: AskReceipt[] = [];
     nolaRuntime.configure({
-      providers: { default: mockProvider(["ok"]) },
-      hooks: [{ name: "cap", onAskEnd: (e) => receipts.push(e.receipt) }],
+      model: { default: mockProvider(["ok"]) },
+      telemetry: [{ name: "cap", onAskEnd: (e) => receipts.push(e.receipt) }],
     });
     await expect(new ExtractIntent({ instruction: "p", type: { type: "string" }, loc: "1:1" })).rejects.toMatchObject({
       name: "NolaIntentError",
@@ -136,7 +136,7 @@ describe("JsonInference span recording", () => {
   it("stamps a request fingerprint on the receipt; a different prompt changes it", async () => {
     const receipts: AskReceipt[] = [];
     const hook = { name: "cap", onAskEnd: (e: { receipt: AskReceipt }) => receipts.push(e.receipt) };
-    nolaRuntime.configure({ providers: { default: mockProvider(["a", "b"]) }, hooks: [hook] });
+    nolaRuntime.configure({ model: { default: mockProvider(["a", "b"]) }, telemetry: [hook] });
     await askViaInference({ frame: ctx(), prompt: "p", schema: { type: "string" }, loc: "1:1" });
     await askViaInference({ frame: ctx(), prompt: "q", schema: { type: "string" }, loc: "1:1" });
 
@@ -148,11 +148,11 @@ describe("JsonInference span recording", () => {
   it("sends the composed system text; the system node never enters the lineage JSON", async () => {
     let captured: { system: string; content: string } | undefined;
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "cap",
           complete: async (req) => {
-            captured = { system: req.system, content: req.messages[0]?.content ?? "" };
+            captured = { system: (req.payload as ClassicPrompt).system, content: (req.payload as ClassicPrompt).messages[0]?.content ?? "" };
             return { text: '"ok"' };
           },
         },
@@ -174,20 +174,21 @@ describe("JsonInference span recording", () => {
       const runtime = nolaRuntime.current();
       const frame = Frame.open(runtime.fileContext("x.tsi").func({ fn: "go", instruction: "" }));
       const extract = frame.child(
-        new ExtractInferContext({ instruction: "p", type: { type: "string" }, loc: "1:1" }, runtime),
+        new ExtractContext({ instruction: "p", type: { type: "string" }, loc: "1:1" }, runtime),
       );
-      const { messages, schema } = new PromptBuilder().build(extract);
-      return fingerprintRequest({
-        system: runtime.system.systemText(),
-        messages,
-        output: { syntax: "json", schema },
+      const model = buildInferenceModel({
+        frame: extract,
+        context: extract.infer,
+        site: "x.tsi:1:1",
+        system: runtime.system.systemMessage,
       });
+      return fingerprintRequest({ payload: model });
     };
     expect(mk()).toBe(mk());
   });
 
   it("attaches the ask span to the passed frame", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["ok"]) } });
+    nolaRuntime.configure({ model: { default: mockProvider(["ok"]) } });
     const frame = Frame.open(nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go" }));
     const v = await askViaInference({
       frame,

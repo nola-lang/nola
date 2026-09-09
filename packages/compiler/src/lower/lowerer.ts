@@ -38,6 +38,7 @@ import {
   callIntentOpen,
   callIntentTypeText,
   companionImportDecl,
+  defHash,
   EXTRACT_DEFAULT_TYPE_EXPR,
   EXTRACT_DEFAULT_TYPE_TEXT,
   extractClose,
@@ -515,7 +516,9 @@ export class Lowerer {
     const typeText = simple ? callIntentTypeText(calleeText) : "";
     this.s.appendLeft(call.start, callIntentOpen(typeText));
     const argsStart = call.arguments.length > 0 ? (call.arguments[0] as BaseNode).start : call.end - 1;
-    const head = callIntentArgsHead(calleeText, inst.field, call.loc.start);
+    const rawHint = tagged ? rawTemplateText(this.source, tagged.quasi) : "";
+    const def = defHash(this.displayFile, "call", calleeText, rawHint);
+    const head = callIntentArgsHead(calleeText, inst.field, call.loc.start, def);
     const copyAt = inst.copyText ? head.indexOf(inst.copyText) : -1;
     const anchors = copyAt >= 0 ? inst.anchors.map((a) => ({ ...a, textOffset: a.textOffset + copyAt })) : undefined;
     this.s.overwrite(callee.end, argsStart, head, anchors ? { anchors } : {});
@@ -593,7 +596,9 @@ export class Lowerer {
         this.s.appendLeft(expr.end, FMT_CLOSE);
       }
     }
-    const suffix = extractClose(typeExpr, node.loc.start);
+    const typeSrc = typeNode ? this.source.slice(typeNode.start, typeNode.end) : "";
+    const def = defHash(this.displayFile, "extract", rawTemplateText(this.source, quasi), typeSrc);
+    const suffix = extractClose(typeExpr, node.loc.start, def);
     if (node.end > quasi.end) {
       // Replaces the <T> span (which follows the template).
       this.s.overwrite(quasi.end, node.end, suffix);

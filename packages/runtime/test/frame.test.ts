@@ -46,12 +46,12 @@ describe("Frame", () => {
     expect(trace.spans[0]).toMatchObject({ kind: "invocation", fn: "b", file: "b.tsi" });
   });
 
-  it("resolveProvider walks the frame chain nearest-first", () => {
-    const root = Frame.open(fnNode({ fn: "a" }), { provider: "outer" });
+  it("resolveModel walks the frame chain nearest-first", () => {
+    const root = Frame.open(fnNode({ fn: "a" }), { model: "outer" });
     const child = root.child(fnNode({ fn: "b" }));
-    expect(child.resolveProvider()).toBe("outer");
-    const pinned = root.child(fnNode({ fn: "c" }), { provider: "inner" });
-    expect(pinned.resolveProvider()).toBe("inner");
+    expect(child.resolveModel()).toBe("outer");
+    const pinned = root.child(fnNode({ fn: "c" }), { model: "inner" });
+    expect(pinned.resolveModel()).toBe("inner");
   });
 
   it("historyChain reads caller records first; collapse pushes exactly one record onto the parent", () => {

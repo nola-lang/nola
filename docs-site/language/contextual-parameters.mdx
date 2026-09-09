@@ -71,7 +71,7 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
+  model: openai({ model: "gpt-5-mini" }),
   compiler: { underivableContextType: "prune" },   // "error" (default) | "prune" | "omit"
 });
 ```

@@ -1,5 +1,5 @@
 import type { Position } from "@nola-lang/ast";
-import { NOLA_EMIT } from "@nola-lang/core";
+import { NOLA_EMIT, sha256Hex } from "@nola-lang/core";
 import { companionSpecifierFor } from "../companion-name.js";
 import { accessorNameFor, type CompanionImport } from "../schema-expr.js";
 import type { EditAnchor } from "../spans.js";
@@ -112,12 +112,21 @@ export function templateCopy(
 /** Result type argument recovered from the tagged callee (simple tags only). */
 export const callIntentTypeText = (tagText: string) => `<Awaited<ReturnType<typeof ${tagText}>>>`;
 
-export const callIntentOpen = (typeText: string) => `__nola.intents.FunctionCallingIntent${typeText}({ fn: `;
+export const callIntentOpen = (typeText: string) => `__nola.intents.FunctionCallIntent${typeText}({ fn: `;
+
+/**
+ * Stable ask identity (AskDefinition spec §2): sha256 over the raw authored
+ * text — file + instruction/callee + type — with line/col excluded by design,
+ * so reformatting elsewhere in the file keeps the identity. Never part of the
+ * ask fingerprint.
+ */
+export const defHash = (displayFile: string, kind: "extract" | "call", a: string, b: string): string =>
+  sha256Hex(`nola-def:1\n${displayFile}\n${kind}\n${a}\n${b}`);
 
 /** `instructionField` is the full JS text after `instruction: ` (see invocationClose). */
-export const callIntentArgsHead = (tagText: string, instructionField: string, loc: Position) =>
+export const callIntentArgsHead = (tagText: string, instructionField: string, loc: Position, def: string) =>
   `, name: ${JSON.stringify(tagText)}, instruction: ${instructionField}, ` +
-  `loc: ${JSON.stringify(locText(loc))}, args: [`;
+  `loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)}, args: [`;
 
 export const CALL_INTENT_CLOSE = "] })";
 
@@ -151,8 +160,8 @@ export const extractOpenTemplate = (typeText: string, rawInstruction: string) =>
 export const FMT_OPEN = "__nola.fmt(";
 export const FMT_CLOSE = ")";
 
-export const extractClose = (typeExpr: string, loc: Position) =>
-  `, type: ${typeExpr}, loc: ${JSON.stringify(locText(loc))} })`;
+export const extractClose = (typeExpr: string, loc: Position, def: string) =>
+  `, type: ${typeExpr}, loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)} })`;
 
 /**
  * Stand-in for a construct the parser could only recover as a placeholder —

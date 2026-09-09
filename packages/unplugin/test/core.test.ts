@@ -11,7 +11,7 @@ function tmpProject(withConfig: boolean): string {
   const dir = mkdtempSync(join(tmpdir(), "nola-unplugin-"));
   if (withConfig) {
     // compiler/build sections only are read; runtime validity not required
-    writeFileSync(join(dir, "nola.config.ts"), "export default { providers: {} };\n");
+    writeFileSync(join(dir, "nola.config.ts"), "export default { model: {} };\n");
   }
   writeFileSync(join(dir, "greet.tsi"), TSI);
   return dir;

@@ -57,6 +57,10 @@ export interface ProviderErrorOptions {
   definitive?: boolean;
   /** provider-requested wait before retrying (Retry-After), in ms */
   retryAfterMs?: number;
+  /** the server's error code (hosted API: "quota_exceeded", "unauthorized", …) */
+  code?: string;
+  /** the server's structured details (hosted API `quota_exceeded`: { runsUsed, runsLimit }) */
+  details?: Record<string, unknown>;
   cause?: unknown;
 }
 
@@ -65,11 +69,15 @@ export class NolaProviderError extends Error {
   readonly status?: number;
   readonly definitive?: boolean;
   readonly retryAfterMs?: number;
+  readonly code?: string;
+  readonly details?: Record<string, unknown>;
   constructor(message: string, options: ProviderErrorOptions = {}) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
     this.status = options.status;
     this.definitive = options.definitive;
     this.retryAfterMs = options.retryAfterMs;
+    this.code = options.code;
+    this.details = options.details;
   }
 }
 

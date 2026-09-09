@@ -1,6 +1,7 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: .tsi fixtures and lowered output contain literal ${} interpolation
 import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
+import { defHash } from "../src/lower/templates.js";
 
 const SRC = ["infer function go(a: string) {", "  const v = ask ..`v from ${a}`<string>;", "  return v;", "}", ""].join(
   "\n",
@@ -9,13 +10,13 @@ const SRC = ["infer function go(a: string) {", "  const v = ask ..`v from ${a}`<
 const OUT = [
   "function go(a: string) {",
   "  return __nola.intents.Intent(async (__frame) => { void a;",
-  '  const v = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: `v from ${__nola.fmt(a)}`, type: __nola.types.string(), loc: "2:17" }), __frame);',
+  `  const v = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: \`v from \${__nola.fmt(a)}\`, type: __nola.types.string(), loc: "2:17", def: "${defHash("x.tsi", "extract", "v from ${a}", "string")}" }), __frame);`,
   "  return v;",
   '  }, __nola_file_ctx().func({ fn: "go", instruction: "", args: [{ name: "a", type: __nola.types.string() }] }));',
   "}",
   "",
   'import { __nola } from "@nola-lang/runtime";',
-  "__nola.useRuntime(11);",
+  "__nola.useRuntime(13);",
   'function __nola_file_ctx() { return __nola.context.file("x.tsi"); }',
   "",
 ].join("\n");

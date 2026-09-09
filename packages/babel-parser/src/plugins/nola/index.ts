@@ -28,12 +28,10 @@ export const NolaErrors = ParseErrorEnum`nola`({
   NolaAskReserved: "NOLA1003: `ask` is a reserved word in .tsi files and cannot be used as an identifier.",
   NolaReservedConstruct: "NOLA1004: this Nola construct is reserved for a future Nola version.",
   NolaExpectedPromptTemplate: "NOLA1005: expected a template literal prompt after `..`.",
-  NolaLegacyMarker:
-    "NOLA1007: the `function name``()` form was removed — declare the function with `infer function`.",
-  // NOLA1008 (marker substitution) is retired since emit 11 — the number is not reused.
+  NolaMarkerOutsideInfer: "NOLA1007: an instruction marker is only legal on an `infer function`.",
   NolaIncompleteScopeAccess: "NOLA1015: incomplete scope access — write `${.member}`.",
   NolaExpectedProviderName:
-    "NOLA1009: expected a provider name after `ask with` — for a dynamic provider use `.withProvider(...)` on the intent.",
+    "NOLA1009: expected a model name after `ask with` — for a dynamic model use `.withModel(...)` on the intent.",
   NolaContextualOutsideInfer: "NOLA1010: `.` context parameters are only allowed on infer function parameters.",
   NolaContextualParamReserved:
     "NOLA1011: `.` on this parameter form is reserved for a future Nola version — use a plain identifier parameter.",
@@ -294,9 +292,8 @@ export default (superClass: typeof Parser) =>
     }
 
     // An instruction marker (template) may sit between the function name and `(`,
-    // but ONLY on an `infer` function. On anything else it is the removed MVP
-    // form (NOLA1007). `${}` inside a marker is NOLA1008. `infer` on generators
-    // and methods is reserved (NOLA1004).
+    // but ONLY on an `infer` function — on anything else it is NOLA1007.
+    // `infer` on generators and methods is reserved (NOLA1004).
     parseFunctionParams(node: unknown, isConstructor?: boolean): void {
       const inMethod = this.nolaInMethod;
       this.nolaInMethod = false;
@@ -326,7 +323,7 @@ export default (superClass: typeof Parser) =>
         };
         if (!infer) {
           // The template is already consumed, so parsing is resynchronized.
-          this.raise(NolaErrors.NolaLegacyMarker, markerStart);
+          this.raise(NolaErrors.NolaMarkerOutsideInfer, markerStart);
         } else {
           // Holes are legal (emit 11): lexical ones interpolate the instruction,
           // `${.member}` ones make the marker a prompt template. The cooked

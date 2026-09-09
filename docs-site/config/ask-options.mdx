@@ -5,7 +5,7 @@ sidebar:
   order: 40
 ---
 
-Three knobs shape how an ask reaches the provider: how long an invocation may take, which wire parameters go with the request, and what extra system text every prompt carries.
+Three knobs shape how an ask reaches the model: how long an invocation may take, which wire parameters go with the request, and what extra system text every prompt carries.
 
 ## Timeouts
 
@@ -15,7 +15,7 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
+  model: openai({ model: "gpt-5-mini" }),
   ask: { timeoutMs: 60_000 },   // per-invocation; 0 disables
 });
 ```
@@ -52,7 +52,7 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: { default: openai({ model: "gpt-5-mini" }) },
+  model: openai({ model: "gpt-5-mini" }),
   system: { message: "Answer in British English." },
 });
 ```

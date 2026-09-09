@@ -39,8 +39,8 @@ export function normalizePerson(person: Person): Person {
 ## Run it
 
 ```sh
-npx nola run src/main.ts                      # mock provider (deterministic)
-# real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
+npx nola-lang run src/main.ts                      # mock provider (deterministic)
+# real model: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
 ```
 
 Prints `{"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}`.

@@ -1,0 +1,22 @@
+import { createTicket } from "./ticket-store.js";
+
+// A call intent: the model fills the extractor-shaped arguments, then the
+// function runs with them. `ask` yields the callee's SETTLED value — a
+// string here, not a Promise<string> — so the helper's promise is awaited
+// inside the ask.
+
+export infer function fileTicket(.request: string) {
+  // Sigil-less form: the extractor argument makes this call an intent.
+  // `2` is a plain argument and is passed through untouched.
+  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  return id;
+}
+
+export infer function fileTicketCarefully(.request: string) {
+  // Hint form: the backtick text instructs the slot-filling ask itself.
+  // Both slots resolve in ONE provider call.
+  return ask createTicket`file the ticket exactly as the customer described it`(
+    ..`a short ticket title`<string>,
+    ..`priority 1-5, where 1 is most urgent`<number>,
+  );
+}

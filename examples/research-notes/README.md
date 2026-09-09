@@ -10,6 +10,6 @@ framework of composable modules to express this loop: the orchestrator is the
 host language itself, and the LLM boundary is two ordinary functions.
 
 ```sh
-npx nola run src/main.ts                      # mock provider (deterministic)
+npx nola-lang run src/main.ts                      # mock provider (deterministic)
 # real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
 ```

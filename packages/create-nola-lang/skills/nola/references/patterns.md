@@ -8,7 +8,7 @@ entry with the loader and `nola.config.ts` in place.
 
 ```
 my-app/
-  nola.config.ts        # providers
+  nola.config.ts        # provider
   package.json          # nola-lang in devDependencies
   tsconfig.json         # include: ["src"]
   src/

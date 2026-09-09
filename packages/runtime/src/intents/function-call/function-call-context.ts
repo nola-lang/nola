@@ -1,0 +1,70 @@
+import type { JsonSchema } from "@nola-lang/core";
+import type { InferenceComposer } from "../../ask/composer.js";
+import type { ExtractPromptScope, PromptTemplate } from "../../ask/prompt-render.js";
+import { type AskIdentity, InferContext } from "../../infer-context/infer-context.js";
+import type { NolaRuntime } from "../../runtime/index.js";
+
+export type FunctionCallIntentParams = {
+  fn: unknown;
+  name: string;
+  args: unknown[];
+  instruction?: string;
+  /** lowered `${.member}` hint — replaces the TASK block of the slot-filling ask */
+  template?: PromptTemplate<ExtractPromptScope>;
+  loc?: string;
+  /** compiler-stamped source identity (AskDefinition spec §2); line/col excluded */
+  def?: string;
+  /** the combined slot schema — set by forSlots() for the slot-filling ask; never authored */
+  slotSchema?: JsonSchema;
+};
+
+/**
+ * The call intent's own context node — carries the full init, including the
+ * live `fn` and `args`. Composes NOTHING until `forSlots()` hands it the
+ * combined slot schema: that node is the ask-site node of the slot-filling
+ * ask and composes `intent: "call"` (records-view spec §3.4). Live values
+ * never reach prompt text, and call intents mint no frame, so this data
+ * never feeds Frame.describe/toTrace.
+ */
+export class FunctionCallContext extends InferContext<FunctionCallIntentParams> {
+  // biome-ignore lint/complexity/noUselessConstructor: widens the protected base constructor to public
+  constructor(params: FunctionCallIntentParams, runtime: NolaRuntime) {
+    super(params, runtime);
+  }
+
+  /** The node for the slot-filling ask: this init plus the combined slot schema. */
+  forSlots(slotSchema: JsonSchema): FunctionCallContext {
+    return new FunctionCallContext({ ...this.data, slotSchema }, this.runtime);
+  }
+
+  /** The synthesized request the model sees — the classic TASK text of a call, unchanged since the sigil-less spec. */
+  get request(): string {
+    const hint = this.data.instruction ? ` ${this.data.instruction}` : "";
+    return `Generate the arguments for calling the function "${this.data.name}".${hint}`;
+  }
+
+  override compose(composer: InferenceComposer): void {
+    const { slotSchema, name, instruction, template } = this.data;
+    if (!slotSchema) return;
+    composer
+      .intent("call")
+      .input({
+        instruction: this.request,
+        callee: name,
+        ...(instruction ? { hint: instruction } : {}),
+        ...(template ? { template } : {}),
+      })
+      .output(slotSchema);
+  }
+
+  override askIdentity(): AskIdentity {
+    const { name, instruction, def } = this.data;
+    return {
+      kind: "call",
+      instruction: this.request,
+      callee: name,
+      hint: instruction ?? "",
+      ...(def !== undefined ? { def } : {}),
+    };
+  }
+}

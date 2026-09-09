@@ -1,4 +1,4 @@
-import type { AskReceipt, NolaHook, NolaMiddleware } from "@nola-lang/core";
+import type { AskReceipt, ClassicPrompt, NolaMiddleware, NolaTelemetry } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ const ask = (frame = ctx()) => askViaInference({ frame, prompt: "user name", sch
 function receiptHook() {
   const receipts: AskReceipt[] = [];
   const events: string[] = [];
-  const hook: NolaHook = {
+  const hook: NolaTelemetry = {
     name: "rec",
     onAskStart: () => events.push("askStart"),
     onProviderRequest: () => events.push("providerRequest"),
@@ -35,11 +35,11 @@ describe.skip("middleware in the ask path", () => {
       return next(c);
     };
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async (req) => {
-            sent = JSON.parse(req.messages[0]?.content ?? "{}").request;
+            sent = JSON.parse((req.payload as ClassicPrompt).messages[0]?.content ?? "{}").request;
             return { text: '"ok"' };
           },
         },
@@ -56,7 +56,7 @@ describe.skip("middleware in the ask path", () => {
       c.prompt = `Be terse. ${c.prompt}`;
       return next(c);
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["ok"]) }, middleware: [prefix], hooks: [hook] });
+    nolaRuntime.configure({ model: { default: mockProvider(["ok"]) }, middleware: [prefix], telemetry: [hook] });
     await ask();
     expect(receipts[0]).toMatchObject({ originalPrompt: "user name", effectivePrompt: "Be terse. user name" });
   });
@@ -66,9 +66,9 @@ describe.skip("middleware in the ask path", () => {
     const complete = vi.fn(async () => ({ text: '"never"' }));
     const cache: NolaMiddleware = async () => ({ value: "cached", servedBy: "cache" });
     nolaRuntime.configure({
-      providers: { default: { name: "probe", complete } },
+      model: { default: { name: "probe", complete } },
       middleware: [cache],
-      hooks: [hook],
+      telemetry: [hook],
     });
 
     await expect(ask()).resolves.toBe("cached");
@@ -80,7 +80,7 @@ describe.skip("middleware in the ask path", () => {
 
   it("a short-circuit value that violates the schema fails the ask", async () => {
     const bad: NolaMiddleware = async () => ({ value: 42, servedBy: "cache" });
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, middleware: [bad] });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, middleware: [bad] });
     await expect(ask()).rejects.toThrow(/x\.tsi:1:1/);
   });
 
@@ -89,7 +89,7 @@ describe.skip("middleware in the ask path", () => {
     const boom: NolaMiddleware = async () => {
       throw new Error("middleware exploded");
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, middleware: [boom], hooks: [hook] });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, middleware: [boom], telemetry: [hook] });
     await expect(ask()).rejects.toThrow("middleware exploded");
     expect(receipts[0]?.outcome).toMatchObject({ ok: false });
   });
@@ -101,13 +101,13 @@ describe.skip("middleware in the ask path", () => {
       return next(c);
     };
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: mockProvider(["d"]),
         fast: { name: "fast", complete: async () => ({ text: '"from-fast"' }) },
         slow: { name: "slow", complete: async () => ({ text: '"from-slow"' }) },
       },
       middleware: [reroute],
-      hooks: [hook],
+      telemetry: [hook],
     });
     const pinned = askViaInference({
       frame: ctx(),
@@ -120,21 +120,21 @@ describe.skip("middleware in the ask path", () => {
     expect(receipts[0]?.servedBy).toBe("slow");
   });
 
-  it("forceProvider beats middleware re-routing (hermetic)", async () => {
+  it("forceModel beats middleware re-routing (hermetic)", async () => {
     const { receipts, hook } = receiptHook();
     const reroute: NolaMiddleware = async (c, next) => {
       c.provider = "real";
       return next(c);
     };
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: mockProvider(["d"]),
         real: { name: "real", complete: async () => ({ text: '"from-real"' }) },
         mock: { name: "mock", complete: async () => ({ text: '"from-mock"' }) },
       },
-      forceProvider: "mock",
+      forceModel: "mock",
       middleware: [reroute],
-      hooks: [hook],
+      telemetry: [hook],
     });
     await expect(ask()).resolves.toBe("from-mock");
     expect(receipts[0]?.servedBy).toBe("mock");
@@ -146,7 +146,7 @@ describe.skip("middleware in the ask path", () => {
       c.meta.tenant = "acme";
       return next(c);
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["ok"]) }, middleware: [tag], hooks: [hook] });
+    nolaRuntime.configure({ model: { default: mockProvider(["ok"]) }, middleware: [tag], telemetry: [hook] });
     await ask();
     expect(receipts[0]?.meta).toEqual({ tenant: "acme" });
   });
@@ -156,7 +156,7 @@ describe.skip("middleware in the ask path", () => {
       (c as { schema: unknown }).schema = { type: "number" };
       return next(c);
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["ok"]) }, middleware: [vandal] });
+    nolaRuntime.configure({ model: { default: mockProvider(["ok"]) }, middleware: [vandal] });
     await expect(ask()).rejects.toThrow(TypeError);
   });
 });

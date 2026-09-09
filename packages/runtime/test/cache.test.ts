@@ -23,7 +23,7 @@ describe.skip("fingerprint cache", () => {
     const { receipts, hook } = capture();
     let wireCalls = 0;
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async () => {
@@ -33,7 +33,7 @@ describe.skip("fingerprint cache", () => {
         },
       },
       cache: {},
-      hooks: [hook],
+      telemetry: [hook],
     });
     await expect(ask()).resolves.toBe("Evgen");
     await expect(ask()).resolves.toBe("Evgen");
@@ -45,7 +45,7 @@ describe.skip("fingerprint cache", () => {
   it("different prompts are different keys (both hit the wire)", async () => {
     let wireCalls = 0;
     nolaRuntime.configure({
-      providers: {
+      model: {
         default: {
           name: "probe",
           complete: async () => {
@@ -68,7 +68,7 @@ describe.skip("fingerprint cache", () => {
       get: async (k: string) => ((await inner.get(k)) === undefined ? undefined : 12345),
       set: (k: string, v: unknown) => inner.set(k, v),
     };
-    nolaRuntime.configure({ providers: { default: mockProvider(["Evgen"]) }, cache: { store: lyingStore } });
+    nolaRuntime.configure({ model: { default: mockProvider(["Evgen"]) }, cache: { store: lyingStore } });
     await expect(ask()).resolves.toBe("Evgen"); // run 1: miss, populates store
     await expect(ask()).rejects.toThrow(/served by cache does not match the requested schema/);
   });
@@ -76,7 +76,7 @@ describe.skip("fingerprint cache", () => {
   it("history chaining: ask #2's key changes when ask #1's answer changes", async () => {
     const { receipts, hook } = capture();
     const invoke = (answers: unknown[]) => {
-      nolaRuntime.configure({ providers: { default: mockProvider(answers) }, hooks: [hook] });
+      nolaRuntime.configure({ model: { default: mockProvider(answers) }, telemetry: [hook] });
       const fileCtx = nolaRuntime.current().fileContext("x.tsi");
       return __nola.intents.Intent(
         async (__ctx: Frame) => {

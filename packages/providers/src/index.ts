@@ -14,11 +14,15 @@ export {
   withRetry,
 } from "./combinators.js";
 export { type GoogleOptions, google } from "./google.js";
-export { mockProvider } from "./mock.js";
+export { type MockRequest, mockProvider } from "./mock.js";
 export { type OpenAiOptions, openai } from "./openai.js";
 export { record, replay } from "./record-replay.js";
 
-/** Every built-in provider factory, keyed by the name its provider reports. */
+/**
+ * Every bring-your-own provider factory, keyed by the name its provider
+ * reports. The platform model is not here: `nola.infer()` lives in
+ * `@nola-lang/runtime`, the built-in that ships with the runtime.
+ */
 export const providers = {
   anthropic,
   google,

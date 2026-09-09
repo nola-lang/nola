@@ -1,6 +1,6 @@
-import type { JsonSchema, NolaProvider } from "@nola-lang/core";
-import { NolaProviderError } from "@nola-lang/core";
-import { ENVELOPE_NOTE, envelope, parseRetryAfter, resolveRootRef } from "./wire.js";
+import type { JsonSchema, LanguageModel } from "@nola-lang/core";
+import { NolaProviderError, parseRetryAfter } from "@nola-lang/core";
+import { ENVELOPE_NOTE, envelope, resolveRootRef } from "./wire.js";
 
 export interface AnthropicOptions {
   apiKey?: string;
@@ -17,7 +17,7 @@ export interface AnthropicOptions {
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
 /** A bare model string is shorthand for `{ model }` — every other option defaulted. */
-export function anthropic(optionsOrModel: AnthropicOptions | string): NolaProvider {
+export function anthropic(optionsOrModel: AnthropicOptions | string): LanguageModel {
   const options = typeof optionsOrModel === "string" ? { model: optionsOrModel } : optionsOrModel;
   const doFetch = options.fetch ?? globalThis.fetch;
   const baseUrl = (options.baseUrl ?? "https://api.anthropic.com").replace(/\/$/, "");
@@ -35,17 +35,18 @@ export function anthropic(optionsOrModel: AnthropicOptions | string): NolaProvid
           { definitive: true },
         );
       }
-      const reqSchema = req.output.syntax === "json" ? req.output.schema : undefined;
+      const { system: baseSystem, messages, output } = req.payload;
+      const reqSchema = output.syntax === "json" ? output.schema : undefined;
       const rootShape = reqSchema === undefined ? undefined : resolveRootRef(reqSchema);
       const enveloped = rootShape !== undefined && !("$ref" in rootShape) && rootShape.type !== "object";
       const transport: JsonSchema | undefined =
         reqSchema === undefined ? undefined : enveloped ? envelope(reqSchema) : reqSchema;
-      const system = enveloped ? req.system + ENVELOPE_NOTE : req.system;
+      const system = enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem;
       const body: Record<string, unknown> = {
         model,
         max_tokens: maxTokens,
         system,
-        messages: req.messages,
+        messages,
       };
       if (transport) {
         body.output_config = { format: { type: "json_schema", schema: transport } };

@@ -9,6 +9,6 @@ expression — no prose contract, no agent session, nothing to keep in sync with
 the type.
 
 ```sh
-npx nola run src/main.ts                      # mock provider (deterministic)
+npx nola-lang run src/main.ts                      # mock provider (deterministic)
 # real provider: edit nola.config.ts to openai({ model: "gpt-5-mini" }) (needs OPENAI_API_KEY)
 ```

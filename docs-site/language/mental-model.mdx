@@ -22,7 +22,7 @@ export infer function analyzeUserRequest(userId: string, .message: string) {
 
 ## 2. Intents are lazy values
 
-Calling an infer function runs nothing. It returns an `Intent<T>` — a lazy, thenable value that describes the work. The same is true of the smaller pieces: an extractor `` ..`…`<T> `` is a value you can construct anywhere, module level included, and it stays inert until something resolves it. *Construction* (building the intent) and *resolution* (running it) are two separate moments, and the language keeps them apart on purpose.
+Calling an infer function runs nothing. It returns an `Intent<T>` — a lazy, thenable value that describes the work. The same is true of the smaller pieces: an extractor `` ..`…`<T> `` is a value you can construct anywhere, module level included, and it stays inert until something resolves it. *Construction* (building the intent) and *resolution* (running it) are two separate moments, and the language keeps them apart on purpose. [Intents](/docs/language/intent/) has the full picture.
 
 ## 3. ask is to intents what await is to promises
 
@@ -45,13 +45,13 @@ A parameter with one leading dot — `.message` — is a **contextual parameter*
 | --- | --- |
 | **infer function** | `infer function name(…) { … }` — an LLM-backed function; calling it returns an `Intent<T>` |
 | **contextual parameter** | `.name: T` — a parameter whose value is shown to the model |
-| **intent** | the lazy value `ask` (or `await`, from plain TS) resolves |
+| **intent** | the lazy value `ask` (or `await`, from plain TS) resolves — see [Intents](/docs/language/intent/) |
 | **askable** | anything `ask` accepts: an extractor, a call intent, an infer function's intent |
 | **extractor** | `` ..`instruction`<T> `` — a request to pull a `T` from context |
 | **call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument — the model fills the arguments, then the function runs |
 | **instruction** | the backtick text you write (marker, extractor, call hint) |
 | **prompt** | the composed provider-facing text; you see it in receipts |
 | **invocation** | one execution of an infer function — the scope every `ask` inside it shares |
-| **provider** | an entry of the `providers` map in `nola.config.ts`; a model is one of its options |
+| **provider** | the `provider` entry of `nola.config.ts` (or one entry of its named map); a model is one of its options |
 
-Next: [infer functions](/docs/language/infer-functions/)
+Next: [Intents](/docs/language/intent/)

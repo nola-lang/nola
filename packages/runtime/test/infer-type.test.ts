@@ -72,3 +72,37 @@ describe("InferType.toJsonSchema", () => {
     expect(InferType.isInferType({ toJsonSchema() {} })).toBe(false);
   });
 });
+
+describe("InferType.refName", () => {
+  it("names a root ref, strips a companion's module qualifier, and is undefined for anonymous shapes", () => {
+    const ticket = t.ref("Ticket", () => t.object({ id: t.string() }));
+    expect(ticket.refName()).toBe("Ticket");
+    expect(t.ref("src/types#Ticket", () => t.string()).refName()).toBe("Ticket");
+    expect(t.object({ id: t.string() }).refName()).toBeUndefined();
+    expect(t.string().refName()).toBeUndefined();
+  });
+});
+
+describe("InferType.toTypeText", () => {
+  it("prints TypeScript for every carrier shape", () => {
+    expect(t.string().toTypeText()).toBe("string");
+    expect(t.enum(["quote", "order"]).toTypeText()).toBe('"quote" | "order"');
+    expect(t.number().toTypeText()).toBe("number");
+    expect(t.boolean().toTypeText()).toBe("boolean");
+    expect(t.date().toTypeText()).toBe("Date");
+    expect(t.array(t.string()).toTypeText()).toBe("string[]");
+    expect(t.array(t.enum(["a", "b"])).toTypeText()).toBe('("a" | "b")[]');
+    expect(t.object({ id: t.string(), tags: t.array(t.string()), note: t.optional(t.string()) }).toTypeText()).toBe(
+      "{ id: string; tags: string[]; note?: string }",
+    );
+    expect(t.object({}).toTypeText()).toBe("{}");
+  });
+
+  it("names a ref without expanding it, stripping a companion qualifier; unsupported prints never", () => {
+    expect(t.ref("Ticket", () => t.object({ id: t.string() })).toTypeText()).toBe("Ticket");
+    expect(t.ref("src/types#Ticket", () => t.string()).toTypeText()).toBe("Ticket");
+    expect(t.object({ owner: t.ref("User", () => t.string()) }).toTypeText()).toBe("{ owner: User }");
+    expect(t.unsupported("no").toTypeText()).toBe("never");
+  });
+});
+

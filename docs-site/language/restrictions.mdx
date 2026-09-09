@@ -42,7 +42,7 @@ The grammar is shaped to accept these; today each one is a clear error rather th
 | `fn(..)` — the bare derive-all call | [`NOLA1004`](/docs/reference/error-codes/#nola1004) |
 | `const .x = …` — a contextual binding inside a body | [`NOLA1014`](/docs/reference/error-codes/#nola1014) |
 | `.` on a destructuring pattern or a defaulted parameter | [`NOLA1011`](/docs/reference/error-codes/#nola1011) — use a plain identifier parameter |
-| the removed `` function name`()` `` form | [`NOLA1007`](/docs/reference/error-codes/#nola1007) — declare it with `infer function` |
+| an instruction marker on a plain function — `` function name`…`() `` | [`NOLA1007`](/docs/reference/error-codes/#nola1007) — only `infer function` takes one |
 
 Further language features are deferred and are simply **parse errors** today (`NOLA1001`, no specific "reserved" code): abstract functions, type and interface intents, `ask if` / `ask for` / `ask while` / `ask switch`, and class methods. Only the forms in the table above carry a specific reserved-construct diagnostic. They are listed here so you recognise the error; nothing on this site documents them as available.
 

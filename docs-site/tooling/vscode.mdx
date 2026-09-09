@@ -23,6 +23,7 @@ From the [Marketplace](https://marketplace.visualstudio.com/items?itemName=nola.
 
 - **A project using the `nola-lang` toolchain** — `npm create nola my-app`, or `nola init --add` in an existing project.
 - **`.tsi` inside a directory-style tsconfig `include`** (`["src"]`, never `["src/**/*.ts"]`), or the language server and the tsserver plugin cannot admit the files into the program.
+- **`npm install` is not required first.** A `.tsi` opened before the project's dependencies are installed is still typed: the extension types the lowered code against a built-in copy of the runtime's type surface until `@nola-lang/runtime` resolves from the project. After installing, reload the window once (*Developer: Reload Window*) so go-to-definition on runtime types lands in the installed package.
 - **A TypeScript to load.** The language server is bundled with the extension, but the TypeScript it runs is resolved from your **workspace** (`node_modules/typescript`) first, falling back to VS Code's built-in copy. If neither is found the extension shows an error and does not start the server — install `typescript` in the project (the scaffold does).
 
 ## Debugging

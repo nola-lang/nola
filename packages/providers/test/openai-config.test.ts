@@ -1,13 +1,10 @@
 import { openai } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
 import { describe, expect, it } from "vitest";
+import { requestOf } from "./helpers/model.js";
 
-const req = {
-  system: "s",
-  messages: [{ role: "user" as const, content: "u" }],
-  output: { syntax: "json" as const },
-};
-const okBody = JSON.stringify({ choices: [{ message: { content: "hi" } }] });
+const req = requestOf({ system: "s" });
+const okBody = JSON.stringify({ choices: [{ message: { content: JSON.stringify({ value: "hi" }) } }] });
 
 describe("openai provider config", () => {
   it("reads the key from a custom apiKeyEnv and sends it as the bearer token", async () => {

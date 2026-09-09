@@ -1,37 +1,44 @@
 ---
 title: The nola CLI
-description: nola init, build, run, check, declarations and skill — every flag, what each command writes, exit codes, and how npm create nola relates to nola init.
+description: nola init, build, run, check, console, declarations, skill, key, login and billing — every flag, what each command writes, and the exit codes.
 sidebar:
   order: 10
 ---
 
-The `nola` binary ships in the `nola-lang` package (a devDependency). Run it as `npx nola <command>` or through the scaffold's npm scripts. Every command exits `0` on success and `1` with the errors on stderr; `nola` with no command prints the usage and exits `0`, an unknown command prints it and exits `1`.
+The `nola` binary ships in the `nola-lang` package (a devDependency). Run it as `npx nola-lang <command>` or through the scaffold's npm scripts. Every command exits `0` on success and `1` with the errors on stderr; `nola` with no command (or `--help`) prints the command list and exits `0`, an unknown command prints it and exits `1`, and `--version` prints the installed version. Flags belong to one command each: `nola <command> --help` lists that command's flags, and a flag from another command is a usage error.
 
-`npx nola` works because `nola-lang` is installed in the project — `npx` runs the local `node_modules/.bin/nola`. Outside such a project it would instead download an unrelated npm package that happens to be named `nola`, so to scaffold from nothing use `npm create nola`, never `npx nola init`.
+`npx nola-lang <command>` runs the `nola-lang` installed in the project (its bin is the local `node_modules/.bin/nola`); outside such a project `npx` downloads `nola-lang` on the fly. Do not shorten it to `npx nola`: outside a project that resolves an unrelated npm package that happens to be named `nola`. To scaffold from nothing use `npm create nola`.
 
 ```sh
-nola init [dir] [--template <t>|--add] [--ide vscode] [--agents <list>]
+nola init [dir] [--template <t>|--add] [--provider <id>] [--ide vscode] [--agents <list>]
 nola build [dir] [--out <dir>]
 nola run <entry>
 nola check [dir]
+nola console [--port <n>]
 nola declarations [dir] [--watch]
 nola skill install [--agents <list>] [--force]
+nola key [--print]
+nola login
+nola logout
+nola account
 ```
 
 ## nola init
 
 ```sh
-nola init [dir] [--template <name> | --add] [--ide vscode] [--agents claude,cursor,copilot,agents-md]
+nola init [dir] [--template <name> | --add] [--provider nola|openai|anthropic|google|none] [--ide vscode] [--agents claude,cursor,copilot,agents-md]
 ```
 
 Scaffolds a new project or retrofits an existing one — the same interactive flow as `npm create nola`.
 
 | Flag | Effect |
 | --- | --- |
-| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`) |
+| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`, `file-ticket`) |
 | `--add` | retrofit the project in `dir` (writes `nola.config.ts`, merges the packages into `package.json`) — see [Add Nola to an existing project](/docs/start/add-to-existing-project/); contradictory with `--template` |
 | `--ide vscode` | write `.vscode/launch.json` and `.vscode/extensions.json` |
 | `--agents <list>` | write the agent skill files into the project (see `nola skill install`) |
+| `--provider <id>` | the inference provider, otherwise asked right after the template (*Select an inference provider:*, Nola highlighted). `nola` takes a Nola API key: the machine's one anonymous trial (25 free runs), written as `NOLA_API_KEY` to `.env`, `.gitignore` guarded, `model: nola.infer()` configured; once this machine has used its trial the Nola row reads *Trial key already issued. Get another? Enter to sign in.* — Enter on it opens the browser at that moment (the same flow as `nola login`), before the remaining questions, and the key is minted on your account afterwards (a failed sign-in shows the menu again); when you are already signed in the row says so. `openai`, `anthropic`, `google` write that vendor's config (`openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")`) and leave the key to you (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` in `.env`). `none` keeps the template's own config (the starter runs offline). Non-interactively the default is `none`, and a used machine without a stored sign-in gets no key and a pointer to `nola login`. |
+| `--trial` / `--no-trial` | shorthand for `--provider nola` / `--provider none` |
 
 ## nola build
 
@@ -57,6 +64,14 @@ nola check [dir]
 
 Type-checks the project: lowers every `.tsi` and runs the TypeScript checker over the lowered code **and** the project's `.ts` files (per your `tsconfig.json`), with diagnostics mapped back to `.tsi` positions (`file:line:col NOLA…` or `TS…`). Nola compile errors (`NOLA1xxx`/`2xxx`) are reported first; a hand-written `*.nola.*` file is refused ([`NOLA2006`](/docs/reference/error-codes/#nola2006)). This is the type-check path — plain `tsc` cannot parse `.tsi`.
 
+## nola console
+
+```sh
+nola console [--port <n>]
+```
+
+Starts the local Nola Console — trace ingestion, storage and API for observing every `ask`. It binds loopback only, on the first free port from `4141` upward (`--port` pins an exact port), keeps everything under one per-machine home folder, `~/.nola/console` (traces in a built-in Node SQLite database inside it — requires Node ≥ 22.13), and prints the URL and that folder, then one line per ingested event (ask start, provider request and reply, validation failure, retry, ask end, invocation end) — time, kind, site, provider, duration — the way a tracing tool shows spans. One console instance serves every project on the machine. The UI's **Clear traces** action (under the trace list) empties the database — every trace, ask and ask definition — and prints one `clear` line; new runs keep arriving. Connect an app in `nola.config.ts` — `telemetry: nola.tracer("<url>")` with the printed URL (list `terminalTrace()` alongside it to keep the terminal output); see [Telemetry](/docs/config/observability/). Ingestion is fire-and-forget: a stopped console never affects inference. Ctrl+C stops it.
+
 ## nola declarations
 
 ```sh
@@ -80,7 +95,66 @@ Writes the Nola skill into the project so your coding assistant can read it. The
 | `copilot` | `.github/instructions/nola.instructions.md` — the skill body inline |
 | `agents-md` | `AGENTS.md` — the skill body inline (cross-agent: Codex, Gemini CLI, …) |
 
-Interactively (no `--agents`) it preselects the agents your project already uses (`.claude`/`CLAUDE.md`, `.cursor`, `.github`) plus `agents-md`; non-interactive runs must pass `--agents`. An existing file written by the same version is left alone; one stamped by an older version is reported as stale and replaced only with `--force` — run `nola skill install --force` after upgrading `nola-lang`. The scaffold and `--add` offer the same step.
+Interactively (no `--agents`) it preselects Claude Code plus the agents your project already uses (`.claude`/`CLAUDE.md`, `.cursor`, `.github`); non-interactive runs must pass `--agents`. An existing file written by the same version is left alone; one stamped by an older version is reported as stale and replaced only with `--force` — run `nola skill install --force` after upgrading `nola-lang`. The scaffold and `--add` offer the same step.
+
+## nola key
+
+```sh
+nola key
+nola key --print
+```
+
+Gets a Nola API key for the current project and offers to put it in `.env`. Same ladder as the scaffold's trial step: signed in → a key on your account; this machine's free trial already used → sign in first (the browser flow described under `nola login`), after asking *This machine already used its 25 free Nola runs. Sign in to get an API key for this project?* with **Yes** highlighted — a no or Esc leaves without opening the browser (exit `1`); a fresh machine → the anonymous trial. The output is what happened, the key, and what happened to `.env`:
+
+```text
+Key minted on your Nola account.
+NOLA_API_KEY=nola_sk_…
+Added to .env.
+```
+
+The key comes first; then it asks *Add it to .env?* as a Yes/No choice with **Yes** highlighted — Enter accepts it, the arrow keys switch, Esc or Ctrl+C leaves without writing. When `.env` already sets `NOLA_API_KEY` a second question follows, *.env already sets NOLA_API_KEY — replace it with the new key?*, with **No** highlighted; yes rewrites that line in place, anything else keeps the old key. A non-interactive run never asks and ends with `Not written — add the line above to .env yourself.` Writing appends to `.env` (or replaces the line) and touches nothing else — not `.gitignore`, not `nola.config.ts`, not `package.json` (the scaffold and `nola init --add --trial` handle those).
+
+`--print` puts the key on stdout and nothing else; anything the sign-in has to say (the URL and the code) goes to stderr, so `NOLA_API_KEY=$(npx nola-lang key --print)` works. `.env` is never written.
+
+Every key takes one of your account's live-key slots (ten per account), so mint them for projects you keep; the console lists and revokes them. Exit `1` with the API's message when the key cannot be minted (key limit, rate limit, API unreachable), with the sign-in provider's message when the sign-in is declined or times out, and — non-interactively on a used machine without a stored sign-in — with `This machine already used its 25 free Nola runs. Sign in with \`npx nola-lang login\` …`. `NOLA_API_URL` overrides the endpoint for development.
+
+## nola login and nola logout
+
+```sh
+nola login
+nola logout
+```
+
+`nola login` signs this machine in to Nola with the browser. It prints a link —
+
+```text
+Sign in to Nola: open https://….auth0.com/authorize?…
+Waiting for the browser…
+Signed in as you@example.com.
+```
+
+— opens it, and waits until the browser comes back: the CLI listens on `127.0.0.1` (one of the ports the server names, 47831–47833) and the sign-in page sends the browser there when you finish, so sign in from the machine that runs the command (over SSH, forward that port or sign in locally). `NOLA_BROWSER` names the command that should open the link (`NOLA_BROWSER="firefox"`); `NOLA_NO_BROWSER=1` only prints it. The session is stored in `~/.nola/credentials.json` (owner-only, never inside a project) and refreshed automatically; the tokens are never printed. If this machine used its free trial, the sign-in carries that trial account along: your Nola account *is* that account — its runs used so far and its key stay — and the first key `nola key` mints afterwards lands on it. When the current directory's `.env` holds a `NOLA_API_KEY` from a trial taken on another machine, the sign-in links that account too — `Linked this project's trial account to your Nola account.`. Exit `1` with the provider's message when the sign-in is declined, times out (5 minutes), the server does not offer sign-in yet, or the sign-in came back without your Nola account (`Sign-in did not return your Nola account — the server's sign-in provider is misconfigured.`); in that last case nothing is stored. A session the server later refuses (`account_claim_missing` / `account_mismatch`, for instance after your account was wiped) is forgotten on the spot — run `nola login` again.
+
+`nola logout` revokes the session and forgets it (`Signed out of Nola.`); running it while signed out says so. Signing in again later is one `nola login`.
+
+## nola account
+
+```sh
+nola account
+```
+
+Shows your Nola account and opens its page on the console. It works from any directory: the account is the one you signed in to (see `nola login`); when you are not signed in, an interactive run signs you in first, a non-interactive run exits `1` naming `nola login`. When the current directory's `.env` holds a trial key, that account is linked to yours first (`Linked this project's trial account to your Nola account.`). It prints the account status and balance —
+
+```text
+Nola account: you@example.com — 3 / 25 free runs used
+Balance  $7.84
+```
+
+— followed by an early-access note: the hosted service is meant for prototyping and development rather than production use. It then opens your account page on the console (`https://platform.nola.sh/account`), printing the link as well in case the browser does not open (`NOLA_NO_BROWSER=1` skips opening). The browser signs you in with the same account; no key or token appears in the URL. The page shows the balance, top-ups of $5, $25, $50 or an amount you type, paid through Stripe, and every key on the account, masked to its prefix and last characters (`nola_sk_••••••00cfF319`), with a revoke action — a revoked key stops working at once, and `nola key` mints a replacement. Balance and free runs belong to the account, so every key you mint shares them; the balance is capped at $100 per account. Nothing in the project changes; the same keys keep working. Exit `1` with a message when the session is no longer valid (the message names `nola login`), or the API cannot be reached; `NOLA_API_URL` overrides the endpoint for development.
+
+Hosted inference is never required: configure any provider in `nola.config.ts` instead — see [Providers](/docs/reference/providers-api/).
+
+`npx nola-lang init --add --no-trial` writes the config without requesting a trial, for projects that bring their own provider.
 
 ## npm create nola and nola init
 

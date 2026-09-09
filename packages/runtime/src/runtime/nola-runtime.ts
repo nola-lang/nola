@@ -1,13 +1,20 @@
 import { Codes } from "@nola-lang/ast";
-import type { NolaConfig, NolaHook, NolaProvider, ProviderRef } from "@nola-lang/core";
-import { NolaConfigError, redactError } from "@nola-lang/core";
-import { defaultPromptRenderer, type PromptRenderer } from "../ask/prompt-render.js";
+import type { ModelConfigEntry, ModelRef, NolaConfig, NolaTelemetry } from "@nola-lang/core";
+import { isPlatformModel, NolaConfigError, redactError } from "@nola-lang/core";
 import { type ResolvedNolaConfig, resolveNolaConfig } from "../config.js";
-import { FileInferContext, type FunctionInferContext, SystemInferContext } from "../infer-context/index.js";
+import { FileInferContext, SystemInferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
-// call-time-only cycle with logger.ts: both directions resolve inside function bodies.
-import { builtinLogger } from "../logger.js";
+import type { InvocationContext } from "../intents/invocation/invocation-context.js";
+// call-time-only cycle with terminal-trace.ts (via ingest-envelope.ts): both directions resolve inside function bodies.
+import { terminalTrace } from "../terminal-trace.js";
 import { Frame } from "./frame.js";
+
+let defaultList: readonly NolaTelemetry[] | undefined;
+/** The unconfigured observer list — what `telemetry` defaults to: `terminalTrace()` at `debug`. Built lazily (module cycle). */
+function defaultTelemetry(): readonly NolaTelemetry[] {
+  defaultList ??= Object.freeze([terminalTrace()]);
+  return defaultList;
+}
 
 export type HookMethod =
   | "onAskStart"
@@ -16,6 +23,7 @@ export type HookMethod =
   | "onValidationFailed"
   | "onRetry"
   | "onAskEnd"
+  | "onInvocationStart"
   | "onInvocationEnd";
 
 /**
@@ -32,14 +40,6 @@ export class NolaRuntime {
     readonly emit: number,
     readonly url: string,
   ) {}
-
-  /**
-   * The provider-facing text seam consulted by every composeInferenceData —
-   * the built-in renderer today (config-level overrides are the next step).
-   */
-  get promptRenderer(): PromptRenderer {
-    return defaultPromptRenderer;
-  }
 
   /** The frozen resolved config, or null when nothing has been configured yet. */
   get config(): ResolvedNolaConfig | null {
@@ -63,32 +63,53 @@ export class NolaRuntime {
     return this.#config;
   }
 
-  /** Precedence: forceProvider → explicit ref (instance as-is, name via map) → default. */
-  resolveProvider(ref?: ProviderRef): NolaProvider {
+  /** Precedence: forceModel → explicit ref (instance as-is, name via map) → default. */
+  resolveModel(ref?: ModelRef): ModelConfigEntry {
+    return this.resolveModelProfile(ref).model;
+  }
+
+  /**
+   * The routing ladder, plus managed-mode inference profiles: under a managed
+   * default (what `model: nola.infer()` supplies) an ask-site name that names no
+   * configured provider is NOT an error — the ask resolves to the serving
+   * model (default, or forceModel) and the name rides the request as
+   * `profile` for the hosted service's smart routing. The profile is computed
+   * from (name, provider map) alone, force or not, so record/replay
+   * fingerprints agree between live and forced runs. Any other config keeps
+   * strict name validation (NOLA3004).
+   */
+  resolveModelProfile(ref?: ModelRef): { model: ModelConfigEntry; profile?: string } {
     const config = this.#config;
     if (!config) {
       throw new NolaConfigError(
-        "No Nola provider configured. Run through `nola run` / `node --import nola-lang/register` with a nola.config.ts, or call nolaRuntime.configure({ providers: { default: <provider> } }) before invoking nola functions.",
+        "No Nola model configured. Run through `nola run` / `node --import nola-lang/register` with a nola.config.ts, or call nolaRuntime.configure({ model: <model> }) before invoking nola functions.",
       );
     }
-    if (config.forceProvider !== undefined) return this.#namedProvider(config, config.forceProvider, "forceProvider");
-    if (ref === undefined) return this.#namedProvider(config, "default", "providers");
-    if (typeof ref !== "string") return ref;
-    return this.#namedProvider(config, ref, ".withProvider()");
+    const managed = config.model.default !== undefined && isPlatformModel(config.model.default);
+    const profile =
+      typeof ref === "string" && !(ref in config.model) && managed ? ref : undefined;
+    if (config.forceModel !== undefined) {
+      return { model: this.#namedModel(config, config.forceModel, "forceModel"), profile };
+    }
+    if (ref === undefined) return { model: this.#namedModel(config, "default", "model"), profile: undefined };
+    if (typeof ref !== "string") return { model: ref, profile: undefined };
+    if (profile !== undefined) return { model: this.#namedModel(config, "default", "model"), profile };
+    return { model: this.#namedModel(config, ref, ".withModel()"), profile: undefined };
   }
 
-  #namedProvider(config: ResolvedNolaConfig, name: string, what: string): NolaProvider {
-    const provider = config.providers[name];
+  #namedModel(config: ResolvedNolaConfig, name: string, what: string): ModelConfigEntry {
+    const provider = config.model[name];
     if (!provider) {
       throw new NolaConfigError(
-        `${what} "${name}" does not name a configured provider — configured: ${Object.keys(config.providers).join(", ")}.`,
-        Codes.ConfigUnknownProvider,
+        `${what} "${name}" does not name a configured model — configured: ${Object.keys(config.model).join(", ")}. ` +
+          '(With the platform serving inference — model: nola.infer() — an unconfigured name is legal: it is sent as an inference profile.)',
+        Codes.ConfigUnknownModel,
       );
     }
     return provider;
   }
 
-  openFrame(inferContext: FunctionInferContext, options: IntentOptions): Frame {
+  openFrame(inferContext: InvocationContext, options: IntentOptions): Frame {
     // TODO: add tracking of opened frames 
     return Frame.open(inferContext, options);
   }
@@ -116,16 +137,16 @@ export class NolaRuntime {
 
   readonly #hookWarnings = new Set<string>();
 
-  /** Hooks that will receive events; the built-in logger always runs first. */
-  #activeHooks(): readonly NolaHook[] {
-    return [builtinLogger(), ...(this.#config?.hooks ?? [])];
+  /** Observers that receive events: the resolved telemetry list in order; unconfigured, the terminal sink alone. */
+  #activeHooks(): readonly NolaTelemetry[] {
+    return this.#config?.telemetry ?? defaultTelemetry();
   }
 
   /**
    * Dispatch one event to every hook. Observers must never break resolution:
    * a throwing hook is swallowed and warned about once per (hook, method).
    */
-  emitEvent<M extends HookMethod>(method: M, event: Parameters<NonNullable<NolaHook[M]>>[0]): void {
+  emitEvent<M extends HookMethod>(method: M, event: Parameters<NonNullable<NolaTelemetry[M]>>[0]): void {
     for (const hook of this.#activeHooks()) {
       const handler = hook[method];
       if (typeof handler !== "function") continue;

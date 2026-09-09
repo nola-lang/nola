@@ -8,12 +8,12 @@ export const RUNTIME_AMBIENT_STUB = `
 export type JsonSchema = { type: string } & Record<string, unknown>;
 export interface Askable<T = unknown> {
   withRetry(retries: number): Askable<T>;
-  withProvider(provider: string): Askable<T>;
+  withModel(model: string): Askable<T>;
   withParams(params: Record<string, unknown>): Askable<T>;
 }
 export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
   withRetry(retries: number): Intent<T>;
-  withProvider(provider: string): Intent<T>;
+  withModel(model: string): Intent<T>;
   withParams(params: Record<string, unknown>): Intent<T>;
   withTimeout(timeout: number): Intent<T>;
   detached(): Intent<T>;
@@ -25,7 +25,7 @@ export interface InferType<T = unknown> {
   describe(text: string): InferType<T>;
   toJsonSchema(): JsonSchema;
 }
-export interface FunctionInferContext extends InferContext {
+export interface InvocationContext extends InferContext {
   readonly __nolaFunctionScope: true;
 }
 export interface FunctionPromptScopeArg {
@@ -45,7 +45,7 @@ export interface FileInferContext extends InferContext {
   func(init: {
     fn: string; instruction?: string; template?: (scope: FunctionPromptScope) => string;
     args?: Array<{ name: string; type?: InferType<unknown>; contextual?: boolean; value?: unknown }>;
-  }): FunctionInferContext;
+  }): InvocationContext;
 }
 export interface Frame {
   readonly infer: InferContext;
@@ -55,10 +55,10 @@ export interface UnsupportedType<Reason extends string = string> {
 }
 export declare const __nola: {
   intents: {
-    Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: FunctionInferContext): Intent<T>;
-    ExtractIntent<T = unknown>(init: { instruction: string; template?: (scope: ExtractPromptScope) => string; type: unknown; loc: string }): Askable<T>;
-    FunctionCallingIntent<T = unknown>(init: {
-      fn: unknown; name: string; instruction: string; template?: (scope: ExtractPromptScope) => string; loc: string; args: unknown[];
+    Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: InvocationContext): Intent<T>;
+    ExtractIntent<T = unknown>(init: { instruction: string; template?: (scope: ExtractPromptScope) => string; type: unknown; loc: string; def?: string }): Askable<T>;
+    FunctionCallIntent<T = unknown>(init: {
+      fn: unknown; name: string; instruction: string; template?: (scope: ExtractPromptScope) => string; loc: string; def?: string; args: unknown[];
     }): Askable<T>;
   };
   types: {

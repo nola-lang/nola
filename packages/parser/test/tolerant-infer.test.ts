@@ -20,7 +20,7 @@ describe("tolerant recovery: infer and markers", () => {
     expect(fn?.nolaInfer).toBeUndefined();
   });
 
-  it("legacy marker records NOLA1007 and drops the marker", () => {
+  it("a marker on a plain function records NOLA1007 and drops the marker", () => {
     const { ast, diagnostics } = parseNola("function f`legacy`() {}\n", "t.tsi", { tolerant: true });
     expect(ast).not.toBeNull();
     expect(diagnostics.map((d) => d.code)).toContain("NOLA1007");

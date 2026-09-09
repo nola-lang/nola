@@ -20,10 +20,8 @@ describe("Codes", () => {
 describe("v2 codes", () => {
   it("exposes the v2 diagnostic codes", () => {
     expect(Codes.InferWithoutFunction).toBe("NOLA1006");
-    expect(Codes.LegacyMarker).toBe("NOLA1007");
-    expect(Codes.SubstitutionInMarker).toBe("NOLA1008");
+    expect(Codes.MarkerOutsideInfer).toBe("NOLA1007");
     expect(Codes.UntypedCallIntentArg).toBe("NOLA2004");
-    expect(Codes.SubstitutionInCallMarker).toBe("NOLA2005");
     expect("SubstitutionInPrompt" in Codes).toBe(false);
   });
 });

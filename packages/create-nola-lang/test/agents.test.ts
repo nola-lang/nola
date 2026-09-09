@@ -100,25 +100,6 @@ describe("writeAgentSkills", () => {
     expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).not.toBe(old);
   });
 
-  // The shipped 0.1.0–0.1.3 adapters predate stamping, so the real-world
-  // legacy file carries NO stamp — it must still be recognized, not mistaken
-  // for a user-authored file.
-  it("an unstamped legacy pointer adapter is recognized as superseded and upgradable", async () => {
-    const dir = await tmp();
-    await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
-    await writeFile(
-      join(dir, ".cursor", "rules", "nola.mdc"),
-      `---\napplyTo: "**/*.tsi"\n---\n\nRead \`${LEGACY}/SKILL.md\` before writing .tsi files.\n`,
-    );
-    const held = await writeAgentSkills(dir, ["cursor"]);
-    expect(held.stale).toBe(true);
-    expect(held.skipped.join("\n")).toContain("superseded pointer form");
-
-    const forced = await writeAgentSkills(dir, ["cursor"], { force: true });
-    expect(forced.wrote).toEqual([".cursor/rules/nola.mdc"]);
-    expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).not.toContain(LEGACY);
-  });
-
   it("never overwrites an unstamped file, even with force", async () => {
     const dir = await tmp();
     await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
@@ -156,10 +137,10 @@ describe("readSkillSource", () => {
 });
 
 describe("detectAgents / defaultAgents", () => {
-  it("detects nothing in an empty dir; default is agents-md alone", async () => {
+  it("detects nothing in an empty dir; default is Claude Code alone", async () => {
     const dir = await tmp();
     expect(detectAgents(dir)).toEqual([]);
-    expect(defaultAgents(dir)).toEqual(["agents-md"]);
+    expect(defaultAgents(dir)).toEqual(["claude"]);
   });
 
   it("detects claude via .claude/ or CLAUDE.md", async () => {
@@ -176,7 +157,13 @@ describe("detectAgents / defaultAgents", () => {
     await mkdir(join(dir, ".cursor"));
     await mkdir(join(dir, ".github"));
     expect(detectAgents(dir)).toEqual(["cursor", "copilot"]);
-    expect(defaultAgents(dir)).toEqual(["cursor", "copilot", "agents-md"]);
+    expect(defaultAgents(dir)).toEqual(["cursor", "copilot", "claude"]);
+  });
+
+  it("a detected claude is not preselected twice", async () => {
+    const dir = await tmp();
+    await mkdir(join(dir, ".claude"));
+    expect(defaultAgents(dir)).toEqual(["claude"]);
   });
 
   it("a nonexistent dir detects nothing", () => {

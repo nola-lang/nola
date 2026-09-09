@@ -5,6 +5,7 @@
     { "path": "packages/core" },
     { "path": "packages/parser" },
     { "path": "packages/providers" },
+    { "path": "packages/console" },
     { "path": "packages/compiler" },
     { "path": "packages/runtime" },
     { "path": "packages/language-core" },

@@ -1,6 +1,7 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: .tsi fixtures contain literal ${} interpolation
 import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
+import { defHash } from "../src/lower/templates.js";
 
 describe("call intent lowering", () => {
   it("lowers a call intent with a typed extractor slot and a literal", () => {
@@ -9,7 +10,7 @@ describe("call intent lowering", () => {
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      "__nola.intents.FunctionCallingIntent<Awaited<ReturnType<typeof fetchUser>>>({ fn: fetchUser",
+      "__nola.intents.FunctionCallIntent<Awaited<ReturnType<typeof fetchUser>>>({ fn: fetchUser",
     );
     expect(code).toContain('name: "fetchUser", instruction: ""');
     expect(code).toContain("args: [__nola.intents.ExtractIntent<string>({ instruction: `user name`");
@@ -28,7 +29,7 @@ describe("call intent lowering", () => {
     const src = "declare const api: { fetch(a: string): number };\nconst i = api.fetch``(..`q`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("FunctionCallingIntent<Awaited<ReturnType<typeof api.fetch>>>({ fn: api.fetch");
+    expect(code).toContain("FunctionCallIntent<Awaited<ReturnType<typeof api.fetch>>>({ fn: api.fetch");
     expect(code).toContain('name: "api.fetch"');
   });
 
@@ -58,11 +59,13 @@ describe("call intent lowering", () => {
     expect(diagnostics).toEqual([]);
   });
 
-  it("${} in a call hint is legal (NOLA2005 retired): lexical holes lower to a fmt template literal", () => {
+  it("${} in a call hint is legal: lexical holes lower to a fmt template literal", () => {
     const src = "declare function f(a: string): void;\nconst x = 1;\nconst i = f`use ${x}`(..`a`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('name: "f", instruction: `use ${__nola.fmt(x)}`, loc: "3:11", args: [');
+    expect(code).toContain(
+      `name: "f", instruction: \`use \${__nola.fmt(x)}\`, loc: "3:11", def: "${defHash("x.tsi", "call", "f", "use ${x}")}", args: [`,
+    );
   });
 
   it("a scope-hole hint lowers to instruction string + template closure (copied into the args head, anchored)", () => {
@@ -70,7 +73,7 @@ describe("call intent lowering", () => {
     const { code, diagnostics, meta } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      'name: "fn", instruction: "${.default}\\nCall once.", template: (__nola_s) => __nola.tpl`${__nola_s.default}\nCall once.`, loc: "2:17", args: [',
+      `name: "fn", instruction: "\${.default}\\nCall once.", template: (__nola_s) => __nola.tpl\`\${__nola_s.default}\nCall once.\`, loc: "2:17", def: "${defHash("x.tsi", "call", "fn", "${.default}\nCall once.")}", args: [`,
     );
     const anchored = meta.anchors.map((a) => src.slice(a.sourceStart, a.sourceEnd));
     expect(anchored).toContain(".default}\nCall once.`");
@@ -90,18 +93,18 @@ describe("call intent lowering", () => {
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain("const t = tag`hello`;");
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
   });
 });
 
-describe("sigil-less call intents (extractor args imply FunctionCallingIntent)", () => {
+describe("sigil-less call intents (extractor args imply FunctionCallIntent)", () => {
   it("a direct extractor argument makes a plain call a call intent", () => {
     const src =
       "declare function fetchUser(name: string, n: number): string;\nconst i = fetchUser(..`user name`<string>, 42);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      "__nola.intents.FunctionCallingIntent<Awaited<ReturnType<typeof fetchUser>>>({ fn: fetchUser",
+      "__nola.intents.FunctionCallIntent<Awaited<ReturnType<typeof fetchUser>>>({ fn: fetchUser",
     );
     expect(code).toContain('name: "fetchUser", instruction: ""');
     expect(code).toContain("args: [__nola.intents.ExtractIntent<string>({ instruction: `user name`");
@@ -113,21 +116,21 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
       "declare function f(o: { n: string; k: number }): void;\nconst i = f({ n: ..`name`<string>, k: 1 });\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("FunctionCallingIntent<Awaited<ReturnType<typeof f>>>({ fn: f");
+    expect(code).toContain("FunctionCallIntent<Awaited<ReturnType<typeof f>>>({ fn: f");
   });
 
   it("an extractor nested in an array literal triggers detection", () => {
     const src = "declare function f(a: string[]): void;\nconst i = f([..`a`<string>]);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("FunctionCallingIntent");
+    expect(code).toContain("FunctionCallIntent");
   });
 
   it("member-expression callee triggers with source text as name", () => {
     const src = "declare const api: { fetch(a: string): number };\nconst i = api.fetch(..`q`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("FunctionCallingIntent<Awaited<ReturnType<typeof api.fetch>>>({ fn: api.fetch");
+    expect(code).toContain("FunctionCallIntent<Awaited<ReturnType<typeof api.fetch>>>({ fn: api.fetch");
     expect(code).toContain('name: "api.fetch"');
   });
 
@@ -136,7 +139,7 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      'FunctionCallingIntent<Awaited<ReturnType<typeof handlers["get"]>>>({ fn: handlers["get"]',
+      'FunctionCallIntent<Awaited<ReturnType<typeof handlers["get"]>>>({ fn: handlers["get"]',
     );
   });
 
@@ -145,7 +148,7 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
       "declare function f(a: unknown): void;\ndeclare const c: boolean;\nconst i = f(c ? ..`a`<string> : ..`b`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
     expect(code).toContain("__nola.intents.ExtractIntent<string>");
   });
 
@@ -153,7 +156,7 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
     const src = "declare function f(...a: unknown[]): void;\nconst i = f(...[..`a`<string>]);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
   });
 
   it("a nested call claims the extractor — the outer call stays plain", () => {
@@ -169,21 +172,21 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
     const src = "declare const f: undefined | ((a: unknown) => void);\nconst i = f?.(..`a`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
   });
 
   it("`new` never triggers", () => {
     const src = "declare class Foo { constructor(a: unknown); }\nconst i = new Foo(..`a`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
   });
 
   it("exotic callees (call result) never trigger", () => {
     const src = "declare function getFn(): (a: unknown) => void;\nconst i = getFn()(..`a`<string>);\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).not.toContain("FunctionCallingIntent");
+    expect(code).not.toContain("FunctionCallIntent");
   });
 
   it("NOLA2004: untyped extractor slot in the sigil-less form", () => {
@@ -191,7 +194,7 @@ describe("sigil-less call intents (extractor args imply FunctionCallingIntent)",
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics.map((d) => d.code)).toContain("NOLA2004");
     // detection still fired — the untyped slot is an error INSIDE a call intent
-    expect(code).toContain("FunctionCallingIntent");
+    expect(code).toContain("FunctionCallIntent");
   });
 
   it("sigil and sigil-less spellings lower identically (modulo loc columns)", () => {

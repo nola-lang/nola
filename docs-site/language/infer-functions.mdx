@@ -5,7 +5,7 @@ sidebar:
   order: 20
 ---
 
-An `infer function` is an LLM-backed function. Calling it runs nothing; it returns a lazy, thenable `Intent<T>`, and resolving that intent — with `ask` from another infer function or `await` from plain TypeScript — is what runs the inference.
+An `infer function` is an LLM-backed function. Calling it runs nothing; it returns a lazy, thenable [`Intent<T>`](/docs/language/intent/), and resolving that intent — with `ask` from another infer function or `await` from plain TypeScript — is what runs the inference.
 
 ## Three declaration forms
 
@@ -74,6 +74,6 @@ const severity = await triage("Checkout is down for every customer in the EU.");
 console.log(category, severity);
 ```
 
-`await` on the returned intent opens an *invocation* and runs it. The intent also carries a few methods you can chain before awaiting — `.withTimeout(ms)`, `.detached()`, `.withProvider(…)` and more — described in [Intent methods](/docs/language/intent-methods/).
+`await` on the returned intent opens an *invocation* and runs it. The intent also carries a few methods you can chain before awaiting — `.withTimeout(ms)`, `.detached()`, `.withModel(…)` and more — described in [Intent methods](/docs/language/intent-methods/).
 
 Next: [Contextual parameters](/docs/language/contextual-parameters/)

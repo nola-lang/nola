@@ -15,19 +15,20 @@ npm create nola -- --add
 
 A bare interactive `npm create nola` offers the same thing when it finds a `package.json` in the current directory ("Add Nola to this project"). `--add` and `--template` are mutually exclusive — the first retrofits, the second scaffolds. (`nola init --add` is the identical flow, but it lives in the `nola-lang` package — so it only exists once that is installed; `npm create nola` is the form that works from nothing.)
 
-Optional flags, both also offered interactively:
+Optional flags, all also offered interactively:
 
 - `--ide vscode` writes `.vscode/launch.json` (F5 debugging of `.tsi` files) and `.vscode/extensions.json` (recommends the Nola extension) — see [Editor setup](/docs/start/editor-setup/).
 - `--agents claude,cursor,copilot,agents-md` writes the Nola skill into the project for your coding assistant — self-contained, version-stamped files (Claude Code gets the whole skill directory; Cursor, Copilot and `AGENTS.md` get the skill body inline). `nola skill install` does the same later, and `nola skill install --force` refreshes them after an upgrade.
+- `--provider nola|openai|anthropic|google|none` answers *Select an inference provider:* (asked first interactively; `--trial` / `--no-trial` are shorthands for `nola` / `none`). `nola` takes the 25 free Nola API runs: the retrofit requests an anonymous key, writes `NOLA_API_KEY` into `.env` (appended if the file exists, never overwriting an existing entry), makes sure `.gitignore` lists `.env` and `.env.*`, and — when it wrote the config — uses `model: nola.infer()` (the platform serves inference). If this machine already took the free runs, choosing Nola signs you in (browser) and mints the key on your Nola account instead of a second trial. A vendor writes that vendor's config instead (its key stays yours to put in `.env`). An existing `nola.config.ts` is left alone with a note naming the `model:` line to set yourself.
 
 ## What it writes, merges, and leaves alone
 
 | | Files | Detail |
 | --- | --- | --- |
-| **Written** | `nola.config.ts` | The minimal config (`providers.default: openai({ model: "gpt-5-mini" })`, with an offline `mockProvider` alternative in a comment). Skipped — and left untouched — if one already exists. |
+| **Written** | `nola.config.ts` | The chosen provider's config: `model: nola.infer()` for Nola, `openai("gpt-5-mini")` / `anthropic("claude-sonnet-4-5")` / `google("gemini-2.5-flash")` for a vendor (each with an offline `mockProvider` alternative in a comment); `none` writes the OpenAI one. Skipped — and left untouched — if one already exists. |
 | **Merged** | `package.json` | Adds `@nola-lang/runtime` and `@nola-lang/providers` to `dependencies`, `nola-lang` and `typescript` to `devDependencies`. The Nola packages get the same lockstep version; `typescript` gets `^5.6.0`. Existing entries are never rewritten, and the file is only touched when something was added. |
 | **Suggested, not touched** | `package.json` scripts, `tsconfig.json` | The command prints its next steps: install the packages, an optional `"start": "nola run src/main.ts"` script, and the tsconfig tip below. |
-| **Untouched** | `.env`, `.gitignore`, everything else | Nothing else in the project is read or written. |
+| **Untouched** | everything else | Unless Nola is the provider nothing else is read or written; with it, `.env` and `.gitignore` are appended to as described above. |
 
 Then run your package manager's install.
 
@@ -72,8 +73,8 @@ console.log(await summarize("Nola is a TypeScript superset where asking an LLM i
 ```
 
 ```sh
-npx nola run src/main.ts    # run with the loader and nola.config.ts applied
-npx nola check              # type-check .tsi and .ts together
+npx nola-lang run src/main.ts    # run with the loader and nola.config.ts applied
+npx nola-lang check              # type-check .tsi and .ts together
 ```
 
 ## Existing build pipelines

@@ -1,7 +1,7 @@
 import { mockProvider } from "@nola-lang/providers";
 import { afterEach, describe, expect, it } from "vitest";
 import { validate } from "../src/ask/validate.js";
-import { __nola, ask, ExtractIntent, FunctionCallingIntent, nolaRuntime, inferTypes as t } from "../src/index.js";
+import { __nola, ask, ExtractIntent, FunctionCallIntent, nolaRuntime, inferTypes as t } from "../src/index.js";
 import { openTestFrame } from "./helpers/frame.js";
 
 const ISO = "2026-07-30T12:00:00.000Z";
@@ -63,21 +63,21 @@ describe("__nola.types.date()", () => {
   });
 
   it("an extract ask resolves to a real Date", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider([ISO]) } });
+    nolaRuntime.configure({ model: { default: mockProvider([ISO]) } });
     const when = await ask(new ExtractIntent<Date>({ instruction: "when", type: t.date(), loc: "1:1" }), ctx());
     expect(when).toBeInstanceOf(Date);
     expect((when as Date).toISOString()).toBe(ISO);
   });
 
   it("call-intent slots revive before the function is invoked", async () => {
-    nolaRuntime.configure({ providers: { default: mockProvider([{ arg0: ISO }]) } });
+    nolaRuntime.configure({ model: { default: mockProvider([{ arg0: ISO }]) } });
     let received: unknown;
     const save = (d: unknown) => {
       received = d;
       return "ok";
     };
     await ask(
-      new FunctionCallingIntent<string>({
+      new FunctionCallIntent<string>({
         fn: save,
         name: "save",
         loc: "1:1",

@@ -36,6 +36,17 @@ describe("addNola", () => {
     expect(written).toBe(template);
   });
 
+  it("with a vendor provider writes that vendor's config instead; an existing config is noted with the model line", async () => {
+    const dir = await bareProject({ name: "x" });
+    await addNola(dir, { version: "0.1.0-alpha.0", provider: "anthropic" });
+    const written = await readFile(join(dir, "nola.config.ts"), "utf8");
+    const template = await readFile(new URL("../templates/_providers/anthropic.config.ts", import.meta.url), "utf8");
+    expect(written).toBe(template);
+
+    const result = await addNola(dir, { version: "0.1.0-alpha.0", provider: "anthropic" });
+    expect(result.skipped).toContainEqual(expect.stringContaining('set `model: anthropic("claude-sonnet-4-5")`'));
+  });
+
   it("keeps existing dep ranges and reports them", async () => {
     const dir = await bareProject({
       name: "x",

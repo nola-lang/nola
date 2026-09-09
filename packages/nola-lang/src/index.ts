@@ -1,8 +1,11 @@
+export { type AccountOptions, cmdAccount } from "./account.js";
 export { type BuildResult, cmdBuild } from "./build.js";
 export { cmdCheck } from "./check.js";
 export { adjacentDeclarationPath, emitAdjacentDeclarations } from "./declarations.js";
 export { printDiagnostics } from "./diag.js";
 export { codeFrame } from "./frame.js";
+export { cmdLogin, cmdLogout, type LoginOptions } from "./login.js";
+export { openUrl, type Spawn } from "./open-url.js";
 export { cmdRun } from "./run.js";
 export { createLoweredProgram, type LoweredEntry, type LoweredProgram } from "./tshost.js";
 export { findNolaFiles } from "./walk.js";

@@ -1,4 +1,4 @@
-import { INTENT_BRAND, type Intent, type JsonSchema, type NolaProvider } from "@nola-lang/core";
+import { INTENT_BRAND, type Intent, type JsonSchema, type LanguageModel } from "@nola-lang/core";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 describe("core Intent contract", () => {
@@ -28,8 +28,8 @@ describe("core Intent contract", () => {
     expect(s.type).toBe("object");
   });
 
-  it("NolaProvider.complete returns { text }", () => {
-    const p: NolaProvider = { name: "noop", complete: async () => ({ text: '"x"' }) };
+  it("LanguageModel.complete returns { text }", () => {
+    const p: LanguageModel = { name: "noop", complete: async () => ({ text: '"x"' }) };
     expectTypeOf(p.complete).returns.resolves.toEqualTypeOf<{ text: string }>();
     expect(p.name).toBe("noop");
   });

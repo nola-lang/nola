@@ -1,5 +1,5 @@
 import { mockProvider } from "@nola-lang/providers";
-import { nolaRuntime } from "@nola-lang/runtime";
+import { nolaRuntime, terminalTrace } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
 afterEach(() => nolaRuntime.reset());
@@ -10,10 +10,9 @@ describe("NolaRuntime config", () => {
   });
 
   it("holds the frozen resolved config after nolaRuntime.configure", () => {
-    nolaRuntime.configure({ providers: { default: mockProvider(["x"]) }, observability: { logLevel: "debug" } });
+    nolaRuntime.configure({ model: { default: mockProvider(["x"]) }, telemetry: [terminalTrace({ level: "debug" })] });
     const cfg = nolaRuntime.current().config;
-    expect(cfg?.observability.logLevel).toBe("debug");
-    expect(cfg?.hooks).toEqual([]);
+    expect(cfg?.telemetry.map((o) => o.name)).toEqual(["nola:terminal"]);
     expect(Object.isFrozen(cfg)).toBe(true);
   });
 });

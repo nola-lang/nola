@@ -35,7 +35,7 @@ describe("sigil-less call intent resolves all slots in one provider call", () =>
       [
         "const g = globalThis as { __calls?: number };",
         "export default {",
-        "  providers: {",
+        "  model: {",
         "    default: {",
         "      name: 'counting',",
         "      complete: async () => {",

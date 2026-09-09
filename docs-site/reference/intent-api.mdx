@@ -1,11 +1,11 @@
 ---
 title: Intent API
-description: Askable<T> and Intent<T> method signatures, which tier has which, ProviderRef and ProviderParams, and isIntent — the typed surface behind ask and await.
+description: Askable<T> and Intent<T> method signatures, which tier has which, ModelRef and ProviderParams, and isIntent — the typed surface behind ask and await.
 sidebar:
   order: 30
 ---
 
-Two interfaces describe every intent. Both are exported as types from `@nola-lang/runtime`.
+Two interfaces describe every intent. Both are exported as types from `@nola-lang/runtime`. For the concept — what an intent is and how it relates to a promise — see [Intents](/docs/language/intent/); this page is the typed surface.
 
 ```ts
 // types.ts
@@ -22,7 +22,7 @@ The narrow tier: an intent resolvable ONLY through `ask` — what a raw `` ..`�
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `withRetry(retries: number)` | `Askable<T>` | extra whole-ask attempts, flat, no backoff — unrelated to the provider-level `withRetry` combinator |
-| `withProvider(provider: ProviderRef)` | `Askable<T>` | route this ask through a configured name or a provider object |
+| `withModel(model: ModelRef)` | `Askable<T>` | route this ask through a configured name or a provider object |
 | `withParams(params: ProviderParams)` | `Askable<T>` | wire-tuning knobs, shallow-merged over any params already on the intent |
 
 ## Intent&lt;T&gt; extends Askable&lt;T&gt;, PromiseLike&lt;T&gt;
@@ -32,7 +32,7 @@ What calling an infer function returns: lazy, thenable, and the only tier with r
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `withRetry(retries: number)` | `Intent<T>` | as above |
-| `withProvider(provider: ProviderRef)` | `Intent<T>` | as above |
+| `withModel(model: ModelRef)` | `Intent<T>` | as above |
 | `withParams(params: ProviderParams)` | `Intent<T>` | as above |
 | `withTimeout(timeout: number)` | `Intent<T>` | per-invocation timeout in ms when this intent roots the invocation; `0` disables |
 | `detached()` | `Intent<T>` | resolve without inheriting the caller frame's context |
@@ -43,8 +43,8 @@ Every method **clones** — the original stays unstarted — and an intent resol
 ## Types
 
 ```ts
-// not-checked — the shapes .withProvider()/.withParams() accept (ProviderRef is exported from @nola-lang/runtime; ProviderParams is not re-exported — use it structurally)
-type ProviderRef = NolaProvider | string;
+// not-checked — the shapes .withModel()/.withParams() accept (ModelRef is exported from @nola-lang/runtime; ProviderParams is not re-exported — use it structurally)
+type ModelRef = LanguageModel | string;
 
 interface ProviderParams {
   temperature?: number;

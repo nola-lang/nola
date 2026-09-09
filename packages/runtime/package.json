@@ -1,7 +1,7 @@
 {
   "name": "@nola-lang/runtime",
-  "version": "0.1.4",
-  "description": "The Nola runtime apps depend on: intent resolution, ask boundary, defineConfig",
+  "version": "0.1.5",
+  "description": "The Nola runtime apps depend on: intent resolution, ask boundary, defineConfig, the hosted nola() provider",
   "keywords": [
     "nola",
     "llm",
@@ -35,8 +35,8 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.4",
-    "@nola-lang/core": "0.1.4"
+    "@nola-lang/ast": "0.1.5",
+    "@nola-lang/core": "0.1.5"
   },
   "engines": {
     "node": ">=22"

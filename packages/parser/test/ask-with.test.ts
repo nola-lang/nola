@@ -72,10 +72,11 @@ describe("ask with <identifier> (provider alias)", () => {
     expect(diagnostics[0]?.code).toBe("NOLA1009");
   });
 
-  it("rejects the dynamic form `ask with (expr)` with NOLA1009", () => {
+  it("rejects the dynamic form `ask with (expr)` with NOLA1009, pointing at .withModel()", () => {
     const { ast, diagnostics } = parseNola("const v = ask with (p) intent;\n", "x.tsi");
     expect(ast).toBeNull();
     expect(diagnostics[0]?.code).toBe("NOLA1009");
+    expect(diagnostics[0]?.message).toContain(".withModel(");
   });
 
   it("rejects a non-identifier alias `ask with 123` with NOLA1009", () => {

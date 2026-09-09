@@ -1,4 +1,4 @@
-import { AGENT_OPTIONS, type AgentId, defaultAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
+import { AGENT_OPTIONS, type AgentId, defaultAgents, parseAgentsFlag, SKILL_AGENTS_QUESTION, writeAgentSkills } from "./agents.js";
 import { type Prompter, plainPrompter } from "./flow.js";
 
 export interface SkillInstallArgs {
@@ -36,7 +36,7 @@ export async function runSkillInstall(args: SkillInstallArgs, opts: SkillInstall
     prompter.note("non-interactive: pass --agents (claude, cursor, copilot, agents-md — or all, none)");
     return 1;
   } else {
-    const choice = await prompter.multiselect("Set up coding agents?", AGENT_OPTIONS, defaultAgents(dir));
+    const choice = await prompter.multiselect(SKILL_AGENTS_QUESTION, AGENT_OPTIONS, defaultAgents(dir));
     if (choice === null) {
       prompter.note("Cancelled.");
       return 0;

@@ -1,6 +1,6 @@
 import { Codes } from "@nola-lang/ast";
-import type { NolaProvider } from "@nola-lang/core";
-import { NolaConfigError, NolaProviderError } from "@nola-lang/core";
+import type { LanguageModel } from "@nola-lang/core";
+import { isPlatformModel, NolaConfigError, NolaProviderError } from "@nola-lang/core";
 
 export interface RetryPolicy {
   maxRetries: number;
@@ -40,9 +40,25 @@ function sleep(ms: number): Promise<void> {
   return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function requireProviders(providers: NolaProvider[], combinator: string): void {
-  if (providers.length === 0) {
-    throw new NolaConfigError(`${combinator}([]) needs at least one provider.`, Codes.ConfigInvalid);
+function requireModels(models: LanguageModel[], combinator: string): void {
+  if (models.length === 0) {
+    throw new NolaConfigError(`${combinator}([]) needs at least one model.`, Codes.ConfigInvalid);
+  }
+}
+
+/**
+ * The platform model can only be the config root (platform-config design
+ * 2026-09-03) — it manages its own resilience: built-in transport retry via
+ * nola.infer({ retry }); routing and failover live on the server side.
+ * record()/replay() remain available around it.
+ */
+function rejectPlatformModel(models: LanguageModel[], combinator: string): void {
+  const rejected = models.filter((m) => isPlatformModel(m));
+  if (rejected.length > 0) {
+    throw new NolaConfigError(
+      `${combinator}() cannot wrap ${rejected.map((m) => m.name).join(", ")} — the platform model can only be the root: it manages its own resilience (nola.infer({ retry }) for transport retry; routing and failover live on the server). record()/replay() remain available.`,
+      Codes.ConfigInvalid,
+    );
   }
 }
 
@@ -59,7 +75,8 @@ function describeError(error: unknown): string {
  * `.withRetry(n)`, which flat-retries the entire ask (composition, provider
  * call, parse, validation) with no backoff and no definitive-error check.
  */
-export function withRetry(provider: NolaProvider, policy: RetryPolicy): NolaProvider {
+export function withRetry(provider: LanguageModel, policy: RetryPolicy): LanguageModel {
+  rejectPlatformModel([provider], "withRetry");
   return {
     name: `retry(${provider.name})`,
     async complete(req) {
@@ -81,8 +98,9 @@ export function withRetry(provider: NolaProvider, policy: RetryPolicy): NolaProv
   };
 }
 
-export function fallback(providers: NolaProvider[]): NolaProvider {
-  requireProviders(providers, "fallback");
+export function fallback(providers: LanguageModel[]): LanguageModel {
+  requireModels(providers, "fallback");
+  rejectPlatformModel(providers, "fallback");
   const name = `fallback(${providers.map((p) => p.name).join(", ")})`;
   return {
     name,
@@ -100,8 +118,9 @@ export function fallback(providers: NolaProvider[]): NolaProvider {
   };
 }
 
-export function roundRobin(providers: NolaProvider[]): NolaProvider {
-  requireProviders(providers, "roundRobin");
+export function roundRobin(providers: LanguageModel[]): LanguageModel {
+  requireModels(providers, "roundRobin");
+  rejectPlatformModel(providers, "roundRobin");
   const name = `roundRobin(${providers.map((p) => p.name).join(", ")})`;
   let nextStart = 0;
   return {
@@ -110,7 +129,7 @@ export function roundRobin(providers: NolaProvider[]): NolaProvider {
       const start = nextStart++ % providers.length;
       const failures: string[] = [];
       for (let i = 0; i < providers.length; i++) {
-        const p = providers[(start + i) % providers.length] as NolaProvider;
+        const p = providers[(start + i) % providers.length] as LanguageModel;
         try {
           return await p.complete(req);
         } catch (error) {

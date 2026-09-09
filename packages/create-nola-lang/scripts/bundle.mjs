@@ -13,4 +13,5 @@ await build({
   format: "esm",
   outdir: "dist",
   logLevel: "info",
+  sourcemap: process.argv[2] === "--dev"
 });

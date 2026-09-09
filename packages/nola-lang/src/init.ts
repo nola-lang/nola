@@ -5,9 +5,13 @@ export interface InitOptions {
   add?: boolean;
   ide?: string;
   agents?: string;
+  /** --provider nola|openai|anthropic|google|none; undefined = ask interactively, none otherwise */
+  provider?: string;
+  /** --trial / --no-trial: shorthand for --provider nola / none */
+  trial?: boolean;
 }
 
-/** `nola init [dir] [--template <name>|--add] [--ide vscode|none] [--agents <list>]` — the same flow `npm create nola-lang` runs. */
+/** `nola init [dir] [--template <name>|--add] [--ide vscode|none] [--agents <list>] [--provider <id>|--trial|--no-trial]` — the same flow `npm create nola-lang` runs. */
 export async function cmdInit(dir: string | undefined, opts: InitOptions): Promise<number> {
   return runFlow({ dir, ...opts }, { intro: "nola init" });
 }

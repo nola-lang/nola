@@ -1,14 +1,15 @@
+import type { AskKind } from "@nola-lang/core";
 import type { InferenceComposer } from "../ask/composer.js";
 import type { NolaRuntime } from "../runtime/index.js";
 
-/** Frame/builder-supplied hints for prompt composition (the node itself has no call-chain view). */
-export interface ComposeOptions {
-  /** true when the composing frame has a caller frame above it */
-  nested?: boolean;
-  /** true when earlier nodes already contributed text (builder-derived, not chain-derived) */
-  hasContext?: boolean;
-  /** Renders the remainder of the walk (nodes after this one); memoized by the builder. */
-  next?: () => string;
+/** What the ask boundary reports about the ask-site node: the kind, the display strings, the def stamp. */
+export interface AskIdentity {
+  kind: AskKind;
+  instruction: string;
+  def?: string;
+  callee?: string;
+  hint?: string;
+  typeText?: string;
 }
 
 /**
@@ -30,15 +31,12 @@ export class InferContext<TInferParams extends Record<string, unknown> = Record<
     return new InferContext(Object.freeze({ ...data }), this.runtime, this);
   }
 
-  /** Whether this node emits prompt text of its own (function/extract nodes do; bare scopes do not). */
-  contributesText(): boolean {
-    return false;
-  }
+  /** Base nodes contribute nothing to the composed model. */
+  compose(_composer: InferenceComposer): void {}
 
-  /** Base nodes contribute nothing — the remainder passes straight through. */
-  composeInferenceData(composer: InferenceComposer, opts?: ComposeOptions): void {
-    const rest = opts?.next?.() ?? "";
-    if (rest) composer.addText(rest);
+  /** The ask-site identity; undefined for lineage nodes (system, file, function). */
+  askIdentity(): AskIdentity | undefined {
+    return undefined;
   }
 
   /**

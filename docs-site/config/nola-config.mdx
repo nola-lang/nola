@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-`nola.config.ts` lives at the project root and default-exports a `defineConfig` call. `providers.default` is required; everything else is optional.
+`nola.config.ts` lives at the project root and default-exports one `defineConfig({...})` call. `model` is required — one model, or a named map whose `default` entry is required (see [Models and providers](/docs/config/providers/)); everything else is optional. The Nola platform (api.nola.sh, or a self-hosted console) enters the same way as any vendor: `model: nola.infer()` serves inference, `telemetry: [nola.tracer()]` receives traces.
 
 ```ts
 // nola.config.ts
@@ -13,10 +13,8 @@ import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
 export default defineConfig({
-  providers: {
-    // Reads OPENAI_API_KEY from the environment at the first ask.
-    default: openai({ model: "gpt-5-mini" }),
-  },
+  // Reads OPENAI_API_KEY from the environment at the first ask.
+  model: openai({ model: "gpt-5-mini" }),
 });
 ```
 
@@ -25,17 +23,17 @@ export default defineConfig({
 Use exactly these two specifiers:
 
 ```ts
-import { defineConfig } from "@nola-lang/runtime";
+import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 ```
 
-`defineConfig` and everything app-facing come from `@nola-lang/runtime`. Everything provider-shaped — provider factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
+`defineConfig`, the [`nola`](/docs/reference/providers-api/#nola) namespace (`nola.infer()`, [`nola.tracer()`](/docs/reference/providers-api/#tracer)), `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`. Everything bring-your-own — vendor factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
 
-Never import providers from the runtime, never import `defineConfig` from the providers package, and never reach for a subpath (`@nola-lang/runtime/config`, `@nola-lang/runtime/providers`, `nola-lang/runtime`) — those do not exist. `@nola-lang/providers` deliberately does not depend on the runtime, which is what keeps a second copy of the runtime out of the install tree.
+Never import `nola` from the providers package or a vendor factory from the runtime, never import `defineConfig` from the providers package, and never reach for a subpath (`@nola-lang/runtime/config`, `@nola-lang/runtime/providers`, `nola-lang/runtime`) — those do not exist. `@nola-lang/providers` deliberately does not depend on the runtime, which is what keeps a second copy of the runtime out of the install tree.
 
 ## Validated and frozen
 
-The config is loaded once, validated, and frozen. An unknown top-level key, a `provider` (singular) key, or a `providers` map without `default` is rejected with [`NOLA3003`](/docs/reference/error-codes/#nola3003), naming the file and the field; the reserved `plugins` key is [`NOLA3005`](/docs/reference/error-codes/#nola3005). There is no runtime mutation API: the resolved config latches on the first ask, and reconfiguring after that is an error (`nolaRuntime.reset()` exists for tests). Every key, its type, default and whether the runtime reads it: [Config schema](/docs/reference/config-schema/).
+The config is loaded once, validated, and frozen. An unknown top-level key or a `model` map without `default` is rejected with [`NOLA3003`](/docs/reference/error-codes/#nola3003), naming the file and the field; the reserved `plugins` key is [`NOLA3005`](/docs/reference/error-codes/#nola3005). There is no runtime mutation API: the resolved config latches on the first ask, and reconfiguring after that is an error (`nolaRuntime.reset()` exists for tests). Every key, its type, default and whether the runtime reads it: [Config schema](/docs/reference/config-schema/).
 
 ## How it reaches run time
 
@@ -54,9 +52,10 @@ The config is loaded once, validated, and frozen. An unknown top-level key, a `p
 
 | Key | What it does | Page |
 | --- | --- | --- |
-| `providers` | the named provider map; `default` required | [Providers](/docs/config/providers/) |
-| `forceProvider` | hermetic override — every ask goes here | [Providers](/docs/config/providers/) |
-| `observability`, `hooks` | logging level, event hooks, receipts | [Observability](/docs/config/observability/) |
+| `model` | one model, or a named map with a required `default`; `nola.infer()` is the platform | [Models and providers](/docs/config/providers/) |
+| `project` | names this app in traces and platform requests; defaults to the `package.json` name | [Config schema](/docs/reference/config-schema/) |
+| `forceModel` | hermetic override — every ask goes here | [Models and providers](/docs/config/providers/) |
+| `telemetry` | the observer list — terminal, tracers, your observers, receipts | [Telemetry](/docs/config/observability/) |
 | `ask`, `system` | per-invocation timeout, extra system text | [Ask options](/docs/config/ask-options/) |
 | `compiler`, `build` | `underivableContextType`; `build.target` | [Config schema](/docs/reference/config-schema/) |
 | `middleware`, `cache` | validate but are **not wired** at 0.1.x | [Config schema](/docs/reference/config-schema/) |

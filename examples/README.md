@@ -21,6 +21,7 @@ LLM-programming task (see its README for what it demonstrates).
 | [cross-file-types](cross-file-types/) | A type imported from another file (companion module), self-recursive |
 | [recursive-tree](recursive-tree/) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively |
 | [prompt-template](prompt-template/) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor |
+| [file-ticket](file-ticket/) | Call intents: the model fills a function's arguments, sigil-less and hint forms |
 
 `_playground/` is an internal debugging sandbox, not a maintained example.
 

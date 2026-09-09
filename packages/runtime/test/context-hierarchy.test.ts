@@ -1,22 +1,53 @@
-import { FileInferContext, InferContext, nolaRuntime, SYSTEM_PREAMBLE, SystemInferContext } from "@nola-lang/runtime";
+import { renderScopeBlock } from "@nola-lang/core";
+import { FileInferContext, InferContext, nolaRuntime, SystemInferContext } from "@nola-lang/runtime";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const system = (message?: string) => SystemInferContext.create(() => message, nolaRuntime.current());
 const file = (sys = system(), path = "src/x.tsi") => FileInferContext.create(path, sys, nolaRuntime.current());
 
-/** Capturing composer for asserting what a single node contributes. */
+/**
+ * Capturing composer for asserting what a single node contributes to the
+ * composed model — a scope() description is rendered through renderScopeBlock
+ * (the same rendering ModelBuilder drives) into `texts`; intent()/outer() are
+ * unused by these node-level tests.
+ */
 const capture = () => {
   const texts: string[] = [];
-  return { texts, composer: { addText: (t: string) => texts.push(t), addSchema: () => { } } };
+  const scopeSink = {
+    describe(init: { fn: string; file?: string; instruction: string; args: readonly { name: string; type?: { toNativeType(): string }; contextual: boolean; value?: unknown }[] }) {
+      texts.push(
+        renderScopeBlock(
+          { ...init, args: init.args.map((a) => ({ ...a, type: a.type?.toNativeType() })) },
+          false,
+        ),
+      );
+      return this;
+    },
+  };
+  const intentSink = {
+    input() {
+      return this;
+    },
+    output() {
+      return this;
+    },
+  };
+  const composer = {
+    intent: () => intentSink,
+    scope: () => scopeSink,
+    outer: () => composer,
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: a minimal test double, not the real InferenceComposer
+  return { texts, composer: composer as any };
 };
 
 describe("SystemInferContext", () => {
-  it("systemText is the bare preamble when no message is configured", () => {
-    expect(system().systemText()).toBe(SYSTEM_PREAMBLE);
+  it("systemMessage is undefined when no message is configured", () => {
+    expect(system().systemMessage).toBeUndefined();
   });
 
-  it("systemText composes preamble + blank line + message", () => {
-    expect(system("Be terse.").systemText()).toBe(`${SYSTEM_PREAMBLE}\n\nBe terse.`);
+  it("systemMessage returns the configured message", () => {
+    expect(system("Be terse.").systemMessage).toBe("Be terse.");
   });
 
   it("reads the message thunk lazily (config latched after creation)", () => {
@@ -29,8 +60,8 @@ describe("SystemInferContext", () => {
 
   it("system and file nodes contribute nothing to the composed prompt", () => {
     const { texts, composer } = capture();
-    system().composeInferenceData(composer);
-    file().composeInferenceData(composer);
+    system().compose(composer);
+    file().compose(composer);
     expect(texts).toEqual([]);
   });
 });
@@ -51,7 +82,7 @@ describe("FileInferContext", () => {
   });
 });
 
-describe("FunctionInferContext", () => {
+describe("InvocationContext", () => {
   it("normalizes init: instruction defaults to empty, args to []", () => {
     const fn = file().func({ fn: "go" });
     expect(fn.data.fn).toBe("go");
@@ -62,7 +93,7 @@ describe("FunctionInferContext", () => {
   it("composes no Arguments section when args are empty", () => {
     const fn = file().func({ fn: "go", instruction: "do it" });
     const { texts, composer } = capture();
-    fn.composeInferenceData(composer);
+    fn.compose(composer);
     expect(texts).toEqual(["CONTEXT — inside go(), src/x.tsi\nPurpose: do it"]);
   });
 
@@ -77,7 +108,7 @@ describe("FunctionInferContext", () => {
       ],
     });
     const { texts, composer } = capture();
-    fn.composeInferenceData(composer);
+    fn.compose(composer);
     expect(texts[0]).toContain('- user (string) = {"id":1}');
     expect(texts[0]).toContain("- limit = (value not available)");
     expect(texts[0]).toContain("- cb = (value not available)");
@@ -96,14 +127,14 @@ describe("NolaRuntime.system", () => {
     expect(rt.fileContext("src/a.tsi")).toBe(f);
   });
 
-  it("systemText picks up config set after the system context was created", () => {
+  it("systemMessage picks up config set after the system context was created", () => {
     const rt = nolaRuntime.current();
     const sys = rt.system; // created before configure
     nolaRuntime.configure({
-      providers: { default: { name: "mock", complete: async () => ({ text: '"x"' }) } },
+      model: { default: { name: "mock", complete: async () => ({ text: '"x"' }) } },
       system: { message: "Be terse." },
     });
-    expect(sys.systemText()).toBe(`${SYSTEM_PREAMBLE}\n\nBe terse.`);
+    expect(sys.systemMessage).toBe("Be terse.");
   });
 
   it("nolaRuntime.reset() discards the system context with the runtime", () => {
@@ -128,7 +159,7 @@ describe("base InferContext", () => {
     expect(child).toBeInstanceOf(InferContext);
     expect(child).not.toBeInstanceOf(FileInferContext);
     const { texts, composer } = capture();
-    child.composeInferenceData(composer);
+    child.compose(composer);
     expect(texts).toEqual([]);
   });
 });

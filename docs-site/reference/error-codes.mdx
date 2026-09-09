@@ -43,21 +43,17 @@ Not raised — reserved (`infer` without a following `function` is reported as `
 
 ## NOLA1007
 
-> the `function name``()` form was removed — declare the function with `infer function`.
+> an instruction marker is only legal on an `infer function`.
 
-**Cause:** the pre-0.1 spelling of an LLM-backed function.
-**Fix:** `infer function name(…)`, optionally with a marker: `` infer function name`instruction`(…) ``.
-
-## NOLA1008
-
-Not raised — retired (marker substitutions are legal); the number is not reused.
+**Cause:** a backtick instruction marker between a plain function's name and its parameter list.
+**Fix:** declare it `` infer function name`instruction`(…) ``, or drop the marker.
 
 ## NOLA1009
 
-> expected a provider name after `ask with` — for a dynamic provider use `.withProvider(...)` on the intent.
+> expected a model name after `ask with` — for a dynamic model use `.withModel(...)` on the intent.
 
-**Cause:** a string literal, a number or a parenthesized expression after `with` — anything that is not a bare identifier. (A dotted name such as `providers.fast` is parsed as the identifier `providers` followed by a stray `.fast`, so it reports `NOLA1005`/`NOLA1001` rather than this code.)
-**Fix:** name the provider in `nola.config.ts` and use that bare identifier; for a dynamic choice use `.withProvider(…)`.
+**Cause:** a string literal, a number or a parenthesized expression after `with` — anything that is not a bare identifier. (A dotted name such as `provider.fast` is parsed as the identifier `provider` followed by a stray `.fast`, so it reports `NOLA1005`/`NOLA1001` rather than this code.)
+**Fix:** name the model in `nola.config.ts` and use that bare identifier; for a dynamic choice use `.withModel(…)`.
 
 ```tsi
 // not-checked — WRONG
@@ -72,7 +68,7 @@ export infer function summarize(.text: string, useFast: boolean) {
 // summarize.tsi — RIGHT
 export infer function summarize(.text: string, useFast: boolean) {
   const c = ask with fast ..`a rough summary`<string>;
-  const d = ask (..`a rough summary`<string>).withProvider(useFast ? "fast" : "careful");
+  const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
   return { c, d };
 }
 ```
@@ -211,10 +207,6 @@ export infer function fileTicket(.request: string) {
 }
 ```
 
-## NOLA2005
-
-Not raised — retired (call-hint substitutions are legal); the number is not reused.
-
 ## NOLA2006
 
 > the *.nola.* filename namespace is reserved for generated companion modules — rename this file
@@ -282,17 +274,17 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 ## NOLA3003
 
-> *(one of several config messages, e.g.)* `providers must include a default entry.` · `unknown config key x — allowed keys: …` · `provider was replaced by providers — write providers: { default: <your provider> }.` · `Nola configuration is frozen after the first ask — call nolaRuntime.reset() before reconfiguring.` · `fallback([]) needs at least one provider.`
+> *(one of several config messages, e.g.)* `a model map must include a default entry.` · `unknown config key x — allowed keys: …` · `Nola configuration is frozen after the first ask — call nolaRuntime.reset() before reconfiguring.` · `fallback([]) needs at least one model.` · `fallback() cannot wrap nola — the platform model can only be the root: it manages its own resilience (nola.infer({ retry }) for transport retry; routing and failover live on the server). record()/replay() remain available.`
 
-**Cause:** `nola.config.ts` did not validate, the process was reconfigured after the first ask, or a combinator received an empty list. (A related `NolaConfigError` without a code — "No Nola provider configured" — means no config was loaded at all: run through `nola run` / the loader with a `nola.config.ts`, or call `nolaRuntime.configure(…)` first.)
+**Cause:** `nola.config.ts` did not validate, the process was reconfigured after the first ask, a combinator received an empty list, or `fallback` / `roundRobin` wrapped the platform-served model (one request has one shape — see [Providers API](/docs/reference/providers-api/#nola)). (A related `NolaConfigError` without a code — "No Nola model configured" — means no config was loaded at all: run through `nola run` / the loader with a `nola.config.ts`, or call `nolaRuntime.configure(…)` first.)
 **Fix:** the message names the file and field — see [Config schema](/docs/reference/config-schema/).
 
 ## NOLA3004
 
-> forceProvider "x" does not name a configured provider — configured: … · .withProvider() "x" does not name a configured provider — configured: …
+> forceModel "x" does not name a configured model — configured: … · .withModel() "x" does not name a configured model — configured: …
 
-**Cause:** `forceProvider`, `ask with <name>` or `.withProvider("name")` names a key that is not in `providers`.
-**Fix:** add the provider to the map or fix the name.
+**Cause:** `forceModel`, `ask with <name>` or `.withModel("name")` names a key that is not in the `model` map. When the platform serves inference — `model: nola.infer()` — an ask-site name that matches no key is not an error: it is sent to the platform as an inference profile instead, so this code then fires only for `forceModel`.
+**Fix:** add the model to the map, fix the name, or let the platform serve (`model: nola.infer()`) so free-form names route through it.
 
 ## NOLA3005
 

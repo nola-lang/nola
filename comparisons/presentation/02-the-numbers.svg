@@ -18,10 +18,10 @@
   <text x="1726.7" y="320" text-anchor="middle" font-family="Inter" font-size="15" fill="#8A929C">zod, strict</text>
   <line x1="100" y1="330" x2="1820" y2="330" stroke="#C9CFD8" stroke-width="1.5"/>
   <text x="120" y="366" font-family="Inter" font-size="20" fill="#2A323C">Lines you write</text>
-  <text x="793.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#0A5A62">87 *</text>
+  <text x="793.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#0A5A62">85 *</text>
   <text x="980.0" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#2A323C">112</text>
   <text x="1166.7" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#2A323C">118</text>
-  <text x="1353.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">87</text>
+  <text x="1353.3" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#2A323C">87</text>
   <text x="1540.0" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#2A323C">114</text>
   <text x="1726.7" y="368" text-anchor="middle" font-family="Inter" font-size="24" fill="#2A323C">131</text>
   <line x1="100" y1="386" x2="1820" y2="386" stroke="#E8ECF0" stroke-width="1"/>
@@ -104,6 +104,6 @@
   <text x="1353.3" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#9AA1AB">n/a</text>
   <text x="1540.0" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#9AA1AB">n/a</text>
   <text x="1726.7" y="928" text-anchor="middle" font-family="Inter" font-size="24" fill="#9AA1AB">n/a</text>
-  <text x="100" y="992" font-family="Roboto Mono" font-size="18" fill="#8A929C">* 30 of Nola's 87 lines are the offline mock fixture that makes the first run work without an API key &#8212; about 65 with a real provider.</text>
+  <text x="100" y="992" font-family="Roboto Mono" font-size="18" fill="#8A929C">* 28 of Nola's 85 lines are the offline mock fixture that makes the first run work without an API key &#8212; about 63 with a real provider.</text>
   <text x="100" y="1018" font-family="Roboto Mono" font-size="18" fill="#8A929C">&#8224; BAML declares the model once, but inside .baml: the domain model moves out of TypeScript and the app imports the generated client.</text>
 </svg>

@@ -192,12 +192,14 @@ export infer function summarize(.text: string) {
 }
 ```
 
-- `<name>` must be a STATIC identifier naming a key of the `providers` map in
-  `nola.config.ts`. An extractor, a parenthesized expression, a string literal
-  or anything else after `with` is NOLA1009 — use `.withProvider(...)` for a
-  dynamic provider.
-- The name is matched against the config at ask time, not compile time; an
-  unknown name is a runtime `NolaConfigError` (NOLA3004).
+- `<name>` must be a STATIC identifier. An extractor, a parenthesized
+  expression, a string literal or anything else after `with` is NOLA1009 —
+  use `.withModel(...)` for a dynamic model.
+- The name is matched against the config at ask time, not compile time. A
+  name that matches a `model` map key pins that model. When the platform
+  serves inference (`model: nola.infer()`) an unmatched name is a
+  free-form inference profile sent to the platform — not an error; under a
+  local default an unknown name is a runtime `NolaConfigError` (NOLA3004).
 - `ask without` is a plain ask of the identifier `without`, not a pin.
 
 ## Call intents
@@ -352,14 +354,14 @@ Every intent (extractor, call intent, infer-function result) accepts:
 ```tsi
 export infer function tuned(.text: string) {
   const a = ask (..`the title`<string>).withRetry(2);
-  const b = ask (..`the body`<string>).withProvider("careful");
+  const b = ask (..`the body`<string>).withModel("careful");
   const c = ask (..`a creative tagline`<string>).withParams({ temperature: 0.9, maxOutputTokens: 200 });
   return { a, b, c };
 }
 ```
 
 - `.withRetry(n)` — `n` extra whole-ask attempts, flat, no backoff.
-- `.withProvider(nameOrProvider)` — the dynamic form of `ask with`.
+- `.withModel(nameOrProvider)` — the dynamic form of `ask with`.
 - `.withParams({ temperature, maxOutputTokens, providerOptions })` — wire knobs,
   merged per field with anything already set.
 

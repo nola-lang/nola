@@ -2,16 +2,16 @@ import { Codes } from "@nola-lang/ast";
 import {
   INTENT_BRAND,
   type Intent as IntentContract,
+  type ModelRef, 
   mergeProviderParams,NolaIntentError, 
-  type ProviderParams,
-  type ProviderRef
+  type ProviderParams
 } from "@nola-lang/core";
 import type { InferContext } from "../infer-context/index.js";
 import { Frame, type NolaRuntime, nolaRuntime } from "../runtime/index.js";
 
 export interface IntentOptions {
   retries?: number;
-  provider?: ProviderRef;
+  model?: ModelRef;
   /**
    * Per-invocation timeout in ms, armed when this intent roots the invocation:
    * the root frame's AbortController fires when it elapses and every provider
@@ -72,8 +72,8 @@ export abstract class Intent<T = unknown, TContext extends InferContext = InferC
     return this.clone({ retries });
   }
 
-  withProvider(provider: ProviderRef): Intent<T> {
-    return this.clone({ provider });
+  withModel(model: ModelRef): Intent<T> {
+    return this.clone({ model });
   }
 
   withTimeout(timeout: number): Intent<T> {

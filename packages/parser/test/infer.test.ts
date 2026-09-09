@@ -40,12 +40,12 @@ describe("infer function", () => {
     expect(inferFns(ast as BaseNode)[0]?.nolaMarker?.instruction).toBe("");
   });
 
-  it("NOLA1007: legacy marker on a non-infer function", () => {
+  it("NOLA1007: instruction marker on a non-infer function", () => {
     const { diagnostics } = parseNola("export function analyze``(x: string) {\n  return x;\n}\n", "x.tsi");
     expect(diagnostics[0]?.code).toBe("NOLA1007");
   });
 
-  it("${} in a marker is legal (NOLA1008 retired) — the marker keeps its holes", () => {
+  it("${} in a marker is legal — the marker keeps its holes", () => {
     const { ast, diagnostics } = parseNola("infer function go`use ${db}`() {\n  return 1;\n}\n", "x.tsi");
     expect(diagnostics).toEqual([]);
     const [fn] = inferFns(ast as BaseNode);
@@ -60,7 +60,7 @@ describe("infer function", () => {
 
   it("NOLA1004 or NOLA1007: bodiless declare with marker", () => {
     const { diagnostics } = parseNola("declare function f``(x: string): void;\n", "x.tsi");
-    // legacy marker check fires first on non-infer functions
+    // the marker-outside-infer check fires first on non-infer functions
     expect(["NOLA1004", "NOLA1007"]).toContain(diagnostics[0]?.code);
   });
 

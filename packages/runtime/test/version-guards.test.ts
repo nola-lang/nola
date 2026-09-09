@@ -66,16 +66,16 @@ describe("duplicate-runtime slot", () => {
     const copyB = claimNolaRuntime(NOLA_EMIT, "file:///fake/node_modules/nested/runtime/index.js");
     expect(copyB).toBe(nolaRuntime.current());
     // "copy B" configures the (shared) instance
-    copyB.configure({ providers: { default: mockProvider(["hi"]) } });
-    // this copy's resolveProvider() sees it
-    expect(nolaRuntime.current().resolveProvider()).toBe(copyB.config?.providers.default);
+    copyB.configure({ model: { default: mockProvider(["hi"]) } });
+    // this copy's resolveModel() sees it
+    expect(nolaRuntime.current().resolveModel()).toBe(copyB.config?.model.default);
   });
 
   it("nolaRuntime.configure through this copy is visible to an adopted copy", () => {
     const provider = mockProvider(["hi"]);
-    nolaRuntime.configure({ providers: { default: provider } });
+    nolaRuntime.configure({ model: { default: provider } });
     const copyB = claimNolaRuntime(NOLA_EMIT, "file:///fake/other/index.js");
-    expect(copyB.config?.providers.default).toBe(provider);
+    expect(copyB.config?.model.default).toBe(provider);
   });
 
   it("a different-emit second copy throws NOLA3002 naming both URLs", () => {
@@ -93,7 +93,7 @@ describe("duplicate-runtime slot", () => {
     expect(err.details.urls).toHaveLength(2);
   });
 
-  it("resolveProvider without configuration still throws the config error", () => {
-    expect(() => nolaRuntime.current().resolveProvider()).toThrow(/No Nola provider configured/);
+  it("resolveModel without configuration still throws the config error", () => {
+    expect(() => nolaRuntime.current().resolveModel()).toThrow(/No Nola model configured/);
   });
 });

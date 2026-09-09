@@ -44,6 +44,39 @@
 		// 	"skipFiles": ["<node_internals>/**"]
 		// },
 		{
+			// F5 to debug any `nola <command>` against packages/nola-lang/dist (run
+			// `npm run build` or the "tsc: watch-all" task first — the CLI runs from dist).
+			// Prompts for the argument string and the working directory. integratedTerminal
+			// is mandatory: init/key/login/billing drive @clack prompts, which need a TTY.
+			// Note: `nola init` delegates to create-nola-lang's runFlow, whose dist/index.js
+			// is an esbuild bundle WITHOUT a source map — stepping into it shows bundled JS.
+			"type": "node",
+			"request": "launch",
+			"name": "Debug nola CLI",
+			"program": "${workspaceFolder}/packages/nola-lang/dist/main.js",
+			"args": "${input:nolaArgs}",
+			"cwd": "${input:nolaCwd}",
+			"console": "integratedTerminal",
+			"runtimeArgs": ["--enable-source-maps"],
+			"sourceMaps": true,
+			"env": {
+				// Point the platform commands (key/login/billing) at a local API instead of api.nola.sh:
+				"NOLA_API_URL": "http://127.0.0.1:8787",
+				// Print the sign-in URL instead of opening a browser:
+				// "NOLA_NO_BROWSER": "1"
+			},
+			"resolveSourceMapLocations": [
+				"${workspaceFolder}/packages/**",
+				"${workspaceFolder}/examples/**",
+				"!**/node_modules/**"
+			],
+			"outFiles": [
+				"${workspaceFolder}/packages/*/dist/**/*.js",
+				"${workspaceFolder}/examples/**/*.js"
+			],
+			"skipFiles": ["<node_internals>/**"]
+		},
+		{
 			// Same, but hits the real OpenAI provider (nola.config.ts branches on
 			// NOLA_E2E_OPENAI). Needs OPENAI_API_KEY in your environment.
 			"type": "node",
@@ -82,6 +115,20 @@
 			"cwd": "${workspaceFolder}/comparisons/inbox-triage/nola",
 			"resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
 			"skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+		}
+	],
+	"inputs": [
+		{
+			"id": "nolaArgs",
+			"type": "promptString",
+			"description": "nola CLI arguments (e.g. `check`, `run src/main.js`, `init --template empty --no-trial`, `key --print`)",
+			"default": "init"
+		},
+		{
+			"id": "nolaCwd",
+			"type": "promptString",
+			"description": "Working directory the command runs in. For `init` use an EMPTY folder you created first, e.g. ${workspaceFolder}/dist-scratch (dist-*/ is gitignored) — a non-empty dir flips init into --add mode and edits its package.json.",
+			"default": "${workspaceFolder}/../playground"
 		}
 	]
 }
