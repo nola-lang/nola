@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/providers",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Nola bring-your-own LLM providers: openai, anthropic, google, mock, resilience combinators, record/replay",
   "keywords": [
     "nola",
@@ -35,8 +35,8 @@
     "!dist/.tsbuildinfo"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.6",
-    "@nola-lang/core": "0.1.6"
+    "@nola-lang/ast": "0.1.7",
+    "@nola-lang/core": "0.1.7"
   },
   "engines": {
     "node": ">=22"

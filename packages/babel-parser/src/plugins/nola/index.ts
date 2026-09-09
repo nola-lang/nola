@@ -23,6 +23,7 @@ import { ParseFunctionFlag, type ParseStatementFlag } from "../../parser/stateme
 import type { ExpressionErrors } from "../../parser/util.ts";
 import { tokenIsKeywordOrIdentifier, tt } from "../../tokenizer/types.ts";
 import type * as N from "../../types.ts";
+import type { Position } from "../../util/location.ts";
 
 export const NolaErrors = ParseErrorEnum`nola`({
   NolaAskReserved: "NOLA1003: `ask` is a reserved word in .tsi files and cannot be used as an identifier.",
@@ -177,6 +178,53 @@ export default (superClass: typeof Parser) =>
       node.typeArgs = null;
       node.nolaError = true;
       return this.finishNode(node as never, "NolaExtractExpression" as never);
+    }
+
+    // `person.` with the name still being typed — the most common editor state
+    // there is, and it carries no Nola construct at all. super reaches
+    // parseIdentifier → unexpected(), which THROWS even under errorRecovery: the
+    // whole file bails, the editor serves stale lowered output, and TypeScript
+    // answers the `.`-triggered completion at a position that means nothing
+    // with the global scope. TypeScript's own parser recovers this with a
+    // missing identifier; do the same (zero-width placeholder property, the
+    // dot's bytes stay verbatim) and record NOTHING: the lowered text keeps
+    // `person.` for TypeScript to parse itself, so it completes the members
+    // after the dot and reports its own "Identifier expected" through the
+    // verbatim mapping, exactly as in a .ts file — a nola diagnostic here would
+    // only double it. Strict mode is untouched (a build keeps the syntax error).
+    parseMember(
+      base: N.Expression | N.Super,
+      startLoc: Position,
+      state: N.ParseSubscriptState,
+      computed: boolean,
+      optional: boolean,
+    ): N.OptionalMemberExpression | N.MemberExpression {
+      if (
+        !computed &&
+        this.optionFlags & OptionFlags.ErrorRecovery &&
+        !tokenIsKeywordOrIdentifier(this.state.type) &&
+        !this.match(tt.privateName)
+      ) {
+        const node = this.startNodeAt(startLoc) as unknown as {
+          object: unknown;
+          computed: boolean;
+          property: unknown;
+          optional?: boolean;
+        };
+        node.object = base;
+        node.computed = false;
+        const at = this.state.lastTokEndLoc as Position; // right after the dot
+        const placeholder = this.startNodeAt(at) as unknown as { name: string; nolaError: boolean };
+        placeholder.name = "";
+        placeholder.nolaError = true;
+        node.property = this.finishNodeAt(placeholder as never, "Identifier" as never, at);
+        if (state.optionalChainMember) {
+          node.optional = optional;
+          return this.finishNode(node as never, "OptionalMemberExpression" as never);
+        }
+        return this.finishNode(node as never, "MemberExpression" as never);
+      }
+      return super.parseMember(base, startLoc, state, computed, optional);
     }
 
     parseExprAtom(refExpressionErrors?: ExpressionErrors | null): N.Expression | N.Super | N.Import {

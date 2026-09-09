@@ -390,6 +390,36 @@ describe("LSP over examples/cross-file-types", () => {
     });
   }
 
+  // The state the screenshot came from: `person.` with NO name token after the
+  // dot — before `;` (`return person.;`) or before the closing brace. The test
+  // below survives only because `return` on the next line parses as the
+  // property name; here Babel used to bail the whole file, the editor served
+  // stale output, and the `.`-triggered completion listed the global scope
+  // (`__frame`, `__nola`, `AbortController`, …). The parser now recovers the
+  // dangling access verbatim, so TypeScript itself answers with Person.
+  for (const [what, line] of [
+    ["before `;`", "  return person.;"],
+    ["before `}`", "  person."],
+  ] as const) {
+    it(`a \`.\`-triggered completion on a dangling \`person.\` ${what} offers the Person fields`, async () => {
+      const content = [
+        'import type { Person } from "./models.js";',
+        "export infer function f(t: string) {",
+        "  const person = ask ..`x`<Person>;",
+        line,
+        "}",
+        "",
+      ].join("\n");
+      const uri = pathToFileURL(join(FIXTURE, "src", `dangling-${line.length}.tsi`)).href;
+      await server.openInMemoryDocument(uri, "nola", content);
+      const labels = await completionOnDotTrigger(uri, positionOf(content, "person.", "person.".length));
+      expect(labels).toContain("name");
+      expect(labels).toContain("home");
+      expect(labels).not.toContain("__frame");
+      expect(labels).not.toContain("AbortController");
+    });
+  }
+
   it("completion after `person.` offers the Person fields", async () => {
     const content = [
       'import type { Person } from "./models.js";',

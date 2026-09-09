@@ -203,11 +203,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.6",
-    "@nola-lang/runtime": "^0.1.6"
+    "@nola-lang/providers": "^0.1.7",
+    "@nola-lang/runtime": "^0.1.7"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.6",
+    "nola-lang": "^0.1.7",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

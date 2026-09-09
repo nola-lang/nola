@@ -317,7 +317,7 @@ This is upstream Babel source, pinned. Treat it as read-only **except**:
 - `src/plugins/nola/**` — our plugin, edit freely. It hooks `readToken_dot`,
   `parseExprAtom`, `parseMaybeUnary`, `checkReservedWord`, `parseStatementContent`,
   `parseExportDeclaration`, `shouldParseExportDeclaration`, `parseFunction`,
-  `parseFunctionParams`, `parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`.
+  `parseFunctionParams`, `parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`, `parseMember` (tolerant-only: a dangling `x.` recovers verbatim so TypeScript completes and diagnoses it itself).
   (The `infer function` keyword is claimed only when the token after `infer` is
   `function` — that is what keeps `infer` legal as an identifier and in TS
   conditional types. `parseFunction` adds the Async production flag for infer

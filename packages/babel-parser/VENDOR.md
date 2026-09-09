@@ -40,7 +40,7 @@ re-pinning Babel cheap. In-code edits are marked with a `// NOLA VENDOR EDIT` co
 `src/plugins/nola/index.ts` hooks eight upstream parser methods (adapting, never forking, their internals):
 
 `readToken_dot`, `parseExprAtom`, `parseMaybeUnary`, `checkReservedWord`, `parseFunctionParams`,
-`parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`.
+`parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`, `parseMember` (tolerant-only recovery of a dangling `x.`).
 
 ## Notes for consumers
 

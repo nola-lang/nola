@@ -142,3 +142,28 @@ describe("compileNola tolerant mode", () => {
     expect(code).toContain("__nola.tpl`x ${__nola_s.}`");
   });
 });
+
+// `person.` mid-typing: no Nola construct is involved, but the parser used to
+// bail on it and the editor fell back to stale output. Recovery keeps the
+// bytes verbatim so TypeScript itself parses the dangling access, completes
+// the Person members after the dot and reports its own "Identifier expected".
+describe("dangling member access in tolerant mode", () => {
+  it("lowers the rest of the file and leaves `person.` verbatim", () => {
+    const src = [
+      "interface Person { name: string; age: number }",
+      "infer function go(.message: string) {",
+      "  const person = ask ..`the person`<Person>;",
+      "  return person.;",
+      "}",
+      "",
+    ].join("\n");
+    const r = compileNola(src, "t.tsi", { tolerant: true });
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics).toEqual([]);
+    expect(r.code).toContain("  return person.;");
+    expect(r.code).toContain("__nola.intents.ExtractIntent<Person>");
+    const tsDiags = typecheckLowered({ "t.ts": r.code });
+    expect(tsDiags).toHaveLength(1);
+    expect(tsDiags[0]).toMatch(/Identifier expected/);
+  });
+});
