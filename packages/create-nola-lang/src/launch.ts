@@ -16,8 +16,22 @@ export interface Launcher {
    * to the exit code (1 when the command could not be spawned at all).
    */
   install(pm: PackageManager, dir: string, onOutput: (chunk: string) => void): Promise<number>;
-  /** `code <dir>`, detached; "not-found" when VS Code's `code` command is not on PATH. */
-  openVscode(dir: string): Promise<"opened" | "not-found">;
+  /**
+   * `code <dir> [<dir>/<entry>]`, detached; "not-found" when VS Code's `code`
+   * command is not on PATH. `entry` is a project-relative file to open as the
+   * active editor on top of the folder (the scaffold's src/main.ts).
+   */
+  openVscode(dir: string, entry?: string): Promise<"opened" | "not-found">;
+}
+
+/**
+ * The arguments that open a project in VS Code: the folder alone, or the
+ * folder plus one file. `code <folder> <file>` opens the folder as the
+ * workspace and the file as the active editor — that is how the scaffold
+ * lands the user on src/main.ts instead of an empty window.
+ */
+export function vscodeArgs(dir: string, entry?: string): string[] {
+  return entry === undefined ? [dir] : [dir, join(dir, entry)];
 }
 
 /**
@@ -83,11 +97,11 @@ export function installArgs(pm: PackageManager): string[] {
 
 export const realLauncher: Launcher = {
   install: (pm, dir, onOutput) => run(pm, installArgs(pm), dir, onOutput),
-  async openVscode(dir) {
+  async openVscode(dir, entry) {
     const code = findOnPath("code");
     if (!code) return "not-found";
     // Detached + ignored stdio: the CLI exits while VS Code keeps running.
-    const child = spawn(q(code), [q(dir)], { detached: true, stdio: "ignore", shell: WINDOWS });
+    const child = spawn(q(code), vscodeArgs(dir, entry).map(q), { detached: true, stdio: "ignore", shell: WINDOWS });
     child.on("error", () => {});
     child.unref();
     return "opened";

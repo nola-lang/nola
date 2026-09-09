@@ -8,9 +8,9 @@ describe("template registry", () => {
     expect(TEMPLATES[1]?.source).toBe("builtin");
   });
 
-  it("offers the six curated examples, never extract-person (the starter IS extract-person)", () => {
+  it("offers the six curated examples, file-ticket (call intents) first, never extract-person (the starter IS extract-person)", () => {
     const examples = TEMPLATES.filter((t) => t.source === "example").map((t) => t.name);
-    expect(examples).toEqual(["extract-resume", "extract-invoice", "classify-message", "chain-of-thought", "research-notes", "file-ticket"]);
+    expect(examples).toEqual(["file-ticket", "extract-resume", "extract-invoice", "classify-message", "chain-of-thought", "research-notes"]);
     expect(templateByName("extract-person")).toBeUndefined();
   });
 

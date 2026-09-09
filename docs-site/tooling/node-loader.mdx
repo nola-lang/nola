@@ -34,6 +34,8 @@ The loader is the development and debugging path. For deployment, `nola build` w
 
 ## Runtimes
 
-The hooks are Node's module-hooks API (Node ≥ 22). Bun and Deno do not run them: `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine — `bun run start` / `pnpm start` / `yarn start` all launch the `nola` bin, which is a Node script.
+The hooks are Node's module-hooks API (Node ≥ 22.18). Bun and Deno do not run them: `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine — `bun run start` / `pnpm start` / `yarn start` all launch the `nola` bin, which is a Node script.
+
+The loader handles `.tsi`; plain `.ts` files next to it — the entry `src/main.ts`, helpers — are Node's job, through its native type stripping. That is on by default from Node 22.18 (and 23.6). On an older Node 22 it still sits behind a flag, and Node refuses `.ts` outright: `npm start` and the F5 launch fail with `ERR_UNKNOWN_FILE_EXTENSION` for `src/main.ts`. The scaffolder prints this warning when it sees such a Node. Upgrade Node; if you cannot, set `NODE_OPTIONS=--experimental-strip-types` for `npm start` and add `"--experimental-strip-types"` to `runtimeArgs` in `.vscode/launch.json`. Nola deliberately does not strip `.ts` itself: its own stripper would accept syntax Node's refuses, so a project would work on the old Node and break on the upgrade.
 
 Next: [VS Code extension](/docs/tooling/vscode/)

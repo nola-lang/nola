@@ -26,6 +26,14 @@ export interface ScaffoldOptions {
    * the matching README notes.
    */
   provider?: ProviderId;
+  /**
+   * The editor chosen in the wizard; default "none". Decides the next-steps
+   * comment rendered at the top of the template's src/main.ts: with VS Code
+   * it names F5, breakpoints and the recommended extension (all of which the
+   * .vscode files the flow writes make true); without one it stays
+   * editor-neutral.
+   */
+  ide?: "vscode" | "none";
 }
 
 const TEMPLATES_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
@@ -38,8 +46,32 @@ export function providerConfigUrl(provider: Exclude<ProviderId, "none">): URL {
 /** _gitignore ships underscored (npm pack strips nested .gitignore files). */
 const RENAMES: Record<string, string> = { _gitignore: ".gitignore" };
 
-/** Files whose __NAME__/__VERSION__ (and README note) placeholders are substituted. */
-const SUBSTITUTED = new Set(["package.json", "README.md"]);
+/** Files whose __NAME__/__VERSION__, README-note and __NEXT_STEPS__ placeholders are substituted. */
+const SUBSTITUTED = new Set(["package.json", "README.md", "main.ts"]);
+
+/**
+ * The comment that opens src/main.ts — the file the scaffold lands the user
+ * on (VS Code opens it as the active editor), so it carries the first three
+ * things to do. The VS Code variant only ships with the editor step's
+ * .vscode files, which are what make F5 and the extension prompt real.
+ */
+export function nextStepsComment(ide: "vscode" | "none", template: string): string {
+  if (ide === "vscode") {
+    const breakpointIn = template === "starter" ? "src/person.tsi" : "your .tsi file";
+    return [
+      "// Next steps in VS Code:",
+      "//   1. Press F5 to run this file (.vscode/launch.json is already set up).",
+      `//   2. Set a breakpoint in ${breakpointIn} and press F5 again to step through the ask.`,
+      '//   3. Install the recommended "Nola" extension when VS Code offers it — IntelliSense,',
+      "//      go to definition and diagnostics inside .tsi files.",
+    ].join("\n");
+  }
+  return [
+    "// Next steps:",
+    "//   1. Run this file: npm start",
+    "//   2. Set up your editor (VS Code extension, debugging): https://nola.sh/docs/start/editor-setup/",
+  ].join("\n");
+}
 
 /** Starter files that only make sense for the offline (replay) configuration. */
 const OFFLINE_ONLY = new Set(["nola.replay.jsonl"]);
@@ -125,6 +157,7 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
   const versionRange = `^${version}`;
   const provider = opts.provider ?? "none";
   const notes = readmeNotes(provider);
+  const nextSteps = nextStepsComment(opts.ide ?? "none", template);
   const files: string[] = [];
   const copyDir = async (fromDir: string, relDir: string): Promise<void> => {
     await mkdir(join(absRoot, relDir), { recursive: true });
@@ -148,7 +181,8 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
           .replaceAll("__NAME__", name)
           .replaceAll("__VERSION__", versionRange)
           .replaceAll("__START_NOTE__", notes.START_NOTE)
-          .replaceAll("__PROVIDER_NOTE__", notes.PROVIDER_NOTE);
+          .replaceAll("__PROVIDER_NOTE__", notes.PROVIDER_NOTE)
+          .replaceAll("__NEXT_STEPS__", nextSteps);
       }
       await writeFile(join(absRoot, toRel), content);
       files.push(toRel.replaceAll("\\", "/"));

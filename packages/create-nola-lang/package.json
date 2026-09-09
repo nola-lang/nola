@@ -1,6 +1,6 @@
 {
   "name": "create-nola-lang",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Scaffold a new Nola project (npm create nola, or npm create nola-lang)",
   "keywords": [
     "nola",
@@ -46,7 +46,7 @@
     "bundle-dev": "node scripts/bundle.mjs --dev"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "devDependencies": {
     "@clack/prompts": "^1.7.0",

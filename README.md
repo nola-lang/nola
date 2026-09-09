@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/nola-lang"><img src="https://img.shields.io/npm/v/nola-lang?logo=npm&color=4EC9B0&label=nola-lang" alt="npm version"></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=nola.nola-vscode"><img src="https://vsmarketplacebadges.dev/version-short/nola.nola-vscode.svg?color=4EC9B0&label=VS%20Code" alt="VS Code Marketplace"></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A5%2022-4EC9B0?logo=nodedotjs&logoColor=white" alt="Node >= 22"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A5%2022.18-4EC9B0?logo=nodedotjs&logoColor=white" alt="Node >= 22.18"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-4EC9B0" alt="Apache-2.0"></a>
   <a href="https://nola.sh/docs/"><img src="https://img.shields.io/badge/docs-nola.sh-4EC9B0" alt="Documentation"></a>
 </p>
@@ -62,7 +62,7 @@ never required — point `nola.config.ts` at any supported provider instead
 
 ## Quick start
 
-Requires **Node ≥ 22**. The starter needs no API key — it runs offline from a
+Requires **Node ≥ 22.18**. The starter needs no API key — it runs offline from a
 committed replay ledger.
 
 ```bash
@@ -256,7 +256,7 @@ node ../../packages/nola-lang/dist/main.js run src/main.ts
 
 ## Contributing
 
-Node **≥ 22**, npm workspaces.
+Node **≥ 22.18**, npm workspaces.
 
 ```bash
 npm install

@@ -14,12 +14,12 @@ export interface TemplateDef {
 export const TEMPLATES: readonly TemplateDef[] = [
   { name: "starter", label: "typed extraction, runs offline out of the box", source: "builtin" },
   { name: "empty", label: "nola.config + tsconfig only, bring your own code", source: "builtin" },
+  { name: "file-ticket", label: "call intents: the model fills a function's arguments", source: "example" },
   { name: "extract-resume", label: "nested arrays of objects, JSDoc schema descriptions", source: "example" },
   { name: "extract-invoice", label: "same-file type references, optional fields", source: "example" },
   { name: "classify-message", label: "closed label sets: union alias, string enum, inline union", source: "example" },
   { name: "chain-of-thought", label: "two asks sharing accumulating context", source: "example" },
   { name: "research-notes", label: "TS control flow orchestrating nola functions", source: "example" },
-  { name: "file-ticket", label: "call intents: the model fills a function's arguments", source: "example" },
 ];
 
 export function templateByName(name: string): TemplateDef | undefined {

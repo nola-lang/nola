@@ -203,14 +203,14 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.5",
-    "@nola-lang/runtime": "^0.1.5"
+    "@nola-lang/providers": "^0.1.6",
+    "@nola-lang/runtime": "^0.1.6"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.5",
+    "nola-lang": "^0.1.6",
     "typescript": "^5.6.0"
   },
-  "engines": { "node": ">=22" }
+  "engines": { "node": ">=22.18" }
 }
 ```
 

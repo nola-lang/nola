@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findOnPath, installArgs } from "../src/launch.js";
+import { findOnPath, installArgs, vscodeArgs } from "../src/launch.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-launch-"));
 
@@ -58,5 +58,16 @@ describe("installArgs", () => {
     expect(installArgs("pnpm")).toEqual(["install"]);
     expect(installArgs("yarn")).toEqual(["install"]);
     expect(installArgs("bun")).toEqual(["install"]);
+  });
+});
+
+describe("vscodeArgs", () => {
+  it("opens the folder alone without an entry file", () => {
+    expect(vscodeArgs("/p/app")).toEqual(["/p/app"]);
+  });
+
+  it("opens the folder as the workspace and the entry file as the active editor", () => {
+    // `code <folder> <file>` — the folder becomes the workspace, the file an editor tab
+    expect(vscodeArgs("/p/app", "src/main.ts")).toEqual(["/p/app", join("/p/app", "src/main.ts")]);
   });
 });

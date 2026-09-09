@@ -373,7 +373,7 @@ Not raised — reserved.
 > the Nola loader needs Node.js module hooks, which Bun/Deno does not run. Run .tsi code on Node: `bun run start` / `npm start` (the nola bin runs on Node) or `node --import nola-lang/register src/main.ts`; `bun --bun` and `bun src/main.ts` cannot load .tsi files.
 
 **Cause:** the loader was started under Bun or Deno.
-**Fix:** run on Node (≥ 22); any package manager is fine.
+**Fix:** run on Node (≥ 22.18); any package manager is fine.
 
 **Bundler errors (NOLA4xxx)**
 

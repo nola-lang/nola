@@ -77,7 +77,7 @@ A notation is narrow on purpose. Nola is not:
 - **An orchestration framework.** There is no graph, no agent loop, no node type. You orchestrate with `if`, `for`, `Promise.all` and functions, because it is TypeScript. Graph libraries remain useful *above* Nola for long-running, checkpointed workflows — see [Nola vs LangGraph](/docs/compare/langgraph/).
 - **A separate language with a codegen step.** A `.tsi` file is your TypeScript with three marks added, imported directly — not a DSL that generates a client you then import. See [Nola vs BAML](/docs/compare/baml/).
 - **A prompt optimizer.** Nola composes prompts from your code and shows you the result in receipts; it does not search for better wording on your behalf.
-- **A model or a hosted runtime.** Providers are configured in [`nola.config.ts`](/docs/config/nola-config/); the runtime is plain `fetch`. It runs on Node ≥ 22, server-side.
+- **A model or a hosted runtime.** Providers are configured in [`nola.config.ts`](/docs/config/nola-config/); the runtime is plain `fetch`. It runs on Node ≥ 22.18, server-side.
 
 ## The bet, and what it costs
 

@@ -42,7 +42,7 @@ the callee; the ask timeout bounds provider calls only, not the callee. Phase 1 
 
 ## Commands
 
-Node **≥ 22** required. npm workspaces (not pnpm/yarn).
+Node **≥ 22.18** required (plain `.ts` runs on Node's native type stripping, on by default only from 22.18 — the scaffolder warns on older Nodes, see `create-nola-lang/src/node-version.ts`). npm workspaces (not pnpm/yarn).
 
 ```bash
 npm run build      # builds vendored babel-parser FIRST, then `tsc -b` across packages
@@ -162,7 +162,16 @@ guarded `.vscode/launch.json` (the extension's "Nola: Launch File" snippet
 resolved to `src/main.ts`, keeping the mandatory resolveSourceMapLocations +
 skipFiles invariants) and `.vscode/extensions.json` (recommends
 `nola.nola-vscode`) on both the scaffold and add paths — existing files
-are skipped with a note, never merged.
+are skipped with a note, never merged. The builtin templates' `src/main.ts`
+opens with a `__NEXT_STEPS__` placeholder that `scaffold({ ide })` renders
+(`nextStepsComment` in scaffold.ts): the VS Code variant — F5, a breakpoint
+in `src/person.tsi` (or "your .tsi file" for `empty`), the recommended
+extension — ONLY when the editor was chosen, since the `.vscode` files are
+what make it true; otherwise an editor-neutral `npm start` + editor-setup
+docs link. Examples from `examples/` are copied verbatim and carry none. The
+install-and-open step opens `code <dir> <dir>/src/main.ts` (`vscodeArgs`,
+launch.ts: the folder becomes the workspace, the file the active editor) so
+the user lands on that comment instead of an empty window.
 The provider step (2026-09-08, reshaping the trial step of spec
 2026-08-24-trial-onboarding-design.md): right after the template,
 `resolveExtras` asks `PROVIDER_QUESTION` ("Select an inference provider:"),

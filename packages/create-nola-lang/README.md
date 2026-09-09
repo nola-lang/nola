@@ -16,7 +16,8 @@ coding agents (yes opens one list: VS Code, preselected, writes `.vscode/`
 with a debug config + the extension recommendation; coding-agent skills,
 Claude Code preselected), and — once the files are written, when an editor
 was chosen — whether to install dependencies and open the project in VS Code
-right away.
+right away (on `src/main.ts`, whose opening comment lists the next steps:
+F5 to run, a breakpoint to debug, the recommended extension).
 
 You get a typed extraction example (`src/person.tsi` + a plain-TS consumer),
 `nola.config.ts`, tsconfig, and a recorded replay ledger so the first run

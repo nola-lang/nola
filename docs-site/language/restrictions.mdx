@@ -48,7 +48,7 @@ Further language features are deferred and are simply **parse errors** today (`N
 
 ## Runtimes
 
-- **Node ≥ 22** runs `.tsi`. The loader is Node's module-hooks API, which Bun and Deno do not run — `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine (`bun install`, `bun run start`, `pnpm start`, `yarn start` — the `nola` bin is a Node script); only the runtime must be Node. Built output runs anywhere Node does.
+- **Node ≥ 22.18** runs `.tsi` — the first 22 release that loads plain `.ts` (`src/main.ts`) natively; an older 22 fails there with `ERR_UNKNOWN_FILE_EXTENSION` (see [Node loader](/docs/tooling/node-loader/#runtimes)). The loader is Node's module-hooks API, which Bun and Deno do not run — `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine (`bun install`, `bun run start`, `pnpm start`, `yarn start` — the `nola` bin is a Node script); only the runtime must be Node. Built output runs anywhere Node does.
 - **Server-only in v0.** A client bundle that imports `.tsi` fails the build with [`NOLA4001`](/docs/reference/error-codes/#nola4001); executing an ask in a browser is [`NOLA3013`](/docs/reference/error-codes/#nola3013). Move the import behind a server boundary (SSR entry, route handler, server action).
 
 ## Not restrictions

@@ -41,6 +41,30 @@ describe("scaffold", () => {
     expect(readme).toContain("# my-app");
   });
 
+  it("renders the VS Code next steps into src/main.ts when the editor was chosen", async () => {
+    for (const template of ["starter", "empty"]) {
+      const root = join(await tmp(), template);
+      await scaffold(root, { template, ide: "vscode" });
+      const main = await readFile(join(root, "src/main.ts"), "utf8");
+      expect(main, template).not.toContain("__NEXT_STEPS__");
+      expect(main, template).toMatch(/^\/\/ Next steps in VS Code/);
+      expect(main, template).toContain("F5");
+      expect(main, template).toContain("breakpoint");
+      expect(main, template).toContain("recommended");
+      expect(main, template).toContain(template === "starter" ? "src/person.tsi" : ".tsi");
+    }
+  });
+
+  it("renders editor-neutral next steps into src/main.ts without an editor", async () => {
+    const root = join(await tmp(), "plain");
+    await scaffold(root);
+    const main = await readFile(join(root, "src/main.ts"), "utf8");
+    expect(main).not.toContain("__NEXT_STEPS__");
+    expect(main).toMatch(/^\/\/ Next steps/);
+    expect(main).not.toContain("F5");
+    expect(main).toContain("https://nola.sh/docs/start/editor-setup/");
+  });
+
   it("accepts an explicit name and an existing EMPTY directory", async () => {
     const root = join(await tmp(), "dir");
     await mkdir(root);

@@ -14,6 +14,7 @@ import { readHomeConfig } from "./home-config.js";
 import { writeVscodeSetup } from "./ide.js";
 import { acquireKey, SignInRequiredError } from "./key.js";
 import { type Launcher, realLauncher } from "./launch.js";
+import { nodeVersionWarning } from "./node-version.js";
 import { openBrowser } from "./open-url.js";
 import { detectPackageManager, type PackageManager, packageManagerCommands } from "./package-manager.js";
 import { isProviderId, PROVIDERS, type ProviderId, providerById, providerIds } from "./providers.js";
@@ -419,6 +420,8 @@ export interface RunFlowOptions {
   open?: (url: string) => boolean;
   /** checkout root to relink a scaffold to after install; default NOLA_LINK_CHECKOUT env (null = off) */
   linkCheckout?: string | null;
+  /** the Node version to judge for the old-Node warning; default process.versions.node — tests inject one */
+  nodeVersion?: string;
 }
 
 /** The tracing suggestion every outro ends with; `npx nola-lang` works under every package manager (the docs' form). */
@@ -463,6 +466,9 @@ function nextSteps(
 
 /** How many trailing lines of a failed install's output the note shows. */
 const INSTALL_LOG_TAIL = 20;
+
+/** Every template's entry (builtin and curated examples alike) — what launch.json runs and VS Code opens. */
+const ENTRY_FILE = "src/main.ts";
 
 /** The last non-empty output line, colour codes stripped, trimmed to one spinner line. */
 export function lastOutputLine(output: string): string | undefined {
@@ -520,7 +526,10 @@ async function offerInstallAndOpen(
     const tail = stripVTControlCharacters(output).trim().split(/\r?\n/).slice(-INSTALL_LOG_TAIL).join("\n");
     prompter.note(`${tail ? `${tail}\n` : ""}Run ${cmd.install} yourself once the cause is fixed.`);
   }
-  const opened = await launcher.openVscode(dir);
+  // Land on the entry file, not an empty window: it opens with the next
+  // steps (F5, breakpoints, the extension) as its first lines.
+  const entry = existsSync(join(dir, ENTRY_FILE)) ? ENTRY_FILE : undefined;
+  const opened = await launcher.openVscode(dir, entry);
   if (opened === "not-found") {
     prompter.note(
       "VS Code's `code` command is not on PATH, so the folder was not opened. " +
@@ -586,6 +595,10 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
     }
   }
   if (interactive) prompter.intro?.(opts.intro ?? `nola v${await ownVersion()}`);
+  // Before anything else: an old Node (native .ts loading still behind a flag)
+  // gets the advice here, where it names the fix, not from `npm start`'s bare error.
+  const nodeWarning = nodeVersionWarning(opts.nodeVersion);
+  if (nodeWarning) prompter.note(nodeWarning);
   const pm = opts.packageManager ?? detectPackageManager();
 
   // Which key question to ask (spec 2026-09-04-cli-sign-in-design.md §5): signed in → account key; trial used here → sign in; else → trial.
@@ -666,7 +679,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       const grant = outcome.provider === "nola" ? await obtainTrial(prompter, opts, interactive) : null;
       // A nola choice without a key (declined sign-in, API failure) scaffolds the plain template — the note above says why.
       const provider: ProviderId = outcome.provider === "nola" ? (grant ? "nola" : "none") : outcome.provider;
-      const { files } = await scaffold(outcome.dir, { template: outcome.template, force: outcome.force, provider });
+      const { files } = await scaffold(outcome.dir, { template: outcome.template, force: outcome.force, provider, ide: outcome.ide });
       let trialWrote: string[] = [];
       if (grant) {
         const trial = await applyTrial(outcome.dir, { apiKey: grant.apiKey, hasConfig: false });

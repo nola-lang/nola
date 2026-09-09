@@ -361,6 +361,10 @@ describe("runFlow — editor step", () => {
     expect(code).toBe(0);
     expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
     expect(existsSync(join(dir, ".vscode", "extensions.json"))).toBe(true);
+    // the entry file greets the user with the VS Code next steps the launch config enables
+    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    expect(main).toContain("F5");
+    expect(main).not.toContain("__NEXT_STEPS__");
   });
 
   it("writes .vscode on add mode and reports existing files as skipped", async () => {
@@ -395,8 +399,8 @@ describe("runFlow — install + open VS Code step", () => {
           for (const chunk of opts.output ?? ["\nadded 12 packages in 3s\n"]) onOutput(chunk);
           return opts.installExit ?? 0;
         },
-        openVscode: async (dir: string) => {
-          calls.push(`code:${basename(dir)}`);
+        openVscode: async (dir: string, entry?: string) => {
+          calls.push(`code:${basename(dir)}${entry ? `:${entry}` : ""}`);
           return opts.code ?? ("opened" as const);
         },
       },
@@ -409,7 +413,7 @@ describe("runFlow — install + open VS Code step", () => {
     const { calls, launcher } = recordingLauncher();
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, packageManager: "pnpm" });
     expect(code).toBe(0);
-    expect(calls).toEqual(["install:pnpm:app", "code:app"]);
+    expect(calls).toEqual(["install:pnpm:app", "code:app:src/main.ts"]);
     // the install runs under a spinner: title, the latest output line, then the success line
     expect(p.notes).toContain("progress: Installing dependencies (pnpm install)");
     expect(p.notes).toContain("progress update: added 12 packages in 3s");
@@ -515,7 +519,7 @@ describe("runFlow — install + open VS Code step", () => {
       output: ["npm ERR! code E404\n", "npm ERR! 404 Not Found - GET https://registry.npmjs.org/nope\n"],
     });
     await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
-    expect(calls).toEqual(["install:npm:app", "code:app"]);
+    expect(calls).toEqual(["install:npm:app", "code:app:src/main.ts"]);
     const notes = p.notes.join("\n");
     expect(p.notes).toContain("progress fail: npm install failed (exit code 1)");
     expect(notes).toContain("npm ERR! code E404\nnpm ERR! 404 Not Found");
@@ -1252,5 +1256,34 @@ describe("runFlow with the nola provider", () => {
     expect(await noteFor(49832)).toContain("try again in about 14 hours");
     expect(await noteFor(300)).toContain("try again in about 5 minutes");
     expect(await noteFor(3600)).toContain("try again in about 1 hour");
+  });
+});
+
+describe("runFlow: old-Node warning", () => {
+  it("warns at the top of a scaffold when the running Node cannot load .ts natively", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({});
+    const code = await runFlow({ dir, template: "empty" }, { interactive: false, prompter: p, nodeVersion: "22.6.0" });
+    expect(code).toBe(0);
+    const warning = p.notes.find((n) => n.includes("ERR_UNKNOWN_FILE_EXTENSION"));
+    expect(warning).toContain("Node 22.6.0");
+    expect(warning).toContain("--experimental-strip-types");
+    expect(p.notes.indexOf(warning as string)).toBe(0);
+  });
+
+  it("warns on the add path too (nola init in an existing project)", async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "existing", version: "0.0.0", type: "module" }));
+    const p = scripted({});
+    const code = await runFlow({ add: true, dir }, { interactive: false, prompter: p, nodeVersion: "22.12.0" });
+    expect(code).toBe(0);
+    expect(p.notes.some((n) => n.includes("Node 22.12.0"))).toBe(true);
+  });
+
+  it("stays silent on a supported Node", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({});
+    await runFlow({ dir, template: "empty" }, { interactive: false, prompter: p, nodeVersion: "22.18.0" });
+    expect(p.notes.some((n) => n.includes("ERR_UNKNOWN_FILE_EXTENSION"))).toBe(false);
   });
 });
