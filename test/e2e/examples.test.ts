@@ -172,6 +172,34 @@ describe.each(EXAMPLES)("examples/$dir end-to-end", ({ dir, tsi, expected }) => 
   });
 });
 
+// triage-ticket ships with `model: typesafe()` — the vendor IS the example, so
+// there is no mock config to run offline. Build and check need no provider;
+// the run is gated on the key (the reverse of the OpenAI smoke below).
+describe("examples/triage-ticket end-to-end (typesafe provider)", () => {
+  const cwd = join(ROOT, "examples", "triage-ticket");
+
+  it("nola build emits js + declarations into dist, never into src", { timeout: 120_000 }, async () => {
+    await capture(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd });
+    expect(existsSync(join(cwd, "dist", "src", "triage.tsi.js"))).toBe(true);
+    expect(existsSync(join(cwd, "dist", "src", "triage.tsi.d.ts"))).toBe(true);
+    expect(existsSync(join(cwd, "src", "triage.d.tsi.ts"))).toBe(false);
+  });
+
+  it("nola check passes on the example (main.ts included — the vue-tsc role)", { timeout: 120_000 }, async () => {
+    const stdout = await capture(process.execPath, [CLI, "check", "."], { cwd });
+    expect(stdout).toContain("no errors");
+  });
+
+  it.skipIf(!process.env.TYPESAFE_API_KEY)("nola run triages the ticket through Jev", { timeout: 180_000 }, async () => {
+    const stdout = await capture(process.execPath, [CLI, "run", "src/main.ts"], { cwd });
+    const result = JSON.parse(stdout.trim()) as { department: string; urgent: boolean; priority: number; refundRequested: boolean };
+    expect(["billing", "shipping", "account", "other"]).toContain(result.department);
+    expect(typeof result.urgent).toBe("boolean");
+    expect([1, 2, 3]).toContain(result.priority);
+    expect(typeof result.refundRequested).toBe("boolean");
+  });
+});
+
 describe("real OpenAI smoke (extract-person)", () => {
   it.skipIf(!process.env.OPENAI_API_KEY)("extracts a typed person", { timeout: 180_000 }, async () => {
     // e2e-owned override: the example's committed config is mock-only, so the

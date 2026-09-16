@@ -1,6 +1,6 @@
 import { isPlatformModel } from "@nola-lang/core";
 import * as pkg from "@nola-lang/providers";
-import { mockProvider, openai, providers } from "@nola-lang/providers";
+import { mockProvider, openai, providers, typesafe } from "@nola-lang/providers";
 import { describe, expect, it } from "vitest";
 import { requestOf } from "./helpers/model.js";
 
@@ -19,6 +19,21 @@ describe("@nola-lang/providers surface", () => {
     expect(providers.openai).toBe(openai);
     expect(providers.mock).toBe(mockProvider);
     expect(providers.mock(["x"]).name).toBe("mock");
+  });
+
+  it("exports typesafe as a bare name and in the namespace map; a bare string is its model", async () => {
+    expect(typeof typesafe).toBe("function");
+    expect(providers.typesafe).toBe(typesafe);
+    expect(typesafe().name).toBe("typesafe");
+    let body: { model: string } | undefined;
+    const fn = (async (_url: unknown, init: unknown) => {
+      body = JSON.parse(String((init as RequestInit).body)) as { model: string };
+      return new Response(JSON.stringify({ answers: { value: { type: "noul", noul: 1 } } }));
+    }) as typeof globalThis.fetch;
+    // `typesafe("jev-3")` has no fetch slot; the same shorthand goes through the options form for the wire check.
+    await providers.typesafe({ model: "jev-3", apiKey: "k", fetch: fn }).complete(requestOf({ schema: { type: "boolean" } }));
+    expect(body?.model).toBe("jev-3");
+    expect(typesafe("jev-3").name).toBe("typesafe");
   });
 
   it("does not export nola() — the native provider lives in @nola-lang/runtime, no alias here", () => {

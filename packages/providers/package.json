@@ -1,12 +1,13 @@
 {
   "name": "@nola-lang/providers",
-  "version": "0.1.8",
-  "description": "Nola bring-your-own LLM providers: openai, anthropic, google, mock, resilience combinators, record/replay",
+  "version": "0.1.9",
+  "description": "Nola bring-your-own LLM providers: openai, anthropic, google, typesafe, mock, resilience combinators, record/replay",
   "keywords": [
     "nola",
     "llm",
     "ai",
     "openai",
+    "typesafe",
     "providers"
   ],
   "license": "Apache-2.0",
@@ -36,8 +37,8 @@
     "!dist/**/*.map"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.8",
-    "@nola-lang/core": "0.1.8"
+    "@nola-lang/ast": "0.1.9",
+    "@nola-lang/core": "0.1.9"
   },
   "engines": {
     "node": ">=22"

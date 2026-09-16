@@ -4,7 +4,8 @@ Each example is a standalone npm workspace with the same layout: `src/*.tsi`
 (the Nola source), `src/main.ts` (a plain TypeScript consumer run via `npx
 nola run src/main.ts`), and a `nola.config.ts` that uses the deterministic
 mock provider so the example runs without an API key (switch to a real
-provider by editing the config — the comment inside shows how).
+provider by editing the config — the comment inside shows how). The one
+exception is `triage-ticket`, whose config IS the vendor it demonstrates.
 
 Each example is a standalone project built around one canonical
 LLM-programming task (see its README for what it demonstrates).
@@ -24,6 +25,7 @@ LLM-programming task (see its README for what it demonstrates).
 | [recursive-tree](recursive-tree/) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively |
 | [prompt-template](prompt-template/) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor |
 | [file-ticket](file-ticket/) | Call intents: the model fills a function's arguments, sigil-less and hint forms |
+| [triage-ticket](triage-ticket/) | Ticket triage on typesafe.ai's Jev through `typesafe()`: literal unions and booleans as typed questions — the one example whose committed config names a live vendor (`TYPESAFE_API_KEY`), so `npm create nola` skips the provider question for it |
 
 `_playground/` is an internal debugging sandbox, not a maintained example.
 

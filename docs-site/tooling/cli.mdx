@@ -33,7 +33,7 @@ Scaffolds a new project or retrofits an existing one — the same interactive fl
 
 | Flag | Effect |
 | --- | --- |
-| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`, `file-ticket`) |
+| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`, `file-ticket`, `triage-ticket`). `triage-ticket` ships with `model: typesafe()`, so the provider question is skipped for it and the outro says to set `TYPESAFE_API_KEY` |
 | `--add` | retrofit the project in `dir` (writes `nola.config.ts`, merges the packages into `package.json`) — see [Add Nola to an existing project](/docs/start/add-to-existing-project/); contradictory with `--template` |
 | `--ide vscode` | write `.vscode/launch.json` and `.vscode/extensions.json` |
 | `--agents <list>` | write the agent skill files into the project (see `nola skill install`) |

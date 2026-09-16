@@ -10,7 +10,7 @@ import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 `defineConfig`, the `nola` namespace (`nola.infer()`, `nola.tracer()`),
 `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`.
 Everything bring-your-own — vendor factories (`openai`, `anthropic`,
-`google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`,
+`google`, `typesafe`, `mockProvider`), resilience combinators (`withRetry`, `fallback`,
 `roundRobin`, `constant`, `exponential`) and record/replay (`record`,
 `replay`) — comes from `@nola-lang/providers`.
 
@@ -39,6 +39,13 @@ export default defineConfig({
 
 `openai({ model })` requires an explicit model; optional fields are `apiKey`,
 `apiKeyEnv` (default `"OPENAI_API_KEY"`), `baseUrl` and `fetch`.
+
+`typesafe()` (typesafe.ai's Jev, reads `TYPESAFE_API_KEY`, model defaults to
+`jev-latest`) is NOT a chat model: it serves only asks whose output type is a
+string or number literal union, a boolean, or a flat object of those, and
+fails definitively before the network on anything else. Use it behind
+`fallback([typesafe(), openai({ model: "gpt-5-mini" })])` so other asks
+escalate to a general model. Never scaffold it as the only model.
 
 `nola` is a NAMESPACE, not a function (`nola({})` is a type error).
 `nola.infer()` is the platform model — the Nola platform (api.nola.sh, or a
@@ -203,11 +210,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.8",
-    "@nola-lang/runtime": "^0.1.8"
+    "@nola-lang/providers": "^0.1.9",
+    "@nola-lang/runtime": "^0.1.9"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.8",
+    "nola-lang": "^0.1.9",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

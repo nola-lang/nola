@@ -125,7 +125,9 @@ const EDITOR_OPTIONS: PrompterOption[] = [
 ];
 
 function templateOption(t: TemplateDef): PrompterOption {
-  return { value: t.name, label: t.source === "example" ? `example: ${t.name}` : t.name, hint: t.label };
+  // a pinned template names its vendor in the row itself: `example: triage-ticket (typesafe.ai)`
+  const vendor = t.provider ? ` (${t.provider.label})` : "";
+  return { value: t.name, label: t.source === "example" ? `example: ${t.name}${vendor}` : `${t.name}${vendor}`, hint: t.label };
 }
 
 /**
@@ -216,10 +218,12 @@ function flaggedProvider(input: FlowInput): ProviderId | undefined {
  * one Enter away, Ctrl+C cancels). The key itself is minted later, on the
  * stored session, after every question — nothing is consumed by a cancel.
  */
-async function resolveProvider(input: FlowInput, prompter: Prompter): Promise<ProviderId | null> {
+async function resolveProvider(input: FlowInput, prompter: Prompter, pinned = false): Promise<ProviderId | null> {
   const flagged = flaggedProvider(input);
   if (flagged !== undefined) return flagged;
-  if (!input.interactive) return "none";
+  // A template whose own config names its vendor (triage-ticket → typesafe())
+  // is not asked: "none" keeps that config, and the outro names its env var.
+  if (pinned || !input.interactive) return "none";
   const path = input.keyPath ?? { kind: "trial" };
   while (true) {
     const choice = await prompter.select(PROVIDER_QUESTION, providerOptions(path));
@@ -235,8 +239,9 @@ async function resolveExtras(
   input: FlowInput,
   prompter: Prompter,
   dir: string,
+  pinnedProvider = false,
 ): Promise<{ provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[] } | null> {
-  const provider = await resolveProvider(input, prompter);
+  const provider = await resolveProvider(input, prompter, pinnedProvider);
   if (provider === null) return null;
   const setup = await resolveSetup(input, prompter, dir);
   return setup === null ? null : { provider, ...setup };
@@ -340,7 +345,7 @@ export async function resolveScaffoldOptions(input: FlowInput, prompter: Prompte
     }
   }
 
-  const extras = await resolveExtras(input, prompter, dir);
+  const extras = await resolveExtras(input, prompter, dir, templateByName(template)?.provider !== undefined);
   if (extras === null) return { kind: "cancelled" };
   return { kind: "scaffold", dir, template, force, ...extras };
 }
@@ -443,7 +448,10 @@ function nextSteps(
   grant: KeyGrant | null = null,
 ): string {
   const cmd = packageManagerCommands(pm);
-  const vendorEnv = providerById(outcome.provider)?.envVar;
+  // a chosen vendor's env var, else the one the template's own config reads (a pinned template under "none")
+  const vendorEnv =
+    providerById(outcome.provider)?.envVar ??
+    (outcome.provider === "none" ? templateByName(outcome.template)?.provider?.envVar : undefined);
   const startNote = grant
     ? grant.source === "trial"
       ? "25 free Nola runs — key in .env"

@@ -106,6 +106,17 @@ export async function typedConsumer(): Promise<string> {
 `,
   },
   {
+    dir: "triage-ticket",
+    consumer: `import { type Priority, triageTicket } from "./triage.tsi";
+
+export async function typedConsumer(): Promise<Priority> {
+  const triage = await triageTicket("Charged twice, refund me now.");
+  // department narrows against the union; priority is the number literal union, not number
+  return triage.department === "billing" && triage.urgent ? triage.priority : 1;
+}
+`,
+  },
+  {
     dir: "file-ticket",
     consumer: `import { fileTicket, fileTicketCarefully } from "./tickets.tsi";
 

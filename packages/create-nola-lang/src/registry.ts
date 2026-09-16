@@ -9,6 +9,13 @@ export interface TemplateDef {
   /** one-line menu description */
   label: string;
   source: "builtin" | "example";
+  /**
+   * The vendor the template's OWN config names. The flow skips the provider
+   * question for such a template (its config is the point of the example),
+   * the menu row carries `(<label>)`, and the outro names the env var; an
+   * explicit --provider flag still wins.
+   */
+  provider?: { label: string; envVar: string };
 }
 
 export const TEMPLATES: readonly TemplateDef[] = [
@@ -20,6 +27,12 @@ export const TEMPLATES: readonly TemplateDef[] = [
   { name: "classify-message", label: "closed label sets: union alias, string enum, inline union", source: "example" },
   { name: "chain-of-thought", label: "two asks sharing accumulating context", source: "example" },
   { name: "research-notes", label: "TS control flow orchestrating nola functions", source: "example" },
+  {
+    name: "triage-ticket",
+    label: "ticket triage: literal unions and booleans as typed questions; no provider question",
+    source: "example",
+    provider: { label: "typesafe.ai", envVar: "TYPESAFE_API_KEY" },
+  },
 ];
 
 export function templateByName(name: string): TemplateDef | undefined {

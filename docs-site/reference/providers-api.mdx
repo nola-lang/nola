@@ -1,6 +1,6 @@
 ---
 title: Providers API
-description: "nola.infer() and nola.tracer() from the runtime; openai, anthropic, google, mockProvider, combinators and record/replay from the providers package."
+description: "nola.infer() and nola.tracer() from the runtime; openai, anthropic, google, typesafe, mockProvider, combinators and record/replay from the providers package."
 sidebar:
   order: 50
 ---
@@ -24,18 +24,43 @@ export default defineConfig({
 
 ## Factories
 
-`openai(options)`, `anthropic(options)`, `google(options)` — each returns an `LanguageModel`. A bare model string is shorthand for `{ model }`.
+`openai(options)`, `anthropic(options)`, `google(options)`, `typesafe(options)` — each returns a `LanguageModel`. A bare model string is shorthand for `{ model }`.
 
-| Option | Type | openai | anthropic | google |
-| --- | --- | --- | --- | --- |
-| `model` | `string` (required) | ✓ | ✓ | ✓ |
-| `apiKey` | `string` | ✓ | ✓ | ✓ |
-| `apiKeyEnv` | `string` — default | `OPENAI_API_KEY` | `ANTHROPIC_API_KEY` | `GEMINI_API_KEY` |
-| `baseUrl` | `string` | ✓ (any Chat-Completions dialect) | ✓ | ✓ |
-| `fetch` | `typeof fetch` | ✓ | ✓ | ✓ |
-| `maxOutputTokens` | `number` | — | ✓ | — |
+| Option | Type | openai | anthropic | google | typesafe |
+| --- | --- | --- | --- | --- | --- |
+| `model` | `string` | required | required | required | default `jev-latest` |
+| `apiKey` | `string` | ✓ | ✓ | ✓ | ✓ |
+| `apiKeyEnv` | `string` — default | `OPENAI_API_KEY` | `ANTHROPIC_API_KEY` | `GEMINI_API_KEY` | `TYPESAFE_API_KEY` |
+| `baseUrl` | `string` | ✓ (any Chat-Completions dialect) | ✓ | ✓ | ✓ |
+| `fetch` | `typeof fetch` | ✓ | ✓ | ✓ | ✓ |
+| `maxOutputTokens` | `number` | — | ✓ | — | — |
 
-Keys are read lazily at the first request. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.mock`.
+Keys are read lazily at the first request. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`, `TypesafeOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.typesafe`, `providers.mock`.
+
+## typesafe
+
+`typesafe()` talks to typesafe.ai's System One API (model Jev), which is not a chat model: it answers typed questions about a state with calibrated probabilities. The factory maps an ask's output type onto those questions, so it serves exactly these output types:
+
+- a string literal union or enum (`"billing" | "shipping"`) — one choice question, one option per value
+- a number literal union (`1 | 2 | 3`) — a choice question, decoded back to the number
+- `boolean` — a yes/no question, `true` at probability ≥ 0.5
+- a flat object whose properties are all of the above — one request, one question per property
+
+Anything else — free-form strings, `Date`, numbers with or without bounds, arrays, nested objects, nullable unions — fails before the network with a definitive error naming the property. Pair it with a general model through `fallback` so those asks escalate:
+
+```ts
+import { defineConfig } from "@nola-lang/runtime";
+import { fallback, openai, typesafe } from "@nola-lang/providers";
+
+export default defineConfig({
+  model: {
+    default: openai("gpt-5-mini"),
+    triage: fallback([typesafe(), openai("gpt-5-mini")]),   // reads TYPESAFE_API_KEY
+  },
+});
+```
+
+The system text and the rendered request travel as the state; the output type becomes the questions; the winning labels come back as the value. Probabilities and confidence are not surfaced yet, and `.withParams()` knobs have no equivalent on this wire and are ignored.
 
 ## nola
 

@@ -70,6 +70,33 @@ function scripted(script: {
   };
 }
 
+/** Records every prompt (message|initial) the flow asks, in order. */
+function recording(p: Prompter): string[] {
+  const asked: string[] = [];
+  const { text, select, confirm, multiselect, groupMultiselect } = p;
+  p.text = (m, i) => {
+    asked.push(`${m}|${i}`);
+    return text(m, i);
+  };
+  p.select = (m, o) => {
+    asked.push(m);
+    return select(m, o);
+  };
+  p.confirm = (m, i) => {
+    asked.push(`${m}|${i}`);
+    return confirm(m, i);
+  };
+  p.multiselect = (m, o, i) => {
+    asked.push(`${m}|${i.join(",")}`);
+    return multiselect(m, o, i);
+  };
+  p.groupMultiselect = (m, g, i) => {
+    asked.push(`${m}|${g.map((x) => x.label).join("+")}|${i.join(",")}`);
+    return groupMultiselect(m, g, i);
+  };
+  return asked;
+}
+
 describe("resolveScaffoldOptions", () => {
   it("prompts name then template when nothing is given", async () => {
     const p = scripted({ text: ["my-proj"], select: ["empty"], groupMultiselect: [[]] , confirm: [true] });
@@ -785,31 +812,6 @@ const sessionOf = async (home: string) => JSON.parse(await readFile(join(home, "
 
 describe("wizard order", () => {
   /** Every prompt in the order it was shown, with the preselection where one exists. */
-  function recording(p: Prompter): string[] {
-    const asked: string[] = [];
-    const { text, select, confirm, multiselect, groupMultiselect } = p;
-    p.text = (m, i) => {
-      asked.push(`${m}|${i}`);
-      return text(m, i);
-    };
-    p.select = (m, o) => {
-      asked.push(m);
-      return select(m, o);
-    };
-    p.confirm = (m, i) => {
-      asked.push(`${m}|${i}`);
-      return confirm(m, i);
-    };
-    p.multiselect = (m, o, i) => {
-      asked.push(`${m}|${i.join(",")}`);
-      return multiselect(m, o, i);
-    };
-    p.groupMultiselect = (m, g, i) => {
-      asked.push(`${m}|${g.map((x) => x.label).join("+")}|${i.join(",")}`);
-      return groupMultiselect(m, g, i);
-    };
-    return asked;
-  }
 
   it("asks name, template, the inference provider, the setup gate, then ONE setup list (editor + agents, VS Code and both skill copies preselected)", async () => {
     const p = scripted({ text: ["app"], select: ["starter", "nola"], groupMultiselect: [["vscode", "claude"]], confirm: [true] });
@@ -1287,5 +1289,55 @@ describe("runFlow: old-Node warning", () => {
     const p = scripted({});
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: p, nodeVersion: "22.18.0" });
     expect(p.notes.some((n) => n.includes("ERR_UNKNOWN_FILE_EXTENSION"))).toBe(false);
+  });
+});
+
+describe("a template that pins its vendor (triage-ticket)", () => {
+  it("skips the provider question and keeps the template's own config (provider none)", async () => {
+    const p = scripted({ select: ["triage-ticket"], confirm: [false] });
+    const asked = recording(p);
+    const out = await resolveScaffoldOptions({ dir: "d", interactive: true }, p);
+    expect(asked).toEqual(["Select a template:", `${SETUP_QUESTION}|true`]);
+    expect(out).toEqual({
+      kind: "scaffold",
+      dir: "d",
+      template: "triage-ticket",
+      force: false,
+      provider: "none",
+      ide: "none",
+      agents: [],
+    });
+  });
+
+  it("its menu row names the vendor: `example: triage-ticket (typesafe.ai)`; the other rows are unchanged", async () => {
+    const p = scripted({ select: ["triage-ticket"], confirm: [false] });
+    const shown: Record<string, PrompterOption[]> = {};
+    const select = p.select;
+    p.select = (m, o) => {
+      shown[m] = o;
+      return select(m, o);
+    };
+    await resolveScaffoldOptions({ dir: "d", interactive: true }, p);
+    const rows = shown["Select a template:"]?.map((o) => o.label) ?? [];
+    expect(rows).toContain("example: triage-ticket (typesafe.ai)");
+    expect(rows).toContain("example: classify-message");
+    expect(rows[0]).toBe("starter");
+  });
+
+  it("an explicit --provider flag still wins over the pin", async () => {
+    const out = await resolveScaffoldOptions(
+      { dir: "d", interactive: false, template: "triage-ticket", provider: "anthropic" },
+      scripted({}),
+    );
+    expect(out).toMatchObject({ kind: "scaffold", template: "triage-ticket", provider: "anthropic" });
+  });
+
+  it("runFlow copies the example's typesafe config verbatim and the outro names TYPESAFE_API_KEY", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({});
+    expect(await runFlow({ dir, template: "triage-ticket" }, { interactive: false, prompter: p, home: await tmp() })).toBe(0);
+    expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain("model: typesafe()");
+    expect(existsSync(join(dir, "nola.replay.jsonl"))).toBe(false);
+    expect(p.notes.at(-1)).toContain("npm start              # set TYPESAFE_API_KEY in .env first");
   });
 });

@@ -1,0 +1,17 @@
+export type Department = "billing" | "shipping" | "account" | "other";
+export type Priority = 1 | 2 | 3;
+
+export interface Triage {
+  /** Which team owns this ticket? */
+  department: Department;
+  /** Does the customer express urgency? */
+  urgent: boolean;
+  /** 1 = low, 3 = high */
+  priority: Priority;
+  /** Is the customer asking for a refund? */
+  refundRequested: boolean;
+}
+
+export infer function triageTicket(.ticket: string) {
+  return ask ..`triage the support ticket`<Triage>;
+}

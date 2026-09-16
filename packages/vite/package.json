@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/vite",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Vite plugin for Nola (.tsi)",
   "keywords": [
     "nola",
@@ -36,7 +36,7 @@
     "!dist/**/*.map"
   ],
   "dependencies": {
-    "@nola-lang/unplugin": "0.1.8"
+    "@nola-lang/unplugin": "0.1.9"
   },
   "engines": {
     "node": ">=22"

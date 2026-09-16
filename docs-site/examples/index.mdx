@@ -1,11 +1,11 @@
 ---
 title: Examples
-description: Eleven runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
+description: Twelve runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
 sidebar:
   order: 0
 ---
 
-The repository ships eleven standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key.
+The repository ships twelve standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key, except `triage-ticket`, whose config names the vendor it demonstrates.
 
 | Example | Demonstrates | Scaffold |
 | --- | --- | --- |
@@ -20,6 +20,7 @@ The repository ships eleven standalone example projects, each built around one c
 | [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
 | [prompt-template](https://github.com/nola-lang/nola/tree/main/examples/prompt-template) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor | — |
 | [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` |
+| [triage-ticket](/docs/examples/triage-ticket/) | Ticket triage on typesafe.ai's Jev: literal unions and booleans as typed questions | `npm create nola my-app -- --template triage-ticket` (skips the provider question; needs `TYPESAFE_API_KEY`) |
 
 ## Running an example
 
