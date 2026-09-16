@@ -2,7 +2,7 @@ import { type JsonSchema, Site } from "@nola-lang/core";
 import { JsonInference } from "../../ask/inference-json.js";
 import { wireSchema } from "../../ask/wire-schema.js";
 import { type Frame, type NolaRuntime, nolaRuntime } from "../../runtime/index.js";
-import { InferType } from "../../types/infer-type.js";
+import type { TypeCarrier } from "../../types/infer-type.js";
 import { ExecutableIntent } from "../executable-intent.js";
 import type { Intent, IntentOptions } from "../intent.js";
 import { ExtractContext, type ExtractIntentParams } from "./extract-context.js";
@@ -19,15 +19,14 @@ export class ExtractIntent<T = unknown> extends ExecutableIntent<T, ExtractConte
     return new ExtractIntent<T>(this.inferContext.data, this.runtime, { ...this.options, ...patch });
   }
 
+  /** The carrier this extractor validates against (undefined for the raw-JsonSchema seam); call intents combine slot carriers into one ask. */
+  slotType(): TypeCarrier<unknown> | undefined {
+    return this.inferContext.outputType();
+  }
+
   /** The derived wire contract — call intents combine slot specs into one ask. */
   get spec(): { instruction: string; schema: JsonSchema } {
     return { instruction: this.inferContext.data.instruction, schema: wireSchema(this.inferContext.data.type) };
-  }
-
-  /** Post-validation wire→value transform (e.g. ISO strings → Date); call-intent slots use it too. */
-  reviveValue(value: unknown): unknown {
-    const s = this.inferContext.data.type;
-    return InferType.isInferType(s) ? s.revive(value) : value;
   }
 
   protected async execute(frame: Frame): Promise<T> {
@@ -41,7 +40,7 @@ export class ExtractIntent<T = unknown> extends ExecutableIntent<T, ExtractConte
       context,
     }).infer();
 
-    const value = this.reviveValue(raw);
+    const value = raw; // already revived: the carrier validator checks and revives in one pass
 
     frame.history.push({
       prompt: context.data.instruction,

@@ -76,20 +76,19 @@ describe("scaffolded project", () => {
     }
     const launch = JSON.parse(readFileSync(join(dir, ".vscode", "launch.json"), "utf8"));
     expect(launch.configurations[0].runtimeArgs).toContain("nola-lang/register");
-    for (const f of [
-      ".claude/skills/nola/SKILL.md",
-      ".cursor/rules/nola.mdc",
-      ".github/instructions/nola.instructions.md",
-      "AGENTS.md",
-    ]) {
+    for (const f of [".agents/skills/nola/SKILL.md", ".claude/skills/nola/SKILL.md", "AGENTS.md"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
-    // Adapters are self-contained copies, never pointers into node_modules.
+    // The retired per-agent adapters are gone: one skill directory serves every agent.
+    expect(existsSync(join(dir, ".cursor"))).toBe(false);
+    expect(existsSync(join(dir, ".github"))).toBe(false);
+    // Self-contained copies, never pointers into node_modules.
     const agentsMd = readFileSync(join(dir, "AGENTS.md"), "utf8");
     expect(agentsMd).toContain("Where Nola diverges from TypeScript");
     expect(agentsMd).toContain("<!-- nola-skill v");
     expect(agentsMd).not.toContain("node_modules/nola-lang/skills");
     for (const ref of ["syntax.md", "patterns.md", "config.md", "pitfalls.md"]) {
+      expect(existsSync(join(dir, ".agents", "skills", "nola", "references", ref)), ref).toBe(true);
       expect(existsSync(join(dir, ".claude", "skills", "nola", "references", ref)), ref).toBe(true);
     }
     linkDeps(dir);
@@ -152,28 +151,34 @@ describe("scaffolded project", () => {
     expect(again).toContain("already has Nola");
   });
 
-  it("nola skill install writes adapters into an existing project", async () => {
+  it("nola skill install writes the skill into an existing project", async () => {
     const dir = await mkdtemp(join(tmpdir(), "nola-skill-e2e-"));
     writeFileSync(join(dir, "package.json"), '{"name":"existing"}\n');
-    const out = await run([NOLA, "skill", "install", "--agents", "agents-md,claude"], dir);
+    const out = await run([NOLA, "skill", "install", "--agents", "agents-md,claude,universal"], dir);
     expect(out).toContain("Installed agent skill files");
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
+    expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, ".claude", "skills", "nola", "SKILL.md"))).toBe(true);
     // idempotent second run: same version, so nothing is rewritten
-    const again = await run([NOLA, "skill", "install", "--agents", "agents-md,claude"], dir);
+    const again = await run([NOLA, "skill", "install", "--agents", "agents-md,claude,universal"], dir);
     expect(again).toContain("already exists");
     expect(again).toContain("is up to date");
 
-    // a stale stamp is held back until --force
+    // a stale stamp is held back until --force; a stamped legacy adapter goes with it
+    const skill = join(dir, ".agents", "skills", "nola", "SKILL.md");
+    writeFileSync(skill, "---\nname: nola\n---\n<!-- nola-skill v0.0.1 -->\nstale\n");
     const rule = join(dir, ".cursor", "rules", "nola.mdc");
     mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
-    writeFileSync(rule, "<!-- nola-skill v0.0.1 -->\nstale\n");
-    const held = await run([NOLA, "skill", "install", "--agents", "cursor"], dir);
+    writeFileSync(rule, "<!-- nola-skill v0.0.1 -->\nold adapter\n");
+    const held = await run([NOLA, "skill", "install", "--agents", "universal"], dir);
     expect(held).toContain("--force");
-    expect(readFileSync(rule, "utf8")).toContain("stale");
-    const forced = await run([NOLA, "skill", "install", "--agents", "cursor", "--force"], dir);
+    expect(readFileSync(skill, "utf8")).toContain("stale");
+    expect(existsSync(rule)).toBe(true);
+    const forced = await run([NOLA, "skill", "install", "--agents", "universal", "--force"], dir);
     expect(forced).toContain("Installed agent skill files");
-    expect(readFileSync(rule, "utf8")).toContain("Where Nola diverges from TypeScript");
+    expect(forced).toContain("Removed superseded: .cursor/rules/nola.mdc");
+    expect(readFileSync(skill, "utf8")).toContain("Where Nola diverges from TypeScript");
+    expect(existsSync(rule)).toBe(false);
   });
 
   it("trial → sign-in journey against a local stub (API + tenant): one anonymous trial per machine, then account keys", async () => {

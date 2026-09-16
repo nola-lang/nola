@@ -113,7 +113,31 @@ export infer function extractPerson(.text: string) {
 }
 ```
 
-How that works (companion modules) and the rules around it are on [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file).
+How that works (the view of `models.ts`) and the rules around it are on [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file); the same derived type is importable as a value from plain TypeScript — see [Types as values](/docs/language/types-as-values/).
+
+## 5. Constraints
+
+A type says `string`; a JSDoc tag says which strings. Name the tag like the JSON Schema keyword and put it on the member: the model sees the keyword in the schema, and a reply that breaks it is corrected with the exact message.
+
+```tsi
+// src/signup.tsi
+export interface Signup {
+  /** @format email */
+  email: string;
+  /** the public handle @minLength 3 @pattern ^[a-z0-9_]+$ */
+  handle: string;
+  /** @integer @minimum 13 */
+  age: number;
+  /** @minItems 1 @uniqueItems */
+  interests: string[];
+}
+
+export infer function parseSignup(.text: string) {
+  return ask ..`the signup form described in the text`<Signup>;
+}
+```
+
+A description and tags share one comment. The full keyword list, the formats and the rules are in [Constraints](/docs/reference/schema-derivation/#constraints); a tag on the wrong kind of type is [`NOLA2012`](/docs/reference/error-codes/#nola2012) before anything runs.
 
 ## Mixing in plain TypeScript
 

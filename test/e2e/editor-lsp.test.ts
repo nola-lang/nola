@@ -221,8 +221,11 @@ describe("LSP over examples/cross-file-types", () => {
     ].join("\n");
     const uri = pathToFileURL(join(FIXTURE, "src", "unimported.tsi")).href;
     await server.openInMemoryDocument(uri, "nola", content);
-    const diags = await waitForDiagnostics(uri, (d) => d.length > 0);
-    console.log("DIAGS", JSON.stringify(diags));
+    // Volar publishes per plugin as each finishes: the nola pass can land
+    // before TypeScript's semantic pass, and a code-action request carrying
+    // only NOLA2002 gets no import fix (the fix is computed for TS2304). Wait
+    // for the TS diagnostic itself, as VS Code's Ctrl+. would carry it.
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 2304));
 
     // Mimic VS Code's Ctrl+.: request at the Person range with the published
     // diagnostics that overlap it as context.
@@ -284,6 +287,48 @@ describe("LSP over examples/cross-file-types", () => {
     }
     // the phantom type anchor must not surface as a bracket completion either
     expect(labels.filter((l) => l.includes("IntentOutput"))).toEqual([]);
+  });
+
+  it("completion on a type value shows only the public InferType surface", async () => {
+    // emit 14: `export interface User` also exports the value `User`, cast to
+    // `InferType<User>` — an interface of exactly four members. The runtime's
+    // carrier class (brand, node, describe/refName/revive/toTypeText/…) is what
+    // the extractor path uses and must never reach the user's suggestion widget.
+    const content = ["export interface User {", "  name: string;", "}", "User.", ""].join("\n");
+    const uri = pathToFileURL(join(FIXTURE, "src", "typevalue.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const labels = await completionOnDotTrigger(uri, positionOf(content, "User.", "User.".length));
+    expect(labels).toEqual(expect.arrayContaining(["toJsonSchema", "validate", "parse", "~standard"]));
+    for (const internal of [
+      "__nolaTypeBrand",
+      "_node",
+      "_description",
+      "describe",
+      "refName",
+      "revive",
+      "toNativeType",
+      "toString",
+      "toTypeText",
+    ]) {
+      expect(labels).not.toContain(internal);
+    }
+  });
+
+  it("an underivable type publishes a nola diagnostic from the lazy checker pass (emit 15)", async () => {
+    // The embedded code is phase-1 output (inert accessors): derivation runs
+    // on the diagnostics pass against the live program and lands at the
+    // source range of the type node.
+    const content = "export infer function f(.x: Map<string, number>) {\n  return ask ..`y`<Set<string>>;\n}\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "exotic.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.source === "nola" && x.code === "NOLA2002"));
+    const extract = diags.find((x) => x.code === "NOLA2002");
+    expect(extract?.message).toContain("Set<string>");
+    expect(extract?.range.start).toEqual(positionOf(content, "Set<string>"));
+    expect(extract?.range.end).toEqual(positionOf(content, "Set<string>", "Set<string>".length));
+    const context = diags.find((x) => x.code === "NOLA2008");
+    expect(context?.message).toContain("Map<string, number>");
+    expect(context?.range.start).toEqual(positionOf(content, "Map<string, number>"));
   });
 
   // Typing `..` used to pull the entire global scope into the suggestion

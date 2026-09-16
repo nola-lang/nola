@@ -1,0 +1,22 @@
+export interface Refund {
+  kind: "refund";
+  /** amount in the currency's major unit */
+  amount: number;
+  currency: "USD" | "EUR";
+}
+
+export interface Chargeback {
+  kind: "chargeback";
+  reason: string;
+  disputedAt: Date;
+}
+
+// A discriminated union, a utility type and a record — shapes the checker
+// derives (emit 15); the schema follows the resolved type, not its syntax.
+export type PaymentEvent = Refund | Chargeback;
+export type Draft = Partial<Refund>;
+export type Counts = Record<string, number>;
+
+export infer function classify(.message: string) {
+  return ask ..`the payment event described in the message`<PaymentEvent>;
+}

@@ -21,11 +21,13 @@ const consoleIo: CliIo = { log: (m) => console.log(m), error: (m) => console.err
  */
 export function report(
   label: string,
-  result: { written?: string[]; errors: string[] },
+  result: { written?: string[]; errors: string[]; warnings?: string[] },
   separator: string,
   io: CliIo = consoleIo,
   p: Palette = ansi,
 ): number {
+  // Non-fatal (a same-basename .ts + .tsi pair): stderr, no exit-code change.
+  for (const warning of result.warnings ?? []) io.error(`warning: ${warning}`);
   if (result.errors.length > 0) {
     io.error(styleDiagnostics(result.errors.join(separator), p));
     return 1;
@@ -62,10 +64,10 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   defineCommand({
     name: "skill",
-    summary: "write agent skill files (Claude Code, Cursor, Copilot, AGENTS.md) into the project",
+    summary: "write the Nola agent skill (.claude/skills, .agents/skills) and/or AGENTS.md into the project",
     args: "install",
     options: {
-      agents: { type: "string", description: "claude,cursor,copilot,agents-md | all | none" },
+      agents: { type: "string", description: "claude,universal,agents-md | all | none" },
       force: { type: "boolean", description: "replace files stamped by another Nola version" },
     },
     run: ({ positionals: [sub], values }) => cmdSkill(sub, { agents: values.agents, force: values.force }),

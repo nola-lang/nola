@@ -79,4 +79,11 @@ describe("report", () => {
     ]);
     expect(o.out).toEqual([]);
   });
+
+  it("prints warnings to stderr and keeps exit 0", () => {
+    const o = io();
+    expect(report("check", { errors: [], warnings: ["a.ts and a.tsi share a basename"] }, "\n", o, tagPalette)).toBe(0);
+    expect(o.err).toEqual(["warning: a.ts and a.tsi share a basename"]);
+    expect(o.out).toEqual(["<ok>nola check:</ok> no errors"]);
+  });
 });

@@ -3,6 +3,7 @@ import {
   type AskContext,
   type AskResult,
   fingerprintRequest,
+  formatIssues,
   type InferenceModel,
   type InferRequest,
   isPlatformModel,
@@ -128,7 +129,7 @@ export abstract class Inference {
       const checked = this.validateResult(result.value, result.model);
       if (!checked.ok) {
         throw new NolaResolutionError(
-          `Intent resolution failed at ${this.site} — value served by ${result.servedBy} does not match the requested schema: ${checked.error}`,
+          `Intent resolution failed at ${this.site} — value served by ${result.servedBy} does not match the requested schema: ${formatIssues(checked.issues)}`,
           { prompt: describeModel(result.model), raw: JSON.stringify(result.value) ?? "", site: this.site },
         );
       }
@@ -202,10 +203,11 @@ export abstract class Inference {
     let result = this.interpret(text, model);
 
     if (!result.ok) {
-      this.recordValidationFailure(result.error);
-      this.runtime.emitEvent("onRetry", { askId: this.askId, attempt: this.span.attempts.length, reason: result.error, site: this.site });
+      const reason = formatIssues(result.issues);
+      this.recordValidationFailure(reason);
+      this.runtime.emitEvent("onRetry", { askId: this.askId, attempt: this.span.attempts.length, reason, site: this.site });
 
-      model = this.correctionRequest({ frame: this.frame, response: text, error: result.error }, model);
+      model = this.correctionRequest({ frame: this.frame, response: text, error: reason }, model);
       request = requestFor(model);
       // "As sent": the correction changed the conversation, so the pair diverges here.
       this.span.effectivePrompt = describeModel(model);
@@ -215,8 +217,9 @@ export abstract class Inference {
     }
 
     if (!result.ok) {
-      this.recordValidationFailure(result.error);
-      throw new NolaResolutionError(`Intent resolution failed after retry at ${this.site} — ${result.error}`, {
+      const reason = formatIssues(result.issues);
+      this.recordValidationFailure(reason);
+      throw new NolaResolutionError(`Intent resolution failed after retry at ${this.site} — ${reason}`, {
         prompt: describeModel(model),
         raw: text,
         site: this.site,

@@ -56,7 +56,7 @@ Only `ask` is position-restricted: it must sit directly inside an infer function
 
 ## Derivable types
 
-The compiler derives a JSON Schema from `<T>` at compile time. What it accepts:
+The compiler derives a JSON Schema from `<T>` by asking the TypeScript checker what the type resolves to, so anything TypeScript can flatten to a JSON-shaped structure derives. What it accepts:
 
 | TypeScript | Wire schema · notes |
 | --- | --- |
@@ -64,10 +64,15 @@ The compiler derives a JSON Schema from `<T>` at compile time. What it accepts:
 | `Date` | a string with `format: "date-time"`, revived to a real `Date` on the way back |
 | `T[]` | arrays of any derivable `T` |
 | `{ a: string; b?: number }` | inline object literals; optional members are not required |
-| named `interface` / `type` aliases | same file or imported (`import type { Person } from "./models.js"`) |
+| named `interface` / `type` aliases | same file, another file (`import type { Person } from "./models.js"`) or a package |
+| `interface X extends Y`, `A & B`, `Partial<T>`, `Pick`, `Omit`, `Required`, `Box<number>` | the flattened, instantiated members |
 | recursive types (`TreeNode` → `children?: TreeNode[]`) | via `$defs` / `$ref`, validated recursively |
 | `"a" \| "b"` string-literal unions, string `enum`s | a JSON Schema `enum` — closed label sets |
+| `Refund \| Chargeback`, `string \| null`, `1 \| 2` | `anyOf`; a shared literal key (`kind`) makes the union discriminated |
+| `Record<string, T>`, `[string, number]` | `additionalProperties` / `prefixItems` |
 | JSDoc comments on members | become schema descriptions the model reads |
+
+The full table, including what stays underivable, is on [Schema derivation](/docs/reference/schema-derivation/).
 
 ```tsi
 // types.tsi

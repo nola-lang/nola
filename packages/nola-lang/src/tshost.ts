@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { loweredVirtualNameFor, RUNTIME_AMBIENT_STUB } from "@nola-lang/compiler";
+import { compileView, loweredVirtualNameFor, RUNTIME_AMBIENT_STUB, viewSourceCandidates } from "@nola-lang/compiler";
 import ts from "typescript";
 
 const RUNTIME_STUB = RUNTIME_AMBIENT_STUB;
@@ -15,24 +15,35 @@ export interface LoweredProgram {
   program: ts.Program;
   virtualName(file: string): string;
   options: ts.CompilerOptions;
+  /** normalized virtual `…/x.tsi.ts` of every VIEW the resolver derived -> the on-disk `x.ts` / `x.d.ts` it came from */
+  views: Map<string, string>;
 }
 
 function norm(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+export interface LoweredProgramHooks {
+  /**
+   * The FINALIZED code of the view of a plain module (emit 15): what the
+   * DerivationService's `deriveView` returns. Without it the resolver serves
+   * the phase-1 view (inert accessors) — enough for types, but the
+   * UnsupportedType elaboration and any emitted `.tsi.js` need the real bodies.
+   */
+  deriveView?: (source: string) => string | undefined;
+}
+
 export function createLoweredProgram(
   entries: LoweredEntry[],
   projectDir: string,
   mode: "check" | "declarations",
-  extraVirtual?: Map<string, string>,
+  sourceRoot: string,
+  hooks: LoweredProgramHooks = {},
 ): LoweredProgram {
   const virtual = new Map<string, string>();
+  const views = new Map<string, string>();
   const virtualName = (file: string) => loweredVirtualNameFor(file);
   for (const e of entries) virtual.set(virtualName(e.file), e.loweredCode);
-  // Companion modules and other synthesized support files; reachable from the
-  // roots via imports, so they are not added to rootNames.
-  if (extraVirtual) for (const [k, v] of extraVirtual) virtual.set(norm(k), v);
 
   let options: ts.CompilerOptions = {
     strict: true,
@@ -41,10 +52,12 @@ export function createLoweredProgram(
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
     skipLibCheck: true,
   };
-  // In check mode the project's plain .ts files join the program roots (the
-  // vue-tsc role): their `./x.tsi` imports resolve to the LIVE lowered
-  // virtuals below, so no declaration files are needed anywhere. Stale
-  // .d.tsi.ts artifacts of the old adjacent emit are excluded outright.
+  // The project's plain .ts files join the program roots (the vue-tsc role):
+  // their `./x.tsi` imports resolve to the LIVE lowered virtuals — or to the
+  // VIEW of a plain module — below, so no declaration files are needed
+  // anywhere. Stale .d.tsi.ts artifacts of the old adjacent emit are excluded
+  // outright. Both modes: a view reachable only from a user's .ts must be
+  // discovered for the declarations pass too.
   let projectTsFiles: string[] = [];
   const configPath = ts.findConfigFile(projectDir, ts.sys.fileExists, "tsconfig.json");
   if (configPath) {
@@ -54,9 +67,7 @@ export function createLoweredProgram(
       projectDir,
     );
     options = { ...parsed.options, ...options, strict: parsed.options.strict ?? true };
-    if (mode === "check") {
-      projectTsFiles = parsed.fileNames.map(norm).filter((f) => !f.endsWith(".d.tsi.ts"));
-    }
+    projectTsFiles = parsed.fileNames.map(norm).filter((f) => !f.endsWith(".d.tsi.ts"));
   }
   options =
     mode === "check"
@@ -103,6 +114,18 @@ export function createLoweredProgram(
         // virtual key and let a stale adjacent .d.tsi.ts win).
         const target = posix.join(base, spec);
         const virt = `${target}.ts`;
+        if (!virtual.has(virt) && !defaultFileExists(target)) {
+          // The *.tsi rule (spec §2): no Nola file here — derive the view of
+          // x.ts / x.d.ts once, keyed under the virtual name handed back.
+          const src = viewSourceCandidates(target).find((c) => defaultFileExists(c));
+          if (src) {
+            const code = hooks.deriveView?.(src) ?? compileView(defaultReadFile(src) ?? "", src, { sourceRoot }).code;
+            if (code !== "") {
+              virtual.set(virt, code);
+              views.set(virt, src);
+            }
+          }
+        }
         if (virtual.has(virt)) {
           return {
             resolvedModule: { resolvedFileName: virt, extension: ts.Extension.Ts, isExternalLibraryImport: false },
@@ -118,5 +141,5 @@ export function createLoweredProgram(
     ...(virtual.has(STUB_RUNTIME_PATH) ? [STUB_RUNTIME_PATH] : []),
   ];
   const program = ts.createProgram(rootNames, options, host);
-  return { program, virtualName, options };
+  return { program, virtualName, options, views };
 }

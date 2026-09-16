@@ -18,6 +18,7 @@ const PUBLIC = [
   "@nola-lang/compiler",
   "@nola-lang/console",
   "@nola-lang/core",
+  "@nola-lang/derive",
   "@nola-lang/esbuild",
   "@nola-lang/language-core",
   "@nola-lang/language-server",
@@ -50,6 +51,7 @@ interface Manifest {
   repository?: { type?: string; url?: string; directory?: string };
   icon?: string;
   categories?: string[];
+  files?: string[];
 }
 
 interface Located extends Manifest {
@@ -115,6 +117,15 @@ describe("publish metadata", () => {
     expect(existsSync(join(ROOT, m.dir, "README.md")), "README.md").toBe(true);
     const license = readFileSync(join(ROOT, m.dir, "LICENSE"), "utf8");
     expect(license, "LICENSE").toContain("Apache License");
+  });
+
+  const built = packages.filter((m) => m.files?.includes("dist"));
+  it.each(built.map((m) => [m.name, m] as const))("%s excludes source maps from its tarball", (_name, m) => {
+    // tsc writes .js.map/.d.ts.map for dev (cross-package F12, remapped
+    // stack traces from the linked CLI), but they point at ../src, which the
+    // tarball never ships, and carry no sourcesContent — dead weight for a
+    // consumer (~40% of the unpacked size). Build with maps, publish without.
+    expect(m.files, "files").toContain("!dist/**/*.map");
   });
 
   it("the vendored babel-parser keeps upstream's MIT license text", () => {

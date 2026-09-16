@@ -78,11 +78,12 @@ describe("createNolaLanguagePlugin", () => {
     const code = pruning.createVirtualCode?.("/proj/a.tsi", "nola", snap(src), {} as never);
     if (!(code instanceof NolaVirtualCode)) throw new Error("no virtual code");
     expect(code.diagnostics).toEqual([]);
-    expect(generatedText(code)).toContain("return __nola.types.object({ name: __nola.types.string() });");
+    expect(code.derivations.map((d) => [d.kind, d.policy])).toEqual([["context", "prune"]]);
 
     // the default plugin (no config anywhere near the fake path) errors
     const strict = create(src);
-    expect(strict.diagnostics.map((d) => d.code)).toEqual(["NOLA2008"]);
+    expect(strict.diagnostics).toEqual([]);
+    expect(strict.derivations.map((d) => d.policy)).toEqual(["error"]);
   });
 
   it("discovers nola.config.ts on disk and picks up edits by mtime", () => {
@@ -100,14 +101,14 @@ describe("createNolaLanguagePlugin", () => {
     const code = plugin.createVirtualCode?.(id, "nola", snap(src), {} as never);
     if (!(code instanceof NolaVirtualCode)) throw new Error("no virtual code");
     expect(code.diagnostics).toEqual([]);
-    expect(generatedText(code)).toContain("return __nola.types.object({ name: __nola.types.string() });");
+    expect(code.derivations.map((d) => [d.kind, d.policy])).toEqual([["context", "prune"]]);
 
     // config edit: next recompile of the SAME virtual code sees the new mode
     writeFileSync(configPath, 'export default { compiler: { underivableContextType: "error" } };\n');
     const future = Date.now() / 1000 + 5;
     utimesSync(configPath, future, future);
     plugin.updateVirtualCode?.(id, code, snap(src), {} as never);
-    expect(code.diagnostics.map((d) => d.code)).toEqual(["NOLA2008"]);
+    expect(code.derivations.map((d) => d.policy)).toEqual(["error"]);
   });
 
   it("typescript integration exposes the embedded code as the service script", () => {

@@ -1,7 +1,13 @@
 import remappingImport from "@ampproject/remapping";
 import { decode, encode } from "@jridgewell/sourcemap-codec";
 import type { Diagnostic } from "@nola-lang/ast";
-import { type CompileOptions, type CompileResult, compileNola } from "@nola-lang/compiler";
+import {
+  type CompileOptions,
+  type CompileResult,
+  compileNola,
+  type DerivationAnswer,
+  finalizeDerivations,
+} from "@nola-lang/compiler";
 import { transform } from "esbuild";
 
 // `@ampproject/remapping` ships an array-fallback `exports` map that TS resolves as a
@@ -87,13 +93,25 @@ function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
 // nested worker_threads Worker (startWorkerThreadService) that the VS Code debugger's
 // worker instrumentation intermittently breaks ("Worker is not a constructor"). The
 // async API uses a child process instead, so it is safe under a debugger. Keep it async.
+/** Phase 2 seam: answer a phase-1 result's derivation requests (the DerivationService, or tshost's checker). */
+export type DeriveStep = (file: string, phase1: CompileResult) => DerivationAnswer[];
+
+/** Turbopack seam: rewrite the FINALIZED appendix (inline views) before esbuild; the appendix is unmapped, so the map survives. */
+export type InlineViewsStep = (lowered: CompileResult) => CompileResult;
+
 export async function transformNola(
   source: string,
   file: string,
-  options: CompileOptions = {},
-): Promise<{ code: string; map: string }> {
-  const lowered = compileNola(source, file, options);
+  options: CompileOptions & { derive?: DeriveStep; inlineViews?: InlineViewsStep } = {},
+): Promise<{ code: string; map: string; deps: string[] }> {
+  const { derive, inlineViews, ...compileOptions } = options;
+  const phase1 = compileNola(source, file, compileOptions);
+  if (phase1.diagnostics.length > 0) throw new NolaTransformError(phase1.diagnostics);
+  const answers = derive ? derive(file, phase1) : [];
+  let lowered = derive ? finalizeDerivations(phase1, answers, file) : phase1;
   if (lowered.diagnostics.length > 0) throw new NolaTransformError(lowered.diagnostics);
+  if (inlineViews) lowered = inlineViews(lowered);
+  const deps = [...new Set(answers.flatMap((a) => a.deps))];
   const js = await transform(lowered.code, { loader: "ts", format: "esm", sourcemap: "external", sourcefile: file });
   const stripped = stripWrapperSegments(js.map, lowered);
   // One-shot loader: the esbuild map's single source resolves to the compiler map;
@@ -104,5 +122,5 @@ export async function transformNola(
     consumed = true;
     return lowered.map;
   });
-  return { code: js.code, map: merged.toString() };
+  return { code: js.code, map: merged.toString(), deps };
 }

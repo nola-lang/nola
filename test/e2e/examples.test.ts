@@ -57,9 +57,44 @@ const EXAMPLES: Example[] = [
     dir: "cross-file-types",
     tsi: "report",
     expected: {
-      name: "Ada",
-      home: { city: "London", zip: "N1" },
-      manager: { name: "Grace", home: { city: "NYC", zip: "10001" } },
+      result: {
+        name: "Ada",
+        home: { city: "London", zip: "N1" },
+        manager: { name: "Grace", home: { city: "NYC", zip: "10001" } },
+      },
+      // schema.ts: the view of models.ts, imported from plain TS as `./models.tsi`
+      required: ["name", "home"],
+    },
+  },
+  {
+    dir: "rich-types",
+    tsi: "events",
+    // discriminated union + Partial + Record (checker-backed derivation, emit 15);
+    // disputedAt is revived to a Date and printed back as ISO by JSON.stringify
+    expected: {
+      event: { kind: "chargeback", reason: "disputed charge", disputedAt: "2026-01-03T00:00:00.000Z" },
+      branches: 2,
+      draftRequired: [],
+      counts: false,
+    },
+  },
+  {
+    dir: "constraints",
+    tsi: "signup",
+    // JSDoc constraint tags (emit 16): the mock's first reply breaks four keywords,
+    // the correction turn lists every issue, the second reply is accepted
+    expected: {
+      signup: { email: "ada@example.com", handle: "ada_l", age: 36, tags: ["ts", "nola"] },
+      emailFormat: "email",
+      age: ["integer", 13],
+      issues: [
+        'email: expected a valid email, got "not-an-email"',
+        "handle: expected at least 3 characters, got 1",
+        'handle: expected a string matching ^[a-z0-9_]+$, got "A"',
+        "age: expected an integer, got 12.5",
+        "age: expected a number ≥ 13, got 12.5",
+        "tags: expected at least 1 item, got 0",
+      ],
     },
   },
   {

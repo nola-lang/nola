@@ -61,9 +61,25 @@ infer function extractPerson(.text: string) {
   `import { f } from "./x.tsi"`. Imports of plain TS use NodeNext style:
   `import { g } from "./y.js"` (the `.js` extension, even though the source
   file is `.ts`).
-- An extractor's `<T>` should be a named, structurally simple type
-  (object/array/primitive fields). `Date` works (revived to a real `Date`);
-  `Map`/`Set` and other ambient lib types do not.
+- Every `export type` / `export interface` in a `.tsi` is ALSO a runtime
+  value (`User.toJsonSchema()`, `User.validate(v)`, `User.parse(v)`,
+  `User["~standard"]` — Standard Schema AND Standard JSON Schema, so
+  `jsonSchema.input({ target: "openapi-3.0" })` works). Never declare a
+  `const`/`function`/`class`/`enum`
+  with an exported type's name (NOLA2011). `./x.tsi` with no `x.tsi` on disk
+  is the VIEW of `x.ts`: the same module plus those values — import plain-TS
+  types that way when you need their schema. Keep one basename per module.
+- An extractor's `<T>` should be a named, JSON-shaped type. The schema comes
+  from the RESOLVED type, so unions (a `kind` key makes them discriminated),
+  `Partial<T>`, `extends`, `Record<string, T>` and types from packages all
+  work; `Date` is revived to a real `Date`. `Map`/`Set`/`Promise`, functions
+  and a generic used without arguments do not derive. A failed reply is
+  corrected with EVERY validation issue at once.
+- Constrain a member with JSDoc tags named like JSON Schema keywords —
+  `/** @format email */`, `/** @integer @minimum 13 */`, `/** @minItems 1 */`,
+  `@pattern`, `@minLength`, `@uniqueItems`, … — the model sees them and
+  `validate` enforces them. A tag on the wrong kind of type is NOLA2012.
+  See `references/syntax.md` → "Types as values".
 - Raw extract/call intents are resolved with `ask`, never bare `await`
   (that throws NOLA3010). Infer-function RETURN values may be awaited.
 

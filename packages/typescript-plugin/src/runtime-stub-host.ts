@@ -32,9 +32,9 @@ function norm(p: string): string {
  *
  * The stub is resolved as an external-library file (no diagnostics of its
  * own, like anything under node_modules) and served through the same four
- * host seams companions use: resolveModuleNameLiterals (ONE batch call to the
+ * host seams views use: resolveModuleNameLiterals (ONE batch call to the
  * prior resolver — the full literal array, never per literal; see
- * companion-host.ts for why tsserver's resolution cache needs that),
+ * view-host.ts for why tsserver's resolution cache needs that),
  * fileExists / readFile / getScriptSnapshot / getScriptVersion.
  *
  * Note the stale window: Volar's language server caches a failed lookup until

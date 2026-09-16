@@ -8,16 +8,21 @@ import { build } from "esbuild";
 
 const sourcemap = process.argv.includes("--sourcemap");
 
-await build({
-  entryPoints: ["src/tsserver-entry.ts"],
+const result = await build({
+  entryPoints: ["src/tsserver-entry.cts"],
   bundle: true,
   platform: "node",
   format: "cjs",
   outfile: "dist/plugin.cjs",
   external: ["typescript"],
+  // `import.meta.url` in a CJS bundle (derive's ESM fallback) resolves to this file's URL
+  inject: ["../../scripts/esbuild/import-meta-url.js"],
+  define: { "import.meta.url": "import_meta_url" },
   sourcemap,
   logLevel: "info",
 });
+// A warning here is a real defect (an inlined runtime, an empty import.meta): fail the build.
+if (result.warnings.length > 0) throw new Error(`esbuild reported ${result.warnings.length} warning(s)`);
 
 // A stale map next to a fresh bundle would mislead the debugger — remove it.
 if (!sourcemap) await rm("dist/plugin.cjs.map", { force: true });

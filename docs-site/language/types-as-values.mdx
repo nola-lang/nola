@@ -1,0 +1,121 @@
+---
+title: Types as values
+description: Every exported type in a .tsi is also a runtime value with toJsonSchema, validate, parse and Standard Schema; ./x.tsi views plain TypeScript types too.
+sidebar:
+  order: 105
+---
+
+A TypeScript type has no runtime representation, so the JSON Schema an API, a database layer or an LLM tool definition needs is usually written a second time by hand. Nola already derives that schema from the written type for every extractor; this page is how the same derivation becomes a value you can import.
+
+## The value
+
+```tsi
+// user.tsi
+export interface User {
+  name: string;
+  email?: string;
+  role: "admin" | "member";
+}
+```
+
+```ts
+// api.ts — plain TypeScript
+import { User } from "./user.tsi";
+
+declare const body: unknown;
+
+const schema = User.toJsonSchema();   // { type: "object", properties: …, required: ["name", "role"], … }
+const u: User = User.parse(body);     // the interface AND the value share one name
+```
+
+Every `export type` and `export interface` in a `.tsi` is also exported as a value of type `InferType<T>` — an interface of exactly four members: `toJsonSchema`, `validate`, `parse` and `~standard`. That is the whole API; the machinery that derives schemas for extractors sits behind it and is not part of the value. There is nothing to opt into; `import { type User }` keeps only the type. Enums are already values and are left alone. A `const`, `let`, `function`, `class` or `enum` that shares an exported type's name is [`NOLA2011`](/docs/reference/error-codes/#nola2011). Non-exported types get no value.
+
+## Validate and parse
+
+`validate(value)` returns `{ ok: true, value }` — with `Date` fields revived to real `Date` instances, exactly as an extractor's result is — or `{ ok: false, issues }`, where each issue is `{ path: (string | number)[], message }`. `parse(value)` returns the value or throws `NolaValidationError` ([`NOLA3016`](/docs/reference/error-codes/#nola3016)) carrying the same `issues`.
+
+```ts
+const checked = User.validate(input);
+if (!checked.ok) {
+  for (const issue of checked.issues) console.warn(issue.path.join("."), issue.message);
+}
+```
+
+The type parameter is a promise, not a proof: derivation can be narrower than the TypeScript type (see [when a type is not derivable](/docs/language/contextual-parameters/#when-a-type-is-not-derivable)), and `parse` is typed by assertion.
+
+## Constraints
+
+A TypeScript type says `string`; a JSDoc tag on the member says *which* strings. The tags are named exactly like the JSON Schema keywords they become, so the model reads them in the schema and `validate` enforces them — one issue per violated keyword, alongside every other issue:
+
+```ts
+export interface Signup {
+  /** @format email */
+  email: string;
+  /** the public handle @minLength 3 @maxLength 32 @pattern ^[a-z0-9_]+$ */
+  handle: string;
+  /** @integer @minimum 13 @maximum 120 */
+  age: number;
+  /** @minItems 1 @maxItems 10 @uniqueItems */
+  tags: string[];
+  /** @minLength 1 */
+  note: string | null;      // constrains the string; null still passes
+}
+
+/** @format uuid */
+export type Id = string;    // travels with every use of Id
+```
+
+Strings take `@minLength`, `@maxLength`, `@pattern` and `@format` (`date-time`, `date`, `time`, `email`, `uri`, `uuid`, `ipv4`, `ipv6`, `hostname`); numbers take `@minimum`, `@maximum`, `@exclusiveMinimum`, `@exclusiveMaximum`, `@multipleOf` and `@integer`; arrays take `@minItems`, `@maxItems` and `@uniqueItems`. A tag applies to the non-null part of the member's type; a tag on a type alias travels with the alias, and a property's own tags add to it. Description text keeps working beside the tags. A tag on the wrong kind of type, an unknown format, a malformed value or a repeated tag is [`NOLA2012`](/docs/reference/error-codes/#nola2012) at the type — nothing reaches a schema unvalidated. The full keyword table is in [Schema derivation](/docs/reference/schema-derivation/#constraints).
+
+## Standard Schema
+
+`User["~standard"]` is a [Standard Schema v1](https://standardschema.dev) object (`vendor: "nola"`), so any library that accepts Standard Schema — form libraries, routers, agent SDKs — accepts a Nola type directly, no adapter. The same object also implements [Standard JSON Schema](https://standardschema.dev/json-schema): `jsonSchema.input({ target })` and `jsonSchema.output({ target })` return the schema in the dialect the consumer names — OpenAPI generators and tool-definition builders look for exactly this member.
+
+```ts
+User["~standard"].jsonSchema.input({ target: "draft-2020-12" });  // toJsonSchema() itself
+User["~standard"].jsonSchema.input({ target: "draft-07" });       // definitions/$ref, items[] for tuples
+User["~standard"].jsonSchema.output({ target: "openapi-3.0" });   // nullable: true, enum for literals, no tuples
+```
+
+Three targets are supported: `draft-2020-12`, `draft-07` and `openapi-3.0`; any other target throws [`NOLA3017`](/docs/reference/error-codes/#nola3017), as the spec asks. `input` and `output` return the same document: the one place the accepted and returned values differ is `Date` (an ISO string in, a `Date` instance out), and JSON Schema has no way to describe the instance, so the wire shape is the answer on both sides. Every document is plain JSON Schema — no vendor keywords.
+
+## Views of plain TypeScript
+
+`./models.tsi` means the Nola file `models.tsi` when it exists. Otherwise it is the **view** of `models.ts` (then `models.d.ts`): the same module re-exported, plus a value for every exported type alias and interface. A type that lives in ordinary TypeScript gets the same treatment without moving it — a project can use Nola for this alone, with no `.tsi` file and no model ([Types without a model](/docs/guides/types-without-a-model/)):
+
+```ts
+// models.ts
+// plain TypeScript, untouched
+export interface Person {
+  name: string;
+  age: number;
+}
+
+export function helper(): number {
+  return 1;
+}
+```
+
+```ts
+// schema.ts
+import { Person, helper } from "./models.tsi";   // no models.tsi on disk: the view of models.ts
+
+const schema = Person.toJsonSchema();
+helper();                                        // one module instance — the same function as through "./models.js"
+```
+
+A `.tsi` specifier that names neither file is [`NOLA2007`](/docs/reference/error-codes/#nola2007). Generated code follows the same rule: a type a `.tsi` imports from `./models.js` is carried by `./models.tsi`, so there are no reserved filenames and nothing you must not import.
+
+## Siblings: x.ts and x.tsi
+
+Allowed, discouraged: `./x.tsi` always resolves to the Nola file, and `nola build` / `nola check` print a warning naming both files. Keep one basename per module.
+
+## Bundlers and Turbopack
+
+The Vite, webpack, Rollup, Rolldown, esbuild and Rspack plugins serve views as virtual modules and write `x.d.tsi.ts` next to viewed sources for the framework's own type check. Turbopack has no virtual modules: generated view imports are inlined into the lowered module, and real `.tsi` files work, but a plain `.ts` importing `./models.tsi` yourself is not supported on Turbopack in this version — use webpack mode for that.
+
+## Limits
+
+Derivation covers what extractors cover — the type as the TypeScript checker resolves it: unions, `Partial`/`Pick`/`Omit`, `extends`, intersections, tuples, records, generics applied with arguments, and types from other files or packages (see [Schema derivation](/docs/reference/schema-derivation/)). `Map`, `Set`, `Promise`, functions and a generic declaration used without arguments are not derivable: such an export becomes an `UnsupportedType<reason>` value — calling a method on it is a compile-time error carrying the reason.
+
+Next: [TypeScript interop](/docs/language/typescript-interop/)

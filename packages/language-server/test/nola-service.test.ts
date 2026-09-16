@@ -6,7 +6,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { URI } from "vscode-uri";
 
-const nolaServicePlugin = createNolaServicePlugin(ts);
+const nolaServicePlugin = createNolaServicePlugin(ts, { sourceRoot: "/proj" });
 
 function snap(text: string) {
   return {

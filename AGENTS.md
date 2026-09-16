@@ -95,7 +95,8 @@ Build/reason in this order (each depends only on earlier ones):
 ast, core                    # leaf types + shared utilities (errors, redact, fingerprint); no package deps
   → babel-parser (vendored)  # private, never published
   → parser                   # parseNola(): source → { ast, diagnostics }
-  → compiler                 # compileNola(): AST → { code, map, meta, diagnostics }
+  → compiler                 # compileNola(): AST → { code, map, meta, diagnostics } — PHASE 1 (inert accessors + meta.derivations) + finalizeDerivations; no TypeScript, no node:path
+  → derive                   # deps compiler + typescript (>=5.6 <7): the checker walk (deriveType), answerRequests, DerivationService (one ts.LanguageService per process), derivationDiagnostics
   → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
   → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (original amber/panel/mono tokens mapped onto shadcn names — keep the look)
   → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); the runtime renders for classic providers (they receive a ClassicPrompt), only the platform model gets the InferenceModel — its `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
@@ -376,11 +377,14 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **Underivable `.`-contextual param types follow a configured policy** —
   `compiler.underivableContextType` in nola.config.ts: `"error"` (the default;
   NOLA2008 at the param's type annotation), `"prune"` (lossy derivation drops just
-  the underivable members; dead-ref iteration in `Lowerer.pruneDerive`; a type that
-  prunes to nothing falls back to omit), `"omit"` (the old silent drop, explicit
-  opt-in). The policy governs ONLY that seam: plain params stay silently untyped in
-  every mode (their type never describes a live value), extract sites keep NOLA2002,
-  companions keep `unsupported()`. Plumbing: `resolveCompilerConfig` (runtime)
+  the underivable members — the checker walk's `lossy` flag, a named type that
+  prunes to nothing fails its referencing member; a type that prunes to nothing
+  falls back to omit), `"omit"` (the old silent drop, explicit opt-in). Since emit
+  15 the policy rides the derivation REQUEST (`meta.derivations[].policy`) and is
+  applied by `finalizeDerivations` / the editor's lazy pass, not by the lowerer.
+  The policy governs ONLY that seam: plain params derive under "omit" in every
+  mode (an underivable plain type yields no schema, silently), extract sites keep
+  NOLA2002, exported types keep `UnsupportedType`. Plumbing: `resolveCompilerConfig` (runtime)
   validates the section; `loadCompilerOptions` (node-loader) reads it for
   `build`/`check` WITHOUT demanding a runtime-valid config; `registerNola` loads the
   config before registering the hooks and ships the section to the hooks worker as
@@ -667,7 +671,33 @@ plugin expects, adapt the *plugin*, never the test expectations.
   extract/call asks); a lineage with no file root anywhere reports `<unknown>`. Since emit 4
   the lowered EOF insert opens with
   `__nola.useRuntime(<NOLA_EMIT>)` (was `__nola.assertEmit(3)` through emit 3; the
-  contract is 13 today — emit 13 stamps `def` on the extract/call inits: the
+  contract is 16 today — emit 16 is JSDoc constraints (spec 2026-09-15): a
+  carrier gains `.constrain({ … })`, one `constrained` node kind carrying the
+  JSON Schema validation vocabulary (`packages/runtime/src/types/constraints.ts`
+  — the keys ARE the keywords; strings minLength/maxLength/pattern/format,
+  numbers minimum/maximum/exclusiveMinimum/exclusiveMaximum/multipleOf/integer,
+  arrays minItems/maxItems/uniqueItems; nine validated formats), emitted by
+  the walk from `@format` / `@minimum` / … JSDoc tags on a property or a type
+  alias (`packages/derive/src/constraints.ts`: kind decided on the non-null
+  part — string incl. literal unions/enums, number incl. literals, array incl.
+  tuples; `.constrain` goes INSIDE `optional`, OUTSIDE `nullable`; an alias's
+  tags land in its accessor body, and a property typed by a bare alias of a
+  primitive now REFS the alias by written name so the tags apply). Schema:
+  keywords merge into the inner schema (nullable's non-null branch, `integer`
+  → `type: "integer"`, beside a cyclic `$ref`); validation runs the keywords
+  after the inner check on the value it produced, one issue each, in the
+  all-errors pass. A wrong-kind / malformed / repeated / unknown-format tag is
+  NOLA2012 (InvalidConstraint), thrown under prune too, and routed by
+  `finalizeDerivations` like NOLA2007 — a diagnostic at EVERY site kind, never
+  UnsupportedType, never a policy. Dialects: openapi-3.0 spells exclusive
+  bounds as `minimum` + `exclusiveMinimum: true`; draft-07/openapi wrap a
+  `$ref` with siblings in `allOf`. Emit 15 is checker-backed derivation: every derivation
+  site calls an appendix accessor (`__nola_type_$N()` for inline extractor
+  types and parameter annotations, `__nola_type_<Name>()` for named/exported
+  types) and `__nola.types` gained literal / union / nullable / tuple / record
+  (+ object's `{ additional }`); emit 14 made every exported type a value
+  (`TypeValueOf<typeof __nola_type_X, X>` cast) and retired companions for
+  `./x.tsi` view imports; emit 13 stamps `def` on the extract/call inits: the
   compiler-hashed ask source identity (`defHash` in lower/templates.ts —
   sha256 over displayFile + raw instruction/callee text + type source text,
   line/col excluded; AskDefinition spec 2026-09-01; NEVER part of the ask
@@ -694,46 +724,142 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `toJsonSchema()` inlines non-cyclic refs (canonically identical to the old
   inline JSON, so fingerprints for old shapes survived the carrier switch) and
   serializes cycles as root `$defs` + `$ref` (validator resolves them;
-  `FINGERPRINT_VERSION` is 2). `deriveTypeExpr` (`schema-expr.ts`) is the emit
-  path; `deriveSchema` remains as the canonical-equivalence reference and for
-  tests. Everything the emitted text references must be exported from
+  `FINGERPRINT_VERSION` is 5). Everything the emitted text references must be exported from
   `@nola-lang/runtime` — `__nola` and, since emit 5, the
-  `InferType` type (since emit 6 also `UnsupportedType`). Since emit 9 the
+  `InferType` type (since emit 6 also `UnsupportedType`, since emit 15 also
+  `TypeValueOf`). Since emit 9 the
   built-in `Date` derives (only when unshadowed by a local declaration or
   import) to `__nola.types.date()`: wire schema `{ type: "string", format:
-  "date-time" }`, validator enforces parseability, and the intent REVIVES the
-  validated value post-hoc (`InferType.revive` — ISO string → `Date`
-  instance, identity when no date is reachable). Revive is the general
-  wire-type ≠ value-type seam; extract sites and call-intent slots both go
-  through `ExtractIntent.reviveValue`. Ambient lib types other than `Date`
-  (`Map`, `Set`, …) remain underivable.
-- **Companions (emit 6): cross-file types.** A type imported from another file
-  lowers to `__nola.types.ref("<moduleId>#<Name>", __nola_type_<local>)` plus an
-  appendix import `import { <Name> as __nola_type_<local> } from
-  "<module>.nola.js"`; `compileNola` reports the specifiers in
-  `meta.companions`. `compileCompanion` (`packages/compiler/src/companion.ts`)
-  derives the module: hoisted `function __nola_type_<Name>()` accessors
-  re-exported under the type's own name, `<Name>` (function declarations
-  initialize during ESM instantiation, so circular companions work), refs
-  qualified by `<moduleId>#` (posix project-relative, extensionless) so
+  "date-time" }`. Since emit 15 validation is CARRIER-DRIVEN and single-pass
+  (`validateCarrier`, `packages/runtime/src/types/validate-carrier.ts`): one
+  walk checks every node, collects EVERY issue (the correction turn lists them
+  all) and builds the revived value (ISO string → `Date`) as it goes — with
+  unions the matching branch decides revival, so check and revive cannot be
+  two passes. It is an INTERPRETER tuned to allocate nothing per node on the
+  success path (2026-09-15): the path is a linked list materialized only
+  into an issue, value-independent facts (a union's discriminator, an
+  object's required keys, tuple bounds, whether a subtree can revive) are
+  memoized per immutable node in WeakMaps, dates parse once, and a subtree
+  with nothing to revive is returned as the INPUT REFERENCE (only revivable
+  paths are copied). `validate-carrier-perf.test.ts` guards it with a ratio
+  against a JSON round-trip of the same value (interleaved, best-of-N), not
+  an absolute number; the old shape sat at ~2.3×, this one under 1×.
+  Compiled validators (closure tree or `new Function`) are the next tier if
+  we ever compete on validator benchmarks — not needed for the ask path.
+  The ask path reaches it through `InferContext.outputType()`
+  (extract: the site's carrier; call: one object carrier with a described
+  property per slot); the JSON-Schema validator in `ask/validate.ts` survives
+  only as the raw-`JsonSchema` oracle. `InferType` (the public four-member
+  interface: `toJsonSchema`/`validate`/`parse`/`~standard`) is what every
+  type value is typed as; the class behind it is `TypeCarrier` (internal).
+  `~standard` implements BOTH Standard Schema v1 (`validate`) and Standard
+  JSON Schema (`jsonSchema.input/output({ target })`, spec types vendored in
+  `types/standard-schema.ts`): `toJsonSchema()` IS the draft-2020-12
+  document, `draft-07` and `openapi-3.0` are pure rewrites of it
+  (`types/json-schema-dialects.ts` — `$defs`→`definitions`, tuples to
+  `items[]`+`additionalItems` / to an element-union array, `const`→`enum`,
+  `type:"null"`→`nullable`), memoized per target, input = output (JSON
+  Schema cannot say "a `Date` instance"), any other target is NOLA3017. A
+  new node kind is added ONCE in `expand` and reaches every target; the
+  ambient stub mirrors the `jsonSchema` member.
+- **Checker-backed derivation (emit 15, spec 2026-09-14).** The lowerer never
+  derives a schema. PHASE 1 (`compileNola`, pure, no TypeScript): every
+  derivation site — exported type, extractor `<T>`, parameter annotation —
+  calls an appendix accessor with the INERT body `(undefined as never)`, and
+  `meta.derivations` records each request (`accessor`, `kind`
+  exported|extract|context, `source` range, `lowered` range = where the SAME
+  type node sits in the lowered text, `policy`); `meta.appendixStart` marks
+  the accessor block. PHASE 2 (`finalizeDerivations(result, answers, file)`):
+  the appendix tail is rewritten from the answers — combinator bodies,
+  `UnsupportedType<reason>` accessors, undefined-returning context accessors
+  (policy), transitively reached named accessors once each, and the `./x.tsi`
+  value imports the walk reached; NOLA2002/NOLA2008/NOLA2007 come from
+  `ok:false` answers at the request's source range. The body is NEVER touched
+  (the appendix is unmapped, so spans/map/anchors hold). `@nola-lang/derive`
+  owns the walk (`deriveType` over the TypeScript checker: resolved
+  properties, so `extends`/intersections/`Partial`/`Pick`/`Omit`/generics at
+  the instantiation site flatten; unions → `union`/`nullable`/`enum`; tuples,
+  records, literals; the name as WRITTEN at a site wins for refs; lib nominal
+  types other than `Date` are unsupported; package/lib types derive
+  structurally into hashed local accessors `__nola_type_x_<sha8>`; project
+  files become view imports + `<moduleId>#Name` refs; a named type's failure
+  propagates to its referencing site) and the `DerivationService` (ONE
+  `ts.LanguageService` per process rooted at the nearest tsconfig — strict
+  NodeNext defaults without one — serving `.tsi` files and views of plain
+  modules as lowered virtuals `x.tsi.ts`; `derive(file, phase1)`,
+  `deriveView(src)`, `invalidate(file)`; answers carry `deps`, the declaration
+  files read). Consumers: the loader's hooks worker (one service per project
+  root, `transformNola({ derive })`), `nola-lang`'s `ProjectDeriver`
+  (build/check/declarations; tshost gets the FINALIZED view through its
+  `deriveView` hook so `nola check` type-checks real bodies and the
+  UnsupportedType elaboration), unplugin (service on the project context,
+  `deps` → `addWatchFile`, `watchChange` → `invalidate`), the Turbopack loader
+  (derive + TypeScript EXTERNAL to its bundle; `inlineViews` replaces view
+  imports on the finalized appendix). The editor serves PHASE-1 output
+  (`NolaVirtualCode.derivations`) and runs `derivationDiagnostics` lazily on
+  each diagnostics pass against the live program — the LSP's nola service
+  injects `typescript/languageService`, the tsserver plugin decorates the
+  INNER `getSemanticDiagnostics` before Volar proxies it — shifting `lowered`
+  offsets by Volar's source-shaped leading whitespace; an underivable
+  exported type is typed `InferType` in the editor (only `nola check` shows
+  the elaboration). The corpus test `packages/derive/test/corpus.test.ts`
+  replays `test/derivation-corpus/type-exprs.json` (recorded from the last
+  syntactic walker): the multiset of combinator expressions per file must
+  match byte for byte — the fingerprint invariant. `derive` pins
+  `typescript >=5.6.0 <7` (TypeScript 7 has no JavaScript API). WHICH
+  TypeScript the walk runs on is `packages/derive/src/ts.ts`: derive never
+  imports `typescript` statically — source files do `import type ts` for
+  types and `import { TS } from "./ts.js"` for values, a Proxy resolved on
+  first use — and `useTypeScript(module)` (exported) injects the host's. The
+  editors MUST inject: the language server passes the tsdk the client named
+  (`server.ts`), the tsserver plugin the module tsserver hands its factory
+  (`plugin.ts`) — their bundles keep `typescript` external and the VSIX
+  stages NO copy beside them, so a static import crashed the server at load
+  ("Cannot find module 'typescript'", 2026-09-15) and silently dropped the
+  plugin; walking a program with a different TypeScript than built it is
+  wrong regardless. The loader, CLI and bundler plugins never inject and get
+  derive's own dependency lazily. `test/e2e/editor-bundles-standalone.test.ts`
+  guards this by staging both bundles OUTSIDE the repo with a copied
+  TypeScript as tsdk/tsserver — in-repo runs cannot catch it (the bundles
+  sit beside a resolvable `typescript`, and tsserver probes three levels
+  above its own executable, which in the repo is `node_modules` with the
+  workspace symlink to the in-repo plugin). The same suite pins that neither
+  editor bundle inlines the runtime: the editors take `findProjectRoot` from
+  `@nola-lang/node-loader/project-root` (a runtime-free module — never add a
+  runtime import there), because the package index evaluates
+  `register.ts`/`config.ts` and would drag the whole runtime, slot claim
+  included, into an editor process. The three CJS bundle scripts
+  (language-server, typescript-plugin, next) FAIL on any esbuild warning and
+  inject `scripts/esbuild/import-meta-url.js` so an inlined ESM
+  `import.meta.url` (derive's fallback, the loader's `module.register`
+  parentURL) is the bundle's own file URL rather than esbuild's empty `{}`;
+  the tsserver entry is `tsserver-entry.cts` (`export =`) because a
+  `module.exports` in an ESM-typed `.ts` is itself a bundler warning.
+- **Cross-file types: the `*.tsi` view rule (emit 14; companions and the
+  `*.nola.*` namespace are RETIRED, NOLA2006 with them).** A type reached in
+  another project file lowers to `__nola.types.ref("<moduleId>#<Name>", () =>
+  __nola_type_<local>)` — a closure over the imported VALUE, read only at
+  schema time (cycle-safe) — plus the appendix import `import { <Name> as
+  __nola_type_<local> } from "./x.tsi"`; `meta.views` lists the `.tsi`
+  specifiers. `./x.tsi` means the on-disk Nola file when it exists, otherwise
+  the VIEW of `x.ts` (then `x.d.ts`): `compileView` (phase 1, like
+  `compileNola`) re-exports the module (`export * from "./x.js"`), redeclares
+  every exported alias/interface (`export type X = import("./x.js").X`) and
+  exports each as a value; the same rule serves user-authored `./x.tsi`
+  imports from plain `.ts`. Hosts: the loader's `resolve` (`?nola-view` URL
+  marker, `deriveView`), unplugin (`\0nola-view:<abs>`), tshost (virtual
+  `x.tsi.ts`), the editor's `decorateHostWithViews` (synthetic script from
+  the live snapshot) + `decorateServerHostForViews`; `nola build` writes
+  `<base>.tsi.js` + `<base>.tsi.d.ts` for every view reached — INCLUDING
+  views reached only from the tsconfig's plain `.ts` roots in a project with
+  no `.tsi` at all (the types-only use, `docs-site/guides/types-without-a-model.mdx`;
+  `emitDeclarationTexts` must not short-circuit on zero lowered files);
+  Turbopack inlines. Neither file on disk is NOLA2007 (the walk keeps that identity for
+  a dangling relative type import); a same-basename `.ts` + `.tsi` pair warns.
+  Refs are `<moduleId>#`-qualified (posix project-relative, extensionless) so
   same-named types from different files never collide in one `$defs`; bare
-  names stay for file-locals (a file cannot both declare and import one
-  identifier). **Companions are INTERNAL** — only generated code imports them
-  (a plain `<Name>` export needs no user-facing disambiguation, and there is
-  deliberately no `$type`-style suffix); user-authored imports of `*.nola.*`
-  specifiers are unsupported.
-  Underivable exports become `__nola.types.unsupported(reason)` typed
-  `UnsupportedType<reason>` — using one is a compile-time TS error carrying the
-  reason, or NOLA3009 at run time. The emitted specifier is the entire
-  contract: the loader's `resolve` hook probes `companionSourceCandidates` on
-  disk and serves the module virtually (`?nola-companion` URL marker);
-  `nola build` writes real files into `dist/`; `nola check` injects virtual
-  `<dir>/<name>.nola.ts` files that NodeNext `.js`→`.ts` mapping finds —
-  no resolver changes. The `*.nola.*` filename namespace is reserved: a real
-  on-disk match is NOLA2006 (build/check walk + loader shadow refusal); an
-  unlocatable type source is NOLA2007. Type imports should use the NodeNext
-  `./x.js` convention (a type-only import never resolves at run time, so no
-  on-disk `.js` is needed).
+  names stay for file-locals. Type imports should use the NodeNext `./x.js`
+  convention (a type-only import never resolves at run time).
 - **Value imports of plain TS also use NodeNext `./x.js`.** Node's native
   type-stripping refuses `.js`→`.ts` mapping, so the loader's `resolve` hook
   retries a failed relative `.js` specifier once with a `.ts` tail — for ANY
@@ -1009,9 +1135,22 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **Agent skill content is part of the language surface.**
   `packages/create-nola-lang/skills/nola/**` (SKILL.md + references) teaches
   coding agents to write Nola; `nola skill install` / the init flow write
-  SELF-CONTAINED, version-stamped copies into user projects (claude gets the
-  whole directory; cursor/copilot/AGENTS.md embed SKILL.md's body inline —
-  the pointer-into-node_modules form was reversed 2026-08-20). It lives in
+  SELF-CONTAINED, version-stamped copies into user projects. Three targets
+  since 2026-09-15 (`--agents claude,universal,agents-md`): `claude` copies
+  the whole directory to `.claude/skills/nola/` (Claude Code reads only its
+  own dir), `universal` copies it to `.agents/skills/nola/` (the open Agent
+  Skills location Cursor, Copilot, Codex, Gemini CLI read natively — the
+  skills CLI's own word for it) — copies, not links, because a committed
+  symlink dies on Windows checkouts and a junction needs an absolute
+  target; `agents-md` embeds SKILL.md's body inline. Both copies are
+  preselected. The
+  `.cursor/rules/*.mdc` / `.github/instructions/*.md` adapters are RETIRED
+  (a stamped leftover is "superseded" under `universal`, deleted with
+  `--force`); the
+  pointer-into-node_modules form was reversed 2026-08-20. `npx skills add
+  nola-lang/nola` (vercel-labs/skills) and `npx skills experimental_sync`
+  (from `node_modules/create-nola-lang/skills`) produce the same layout
+  unstamped — we document them, never depend on them. It lives in
   create-nola-lang because that package has zero deps and is the only one
   present on both the scaffold and `nola skill install` paths. Any change to
   user-facing language or config surface updates the skill content in the

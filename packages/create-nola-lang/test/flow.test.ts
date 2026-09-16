@@ -330,7 +330,7 @@ describe("resolveScaffoldOptions — editor step", () => {
       ide: "vscode",
       agents: [],
     });
-    expect(asked).toEqual([`${AGENTS_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Coding agents|claude`]);
+    expect(asked).toEqual([`${AGENTS_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Coding agents|claude,universal`]);
   });
 
   it("--ide none answers the editor half; the agents half is still asked", async () => {
@@ -577,8 +577,8 @@ describe("resolveScaffoldOptions — agents step", () => {
       asked.push(`${m}|${groups.map((g) => g.label).join("+")}|${initial.join(",")}`);
       return inner(m, groups, initial);
     };
-    const out = await resolveScaffoldOptions({ dir: "d", agents: "cursor,copilot", interactive: true, provider: "none" }, p);
-    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["cursor", "copilot"] });
+    const out = await resolveScaffoldOptions({ dir: "d", agents: "universal", interactive: true, provider: "none" }, p);
+    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["universal"] });
     expect(asked).toEqual([`${SETUP_LIST_QUESTION}|Editor|vscode`]);
   });
 
@@ -593,7 +593,7 @@ describe("resolveScaffoldOptions — agents step", () => {
   it("rejects an invalid --agents id listing valid values", async () => {
     await expect(
       resolveScaffoldOptions({ dir: "d", agents: "emacs", interactive: false }, scripted({})),
-    ).rejects.toThrow(/invalid --agents "emacs".*claude.*agents-md/);
+    ).rejects.toThrow(/invalid --agents "emacs".*claude, universal, agents-md/);
   });
 
   it("non-interactive default is none", async () => {
@@ -609,34 +609,36 @@ describe("resolveScaffoldOptions — agents step", () => {
 });
 
 describe("runFlow — agents step", () => {
-  it("writes the adapters when the scaffold outcome carries agents", async () => {
+  it("writes the skill when the scaffold outcome carries agents", async () => {
     const dir = join(await tmp(), "app");
     const code = await runFlow(
-      { dir, template: "empty", agents: "claude,agents-md" },
+      { dir, template: "empty", agents: "claude,universal,agents-md" },
       { interactive: false, prompter: scripted({}) },
     );
     expect(code).toBe(0);
+    expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, ".claude", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(dir, ".cursor"))).toBe(false);
   });
 
-  it("writes adapters on add mode and reports an existing AGENTS.md as skipped", async () => {
+  it("writes the skill on add mode and reports an existing AGENTS.md as skipped", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "package.json"), '{"name":"existing-api"}\n');
     await writeFile(join(dir, "AGENTS.md"), "# Existing\n");
     const p = scripted({});
-    const code = await runFlow({ dir, add: true, agents: "agents-md,cursor" }, { interactive: false, prompter: p });
+    const code = await runFlow({ dir, add: true, agents: "agents-md,universal" }, { interactive: false, prompter: p });
     expect(code).toBe(0);
     expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toBe("# Existing\n");
-    expect(existsSync(join(dir, ".cursor", "rules", "nola.mdc"))).toBe(true);
+    expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(p.notes.join("\n")).toContain("AGENTS.md already exists");
   });
 
-  it("non-interactive without --agents writes no adapters (unchanged default)", async () => {
+  it("non-interactive without --agents writes no skill (unchanged default)", async () => {
     const dir = join(await tmp(), "app");
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+    expect(existsSync(join(dir, ".agents"))).toBe(false);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
   });
 });
@@ -809,7 +811,7 @@ describe("wizard order", () => {
     return asked;
   }
 
-  it("asks name, template, the inference provider, the setup gate, then ONE setup list (editor + agents, VS Code and Claude Code preselected)", async () => {
+  it("asks name, template, the inference provider, the setup gate, then ONE setup list (editor + agents, VS Code and both skill copies preselected)", async () => {
     const p = scripted({ text: ["app"], select: ["starter", "nola"], groupMultiselect: [["vscode", "claude"]], confirm: [true] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ interactive: true, cwd: await tmp() }, p);
@@ -818,7 +820,7 @@ describe("wizard order", () => {
       "Select a template:",
       PROVIDER_QUESTION,
       `${SETUP_QUESTION}|true`,
-      `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude`,
+      `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude,universal`,
     ]);
     expect(out).toEqual({
       kind: "scaffold",
@@ -842,9 +844,9 @@ describe("wizard order", () => {
   it("a no at a narrowed gate keeps the flag's half", async () => {
     const p = scripted({ select: ["starter"], confirm: [false] });
     const asked = recording(p);
-    const out = await resolveScaffoldOptions({ dir: "d", agents: "cursor", interactive: true, provider: "none" }, p);
+    const out = await resolveScaffoldOptions({ dir: "d", agents: "agents-md", interactive: true, provider: "none" }, p);
     expect(asked).toEqual(["Select a template:", `${EDITOR_QUESTION}|true`]);
-    expect(out).toMatchObject({ kind: "scaffold", ide: "none", agents: ["cursor"] });
+    expect(out).toMatchObject({ kind: "scaffold", ide: "none", agents: ["agents-md"] });
   });
 
   it("the name prompt says Enter keeps the default", () => {
@@ -858,7 +860,7 @@ describe("wizard order", () => {
     const p = scripted({ select: ["none"], groupMultiselect: [[]], confirm: [true] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ add: true, dir, interactive: true }, p);
-    expect(asked).toEqual([PROVIDER_QUESTION, `${SETUP_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude`]);
+    expect(asked).toEqual([PROVIDER_QUESTION, `${SETUP_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude,universal`]);
     expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "none", agents: [] });
   });
 });

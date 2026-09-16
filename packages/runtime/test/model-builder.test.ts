@@ -100,7 +100,7 @@ describe("ModelBuilder — call intents", () => {
     const node = new FunctionCallContext(
       { fn: () => 1, name: "notify", instruction: "urgently", args: [] },
       runtime(),
-    ).forSlots({ type: "object", properties: { arg0: { type: "string" } }, required: ["arg0"], additionalProperties: false });
+    ).forSlots(t.object({ arg0: t.string() }));
     const model = buildInferenceModel({ frame, context: node, site: "x.tsi:1:1" });
     expect(model.intent).toBe("call");
     expect(model.input).toMatchObject({

@@ -1,0 +1,43 @@
+{
+  "name": "@nola-lang/derive",
+  "version": "0.1.8",
+  "description": "Checker-backed schema derivation for Nola: the TypeScript walk and the per-process language service",
+  "keywords": [
+    "nola"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/derive"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "!dist/**/*.map"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.8",
+    "@nola-lang/compiler": "0.1.8",
+    "@nola-lang/core": "0.1.8",
+    "typescript": ">=5.6.0 <7"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

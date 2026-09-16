@@ -1,4 +1,12 @@
-import { AGENT_OPTIONS, type AgentId, defaultAgents, parseAgentsFlag, SKILL_AGENTS_QUESTION, writeAgentSkills } from "./agents.js";
+import {
+  AGENT_IDS,
+  AGENT_OPTIONS,
+  type AgentId,
+  defaultAgents,
+  parseAgentsFlag,
+  SKILL_AGENTS_QUESTION,
+  writeAgentSkills,
+} from "./agents.js";
 import { type Prompter, plainPrompter } from "./flow.js";
 
 export interface SkillInstallArgs {
@@ -33,7 +41,7 @@ export async function runSkillInstall(args: SkillInstallArgs, opts: SkillInstall
   if (args.agents !== undefined) {
     agents = parseAgentsFlag(args.agents);
   } else if (!interactive) {
-    prompter.note("non-interactive: pass --agents (claude, cursor, copilot, agents-md — or all, none)");
+    prompter.note(`non-interactive: pass --agents (${AGENT_IDS.join(", ")} — or all, none)`);
     return 1;
   } else {
     const choice = await prompter.multiselect(SKILL_AGENTS_QUESTION, AGENT_OPTIONS, defaultAgents(dir));
@@ -50,6 +58,7 @@ export async function runSkillInstall(args: SkillInstallArgs, opts: SkillInstall
 
   const result = await writeAgentSkills(dir, agents, { force: args.force });
   for (const note of result.skipped) prompter.note(note);
+  if (result.removed.length > 0) prompter.note(`Removed superseded: ${result.removed.join(", ")}`);
   let message = "Nothing new to write.";
   if (result.wrote.length > 0) message = `Installed agent skill files: ${result.wrote.join(", ")}`;
   else if (result.stale) message = "Nothing written — re-run with --force to replace outdated files.";

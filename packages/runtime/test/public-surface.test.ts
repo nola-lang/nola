@@ -39,6 +39,11 @@ describe("@nola-lang/runtime public surface", () => {
     expect(typeof root.NolaResolutionError).toBe("function");
     expect(typeof root.isIntent).toBe("function");
     expect(typeof root.redactSecrets).toBe("function");
+    // types as values (emit 14): the parse error and the issue formatter
+    expect(typeof root.NolaValidationError).toBe("function");
+    // InferType is a TYPE (the four-member interface a type value is cast to); the carrier class stays internal
+    expect("InferType" in root).toBe(false);
+    expect(typeof root.formatIssues).toBe("function");
     expect((root as Record<string, unknown>).effectiveLogLevel).toBeUndefined();
     expect((root as Record<string, unknown>).builtinLogger).toBeUndefined();
     expect(typeof root.terminalTrace).toBe("function");

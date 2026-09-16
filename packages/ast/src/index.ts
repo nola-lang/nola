@@ -326,11 +326,13 @@ export const Codes = {
   UnsupportedIntentType: "NOLA2002",
   NolaFnNotTopLevel: "NOLA2003",
   UntypedCallIntentArg: "NOLA2004",
-  ReservedCompanionPath: "NOLA2006",
-  CompanionUnavailable: "NOLA2007",
+  // NOLA2006 (ReservedCompanionPath) retired with companions (emit 14): no reserved filename namespace remains.
+  ViewUnavailable: "NOLA2007",
   UnderivableContextType: "NOLA2008",
   ScopeAccessOutsideTemplate: "NOLA2009",
   NolaConstructInMarker: "NOLA2010",
+  TypeValueNameConflict: "NOLA2011",
+  InvalidConstraint: "NOLA2012",
   // NOLA3xxx: runtime diagnostics
   EmitContractMismatch: "NOLA3001",
   DuplicateRuntimeConflict: "NOLA3002",
@@ -347,6 +349,8 @@ export const Codes = {
   BrowserExecutionUnsupported: "NOLA3013",
   PromptTemplateFailed: "NOLA3014",
   LoaderHooksUnsupported: "NOLA3015",
+  ValidationFailed: "NOLA3016",
+  SchemaTargetUnsupported: "NOLA3017",
   // NOLA4xxx: bundler-integration errors (build-time, raised by @nola-lang/unplugin and friends)
   TsiInClientBundle: "NOLA4001",
 } as const;

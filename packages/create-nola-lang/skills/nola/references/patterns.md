@@ -232,7 +232,8 @@ export infer function triage(.message: string) {
 
 Cross-file types are supported. Import the type from a plain `.ts` file with a
 type-only import and the NodeNext `.js` specifier; the toolchain derives the
-schema for you:
+schema for you (behind the scenes the value is imported from `./models.tsi`,
+the VIEW of `models.ts` — see "Types as values" in `syntax.md`):
 
 ```ts
 // src/models.ts
@@ -249,6 +250,17 @@ import type { Person } from "./models.js";
 export infer function extractPerson(.text: string) {
   return ask ..`the person described in the text`<Person>;
 }
+```
+
+The same interface is a VALUE from plain TypeScript through the view — no
+`models.tsi` on disk, `./models.tsi` means "models.ts plus its type values":
+
+```ts
+// src/schema.ts
+import { Person } from "./models.tsi";
+
+export const personSchema = Person.toJsonSchema();
+export const checked = Person.validate(JSON.parse(input));   // { ok, value } | { ok, issues }
 ```
 
 Recursive types are legal too:

@@ -31,13 +31,16 @@ export type {
   ProviderResponseEvent,
   RetryEvent,
   ValidationFailedEvent,
+  ValidationIssue,
 } from "@nola-lang/core";
 export {
+  formatIssues,
   isInferenceModel,
   NolaConfigError,
   NolaIntentError,
   NolaProviderError,
   NolaResolutionError,
+  NolaValidationError,
   NolaVersionError,
   type ProviderErrorOptions,
   type ResolutionDetails,
@@ -121,4 +124,19 @@ export {
 } from "./runtime/index.js";
 export { TERMINAL_TRACE, type TerminalTraceOptions, terminalTrace } from "./terminal-trace.js";
 export { TRACER_HOOK, type TracerOptions } from "./tracer.js";
-export { InferType, inferTypes, type UnsupportedType } from "./types/infer-type.js";
+export { type InferType, inferTypes, type TypeValueOf, type UnsupportedType } from "./types/infer-type.js";
+export type {
+  NolaStandardProps,
+  StandardJSONSchemaV1,
+  StandardJSONSchemaV1Converter,
+  StandardJSONSchemaV1Options,
+  StandardJSONSchemaV1Props,
+  StandardJSONSchemaV1Target,
+  StandardSchemaV1,
+  StandardSchemaV1Failure,
+  StandardSchemaV1InferOutput,
+  StandardSchemaV1Issue,
+  StandardSchemaV1Props,
+  StandardSchemaV1Result,
+  StandardSchemaV1Success,
+} from "./types/standard-schema.js";

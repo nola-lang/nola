@@ -7,6 +7,7 @@
     { "path": "packages/providers" },
     { "path": "packages/console" },
     { "path": "packages/compiler" },
+    { "path": "packages/derive" },
     { "path": "packages/runtime" },
     { "path": "packages/language-core" },
     { "path": "packages/node-loader" },

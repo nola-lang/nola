@@ -43,6 +43,27 @@ export function typecheckLowered(files: Record<string, string>): string[] {
   };
   host.writeFile = () => {};
 
+  // The *.tsi rule, as tshost applies it: a `./x.tsi` literal resolves to the
+  // virtual `x.tsi.ts` when the fixture supplies one (a lowered .tsi or a view).
+  const defaultResolve = (spec: string, containing: string) =>
+    ts.resolveModuleName(spec, containing, options, {
+      fileExists: host.fileExists,
+      readFile: (f) => host.readFile(f) ?? undefined,
+    }).resolvedModule;
+  host.resolveModuleNameLiterals = (literals, containingFile) =>
+    literals.map((lit) => {
+      if (lit.text.endsWith(".tsi")) {
+        const dir = containingFile.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
+        const virt = `${dir}/${lit.text.replace(/^\.\//, "")}.ts`;
+        if (virtual.has(virt)) {
+          return {
+            resolvedModule: { resolvedFileName: virt, extension: ts.Extension.Ts, isExternalLibraryImport: false },
+          };
+        }
+      }
+      return { resolvedModule: defaultResolve(lit.text, containingFile) ?? undefined };
+    });
+
   const rootNames = Object.keys(files).map((n) => `/proj/${n}`);
   const program = ts.createProgram(rootNames, options, host);
   return ts.getPreEmitDiagnostics(program).map((d) => {

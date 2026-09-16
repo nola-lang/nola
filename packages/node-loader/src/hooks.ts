@@ -2,9 +2,11 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { companionSourceCandidates, compileCompanion, isCompanionSpecifier } from "@nola-lang/compiler";
+import { Codes } from "@nola-lang/ast";
+import { viewSourceCandidates } from "@nola-lang/compiler";
+import { createDerivationService, type DerivationService } from "@nola-lang/derive";
 import { transform } from "esbuild";
-import { findProjectRoot } from "./config.js";
+import { findProjectRoot } from "./project-root.js";
 import { NolaTransformError, transformNola } from "./transform.js";
 
 // The hooks run in Node's module-hooks worker, which `register()` gives no project
@@ -21,7 +23,29 @@ function rootFor(file: string): string {
   return root;
 }
 
-const COMPANION_QUERY = "?nola-companion";
+/** URL marker of a VIEW module: `file:///…/models.ts?nola-view` serves the derived `models.tsi`. */
+const VIEW_QUERY = "?nola-view";
+
+/**
+ * One DerivationService per project root (spec §6): the checker that fills in
+ * the appendix accessors of every lowered `.tsi` and of every view served.
+ * Created on the first `.tsi` the worker sees; the config section reached
+ * `initialize` before any load, so the policy is known by then.
+ */
+const services = new Map<string, DerivationService>();
+function serviceFor(file: string): DerivationService {
+  const root = rootFor(file);
+  let service = services.get(root);
+  if (!service) {
+    service = createDerivationService({
+      projectRoot: root,
+      sourceRoot: root,
+      underivableContextType: underivableContextType ?? "error",
+    });
+    services.set(root, service);
+  }
+  return service;
+}
 
 // Compile-time config, delivered by registerNola through `register` data (the
 // hooks worker cannot see the main thread's config object). Absent data —
@@ -38,12 +62,8 @@ interface ResolveContext {
 }
 type NextResolve = (specifier: string, context: ResolveContext) => Promise<{ url: string; shortCircuit?: boolean }>;
 
-/**
- * Companion specifiers name modules that never exist on disk — default
- * resolution would throw ERR_MODULE_NOT_FOUND before `load` ran. Recognize the
- * reserved suffix, probe the type-source candidates next to the importer, and
- * short-circuit to a marked URL the `load` hook synthesizes from.
- */
+const isRelative = (specifier: string): boolean => specifier.startsWith("./") || specifier.startsWith("../");
+
 /**
  * NodeNext convention: plain TS written for tsc says `./x.js` while only
  * `x.ts` is on disk. Node's native type-stripping refuses that mapping, so
@@ -64,27 +84,25 @@ async function resolveWithTsFallback(specifier: string, context: ResolveContext,
 }
 
 export async function resolve(specifier: string, context: ResolveContext, nextResolve: NextResolve) {
-  if (!isCompanionSpecifier(specifier) || !specifier.startsWith(".") || !context.parentURL?.startsWith("file:")) {
-    if (specifier.endsWith(".js") && specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
-      return resolveWithTsFallback(specifier, context, nextResolve);
+  const fromFile = context.parentURL?.startsWith("file:") === true;
+  if (fromFile && isRelative(specifier) && specifier.endsWith(".tsi")) {
+    // The *.tsi rule (spec §2): the on-disk .tsi wins; otherwise the VIEW of
+    // x.ts / x.d.ts; otherwise NOLA2007. `fileURLToPath` drops a ?nola-view
+    // query on the importer, so views import their own neighbours normally.
+    const importer = fileURLToPath(context.parentURL as string);
+    const target = resolvePath(dirname(importer), specifier);
+    if (existsSync(target)) return nextResolve(specifier, context);
+    for (const candidate of viewSourceCandidates(target)) {
+      if (existsSync(candidate)) return { url: pathToFileURL(candidate).href + VIEW_QUERY, shortCircuit: true };
     }
-    return nextResolve(specifier, context);
+    throw new Error(
+      `${Codes.ViewUnavailable}: "${specifier}" (imported from ${importer}) names neither a Nola file nor a TypeScript module`,
+    );
   }
-  const importerDir = dirname(fileURLToPath(context.parentURL));
-  const literal = resolvePath(importerDir, specifier);
-  if (existsSync(literal)) {
-    // Never silently shadow: a real on-disk *.nola.* file is a reserved-namespace violation.
-    throw new Error(`NOLA2006: ${literal} matches the reserved *.nola.* companion namespace — rename the file.`);
+  if (fromFile && isRelative(specifier) && specifier.endsWith(".js")) {
+    return resolveWithTsFallback(specifier, context, nextResolve);
   }
-  for (const candidate of companionSourceCandidates(specifier)) {
-    const p = resolvePath(importerDir, candidate);
-    if (existsSync(p)) {
-      return { url: pathToFileURL(p).href + COMPANION_QUERY, shortCircuit: true };
-    }
-  }
-  throw new Error(
-    `NOLA2007: cannot locate the type source for "${specifier}" imported from ${fileURLToPath(context.parentURL)}`,
-  );
+  return nextResolve(specifier, context);
 }
 
 interface LoadContext {
@@ -96,22 +114,23 @@ type NextLoad = (
 ) => Promise<{ format: string; source: unknown; shortCircuit?: boolean }>;
 
 export async function load(url: string, context: LoadContext, nextLoad: NextLoad) {
-  if (url.endsWith(COMPANION_QUERY)) {
-    const file = fileURLToPath(url.slice(0, -COMPANION_QUERY.length));
-    const source = await readFile(file, "utf8");
-    const companion = compileCompanion(source, file, { sourceRoot: rootFor(file) });
-    if (companion.code === "" || companion.diagnostics.length > 0) {
-      throw new NolaTransformError(companion.diagnostics);
-    }
+  if (url.endsWith(VIEW_QUERY)) {
+    const file = fileURLToPath(url.slice(0, -VIEW_QUERY.length));
+    const view = serviceFor(file).deriveView(file);
+    if (view.code === "" || view.diagnostics.length > 0) throw new NolaTransformError(view.diagnostics);
     // Plain TS with no meaningful original positions — strip types, skip the map.
     // Async `transform` for the same worker-thread reason documented in transform.ts.
-    const js = await transform(companion.code, { loader: "ts", format: "esm" });
+    const js = await transform(view.code, { loader: "ts", format: "esm" });
     return { format: "module", source: js.code, shortCircuit: true };
   }
   if (!url.endsWith(".tsi")) return nextLoad(url, context);
   const file = fileURLToPath(url);
   const source = await readFile(file, "utf8");
-  const { code, map } = await transformNola(source, file, { sourceRoot: rootFor(file), underivableContextType });
+  const { code, map } = await transformNola(source, file, {
+    sourceRoot: rootFor(file),
+    underivableContextType,
+    derive: (f, phase1) => serviceFor(f).derive(f, phase1).answers,
+  });
   const withMap = `${code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(map).toString("base64")}\n`;
   return { format: "module", source: withMap, shortCircuit: true };
 }

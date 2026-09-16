@@ -1,8 +1,8 @@
 import type { Position } from "@nola-lang/ast";
 import { NOLA_EMIT, sha256Hex } from "@nola-lang/core";
-import { companionSpecifierFor } from "../companion-name.js";
-import { accessorNameFor, type CompanionImport } from "../schema-expr.js";
+import { accessorNameFor, type TypeImport } from "../schema-expr.js";
 import type { EditAnchor } from "../spans.js";
+import { viewSpecifierFor } from "../view-name.js";
 
 /**
  * Every piece of TS text the lowering emits lives here; the Lowerer decides
@@ -30,15 +30,74 @@ function __nola_file_ctx() { return __nola.context.file(${JSON.stringify(display
  * under strict); the inline import type is erased by esbuild and resolves
  * against both the ambient stub and the runtime.
  */
-export const typeAccessorDecl = (name: string, expr: string) =>
-  `function ${accessorNameFor(name)}(): import("@nola-lang/runtime").InferType<unknown> { return ${expr}; }\n`;
+export const typeAccessorDecl = (name: string, expr: string) => accessorDecl(accessorNameFor(name), expr);
+
+/** An appendix accessor by its full name; `optional` is the context-site form (the "omit" policy returns undefined). */
+export const accessorDecl = (accessor: string, expr: string, optional = false) =>
+  `function ${accessor}(): import("@nola-lang/runtime").InferType<unknown>${optional ? " | undefined" : ""} { return ${expr}; }\n`;
 
 /**
- * Appendix import binding a companion accessor. Hoists like any ESM import;
- * the binding is a function, initialized before module evaluation (cycle-safe).
+ * Phase-1 accessor body (emit 15): the checker fills it in through
+ * finalizeDerivations. The tolerant-mode inert text — assignable to every
+ * return type — so phase-1 output is tsc-clean and the editor serves it as is.
  */
-export const companionImportDecl = (localName: string, imp: CompanionImport) =>
-  `import { ${imp.importedName} as ${accessorNameFor(localName)} } from ${JSON.stringify(companionSpecifierFor(imp.specifier))};\n`;
+export const INERT_ACCESSOR_BODY = "(undefined as never)";
+export const inertAccessorDecl = (accessor: string, optional = false) => accessorDecl(accessor, INERT_ACCESSOR_BODY, optional);
+
+/** Site accessors: inline extractor types and parameter annotations, numbered in source order. */
+export const siteAccessorName = (n: number) => `__nola_type_$${n}`;
+
+/** An appendix accessor for a type that could not be derived, by its full name: NOLA3009 if it ever reaches an ask. */
+export const unsupportedAccessorDeclFor = (accessor: string, reason: string) =>
+  `function ${accessor}(): ${unsupportedTypeText(reason)} { return __nola.types.unsupported(${JSON.stringify(reason)}) as ${unsupportedTypeText(reason)}; }\n`;
+
+/**
+ * The cast of an exported type's value (emit 15): phase 1 cannot know whether
+ * the type derives, so the conditional reads the ACCESSOR's return type — an
+ * UnsupportedType accessor makes the use-site elaboration appear, an
+ * InferType one resolves to `InferType<Name>` (what hover shows).
+ */
+export const typeValueText = (name: string) =>
+  `import("@nola-lang/runtime").TypeValueOf<typeof ${accessorNameFor(name)}, ${name}>`;
+
+/**
+ * The value declaration of an exported type (spec §1, emit 14). Inserted RIGHT
+ * AFTER the type declaration, not in the appendix: `const` is not hoisted, so a
+ * later top-level statement may use `<Name>` as a value; the accessor it calls
+ * is a hoisted function, so the call is legal there. The `as unknown as` cast
+ * is the trust boundary until accessors carry precise generics.
+ */
+export const typeValueDecl = (name: string, typeText: string) =>
+  `\nexport const ${name} = ${accessorNameFor(name)}() as unknown as ${typeText};`;
+
+export const inferTypeText = (name: string) => `import("@nola-lang/runtime").InferType<${name}>`;
+export const unsupportedTypeText = (reason: string) =>
+  `import("@nola-lang/runtime").UnsupportedType<${JSON.stringify(reason)}>`;
+
+/** Appendix accessor for an exported type that could not be derived: NOLA3009 if it ever reaches an ask. */
+export const unsupportedAccessorDecl = (name: string, reason: string) =>
+  `function ${accessorNameFor(name)}(): ${unsupportedTypeText(reason)} { return __nola.types.unsupported(${JSON.stringify(reason)}) as ${unsupportedTypeText(reason)}; }\n`;
+
+/**
+ * Turbopack inline mode (spec §4): the importer-side accessor delegates to the
+ * inlined view's accessor; the view's own accessors carry a per-module prefix
+ * so they never collide with the importer's `__nola_type_<Name>` functions.
+ */
+export const inlineBindingDecl = (localName: string, viewAccessor: string) =>
+  `function ${accessorNameFor(localName)}(): import("@nola-lang/runtime").InferType<unknown> { return ${viewAccessor}(); }\n`;
+export const viewAccessorDecl = (accessor: string, expr: string) =>
+  `function ${accessor}(): import("@nola-lang/runtime").InferType<unknown> { return ${expr}; }\n`;
+export const viewUnsupportedAccessorDecl = (accessor: string, reason: string) =>
+  `function ${accessor}(): ${unsupportedTypeText(reason)} { return __nola.types.unsupported(${JSON.stringify(reason)}) as ${unsupportedTypeText(reason)}; }\n`;
+
+/**
+ * Appendix import binding a type's VALUE from its `.tsi` (a real Nola file or
+ * the derived view, emit 14). ESM initializes it before this module evaluates
+ * unless the graph is cyclic — which is why generated code reads it only
+ * inside a ref closure (spec §2).
+ */
+export const viewImportDecl = (localName: string, imp: TypeImport) =>
+  `import { ${imp.importedName} as ${accessorNameFor(localName)} } from ${JSON.stringify(viewSpecifierFor(imp.specifier))};\n`;
 
 /** Human-facing `"line:col"` with BOTH 1-based (AST columns are 0-based). */
 export const locText = ({ line, column }: Position) => `${line}:${column + 1}`;

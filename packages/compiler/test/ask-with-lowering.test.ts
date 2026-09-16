@@ -11,7 +11,7 @@ describe("ask with <identifier> lowering", () => {
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
       "await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: `v`, " +
-        `type: __nola.types.string(), loc: "2:27", def: "${defHash("x.tsi", "extract", "v", "string")}" }), __frame, "fast");`,
+        `type: __nola_type_$1(), loc: "2:27", def: "${defHash("x.tsi", "extract", "v", "string")}" }), __frame, "fast");`,
     );
   });
 

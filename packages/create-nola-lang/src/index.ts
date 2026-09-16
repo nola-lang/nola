@@ -1,7 +1,7 @@
 export type { AddOptions, AddResult } from "./add.js";
 export { addNola } from "./add.js";
 export type { AgentId, AgentSetupResult } from "./agents.js";
-export { AGENT_IDS, AGENT_OPTIONS, defaultAgents, detectAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
+export { AGENT_IDS, AGENT_OPTIONS, defaultAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
 export type {
   ClientInit,
   KeyGrant,

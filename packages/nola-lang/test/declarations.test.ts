@@ -26,11 +26,28 @@ describe("emitAdjacentDeclarations", () => {
     expect(text).toContain("Intent<string>"); // infer fn returns Intent<T>
   });
 
-  it("reserved *.nola.* files still error (NOLA2006 parity with build)", async () => {
+  it("writes <base>.d.tsi.ts next to every VIEWED plain module too", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nola-decl-"));
-    writeFileSync(join(dir, "x.nola.js"), "// squatter\n");
-    writeFileSync(join(dir, "greet.tsi"), "export infer function g() {\n  return ask ..`x`<string>;\n}\n");
-    const { errors } = await emitAdjacentDeclarations(dir);
-    expect(errors.join("\n")).toContain("NOLA2006");
+    writeFileSync(join(dir, "models.ts"), "export interface Person { name: string }\n");
+    writeFileSync(join(dir, "report.tsi"), 'import type { Person } from "./models.js";\nexport const p = ..`p`<Person>;\n');
+    const { written, errors } = await emitAdjacentDeclarations(dir);
+    expect(errors).toEqual([]);
+    expect(written).toContain(join(dir, "report.d.tsi.ts"));
+    expect(written).toContain(join(dir, "models.d.tsi.ts"));
+    expect(readFileSync(join(dir, "models.d.tsi.ts"), "utf8")).toContain("export declare const Person:");
+  });
+
+  it("a project with no .tsi at all: a view reached only from a plain .ts root gets its declaration", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nola-decl-"));
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { module: "NodeNext", moduleResolution: "NodeNext", strict: true }, include: ["."] }),
+    );
+    writeFileSync(join(dir, "models.ts"), "export interface Person { name: string }\n");
+    writeFileSync(join(dir, "main.ts"), 'import { Person } from "./models.tsi";\nexport const s = Person.toJsonSchema();\n');
+    const { written, errors } = await emitAdjacentDeclarations(dir);
+    expect(errors).toEqual([]);
+    expect(written).toEqual([join(dir, "models.d.tsi.ts")]);
+    expect(readFileSync(join(dir, "models.d.tsi.ts"), "utf8")).toContain("export declare const Person:");
   });
 });

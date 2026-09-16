@@ -10,7 +10,7 @@ export const ENVELOPE_NOTE =
 /** Follow root-level $ref chains so the envelope decision sees the real shape. */
 export function resolveRootRef(schema: JsonSchema): JsonSchema {
   let current = schema;
-  const defs = schema.$defs;
+  const defs = "$defs" in schema ? schema.$defs : undefined;
   for (let i = 0; i < 32 && "$ref" in current; i++) {
     const name = /^#\/\$defs\/(.+)$/.exec(current.$ref)?.[1];
     const next = name ? defs?.[name] : undefined;

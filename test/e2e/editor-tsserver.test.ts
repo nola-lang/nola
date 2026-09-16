@@ -51,6 +51,26 @@ describe("tsserver plugin over examples/cross-file-types (plain .ts importing .t
     expect(body.definitions[0]?.file.endsWith("report.tsi")).toBe(true);
   });
 
+  it("a plain .ts importing ./models.tsi sees the view: no diagnostics, value typed InferType<Person>", { timeout: 120_000 }, async () => {
+    const SCHEMA = join(FIXTURE, "src", "schema.ts");
+    server.send("open", { file: SCHEMA, projectRootPath: FIXTURE });
+    expect(await server.request<TsDiagnostic[]>("semanticDiagnosticsSync", { file: SCHEMA })).toEqual([]);
+    const text = readFileSync(SCHEMA, "utf8");
+    const index = text.indexOf("Person.toJsonSchema");
+    const line = text.slice(0, index).split("\n").length;
+    const offset = index - (text.lastIndexOf("\n", index - 1) + 1) + 1;
+    const info = await server.request<{ displayString: string }>("quickinfo", { file: SCHEMA, line, offset });
+    expect(info.displayString).toContain("InferType<Person>");
+    // definition from .ts into the view: the alias in the synthetic models.tsi.ts, or through it into models.ts
+    const defs = await server.request<{ definitions: Array<{ file: string }> }>("definitionAndBoundSpan", {
+      file: SCHEMA,
+      line,
+      offset,
+    });
+    expect(defs.definitions.length).toBeGreaterThan(0);
+    expect(defs.definitions[0]?.file).toMatch(/models\.(tsi\.)?ts$/);
+  });
+
   // The edit-flow tests run LAST and use controlled in-memory content (MAIN is
   // a dogfood playground — disk line numbers are not stable). They reopen MAIN
   // with fileContent; nothing after them depends on the disk snapshot.
@@ -62,8 +82,8 @@ describe("tsserver plugin over examples/cross-file-types (plain .ts importing .t
   ].join("\n");
 
   it("edits refresh diagnostics — removing the import must not crash the rebuild", { timeout: 120_000 }, async () => {
-    // Toggling the import pulls report.tsi's synthetic companion
-    // (models.nola.ts — no ScriptInfo) out of and back into the program.
+    // Toggling the import pulls report.tsi's synthetic view
+    // (models.tsi.ts — no ScriptInfo) out of and back into the program.
     // Before the fix the rebuild threw "Debug Failure" in
     // ProjectService.setDocument, freezing diagnostics until close/reopen.
     server.send("close", { file: MAIN });
@@ -103,5 +123,24 @@ describe("tsserver plugin over examples/cross-file-types (plain .ts importing .t
       errorCodes: [2304],
     });
     expect(fixes.map((f) => f.description)).toContain('Add import from "./report.tsi"');
+  });
+});
+
+describe("tsserver plugin: lazy derivation diagnostics on a .tsi (emit 15)", () => {
+  const EXOTIC = join(FIXTURE, "src", "exotic.tsi");
+  const CONTENT = "export infer function f(.x: Map<string, number>) {\n  return ask ..`y`<Set<string>>;\n}\n";
+
+  it("reports NOLA2002 at the extractor <T> and NOLA2008 at the parameter annotation, mapped to source", { timeout: 120_000 }, async () => {
+    server.send("open", { file: EXOTIC, projectRootPath: FIXTURE, fileContent: CONTENT });
+    const diags = await server.request<TsDiagnostic[]>("semanticDiagnosticsSync", { file: EXOTIC });
+    server.send("close", { file: EXOTIC });
+    const nola = diags.filter((d) => String(d.text).includes("NOLA"));
+    expect(nola.map((d) => d.code).sort()).toEqual([2002, 2008]);
+    const extract = nola.find((d) => d.code === 2002);
+    expect((extract as { start?: { line: number } } | undefined)?.start?.line).toBe(2);
+    expect(String(extract?.text)).toContain("Set<string>");
+    const context = nola.find((d) => d.code === 2008);
+    expect((context as { start?: { line: number } } | undefined)?.start?.line).toBe(1);
+    expect(String(context?.text)).toContain("Map<string, number>");
   });
 });

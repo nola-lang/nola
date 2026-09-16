@@ -33,7 +33,7 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
       const { system: baseSystem, messages, output } = req.payload;
       const reqSchema = output.syntax === "json" ? output.schema : undefined;
       const rootShape = reqSchema === undefined ? undefined : resolveRootRef(reqSchema);
-      const enveloped = rootShape !== undefined && !("$ref" in rootShape) && rootShape.type !== "object";
+      const enveloped = rootShape !== undefined && !("$ref" in rootShape) && !("type" in rootShape && rootShape.type === "object");
       const transport: JsonSchema | undefined =
         reqSchema === undefined ? undefined : enveloped ? envelope(reqSchema) : reqSchema;
       const system = enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem;

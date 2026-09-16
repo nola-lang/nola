@@ -8,21 +8,57 @@ export type JsonSchema =
     type: "string";
     enum?: string[];
     /** wire convention for revived types (e.g. Date); validator enforces parseability */
-    format?: "date-time";
+    format?: "date-time" | string;
+    // emit 16 (JSDoc constraints)
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
     description?: string;
     $defs?: Record<string, JsonSchema>;
   }
-  | { type: "number" | "boolean"; description?: string; $defs?: Record<string, JsonSchema> }
-  | { type: "array"; items: JsonSchema; description?: string; $defs?: Record<string, JsonSchema> }
+  | {
+      type: "number" | "integer";
+      minimum?: number;
+      maximum?: number;
+      exclusiveMinimum?: number;
+      exclusiveMaximum?: number;
+      multipleOf?: number;
+      description?: string;
+      $defs?: Record<string, JsonSchema>;
+    }
+  | { type: "boolean"; description?: string; $defs?: Record<string, JsonSchema> }
+  | {
+      type: "array";
+      items: JsonSchema;
+      minItems?: number;
+      maxItems?: number;
+      uniqueItems?: true;
+      description?: string;
+      $defs?: Record<string, JsonSchema>;
+    }
   | {
     type: "object";
     properties: Record<string, JsonSchema>;
     required: string[];
-    additionalProperties: false;
+    additionalProperties: false | JsonSchema;
     description?: string;
     $defs?: Record<string, JsonSchema>;
   }
-  | { $ref: string; description?: string; $defs?: Record<string, JsonSchema> };
+  | { $ref: string; description?: string; $defs?: Record<string, JsonSchema> }
+  // emit 15 (checker-backed derivation): unions, literals, tuples, records
+  | { type: "null"; description?: string }
+  | { const: string | number | boolean; description?: string; $defs?: Record<string, JsonSchema> }
+  | { anyOf: JsonSchema[]; description?: string; $defs?: Record<string, JsonSchema> }
+  | {
+      type: "array";
+      prefixItems: JsonSchema[];
+      items: false;
+      minItems: number;
+      maxItems: number;
+      description?: string;
+      $defs?: Record<string, JsonSchema>;
+    }
+  | { type: "object"; additionalProperties: JsonSchema; description?: string; $defs?: Record<string, JsonSchema> };
 
 export const INTENT_BRAND = "nola.intent" as const;
 
@@ -78,8 +114,26 @@ export class Site {
  * Emit 13: extract/call inits carry `def` — the compiler-stamped ask source
  * identity (sha256 over file + raw instruction/callee + type text; line/col
  * excluded). Never part of the ask fingerprint.
+ *
+ * Emit 14: types as values — every exported type alias / interface in a .tsi
+ * also exports `const <Name> = __nola_type_<Name>() as InferType<Name>`;
+ * cross-file refs pass `() => <imported value>` to `__nola.types.ref` (the
+ * resolver may return an InferType OR an accessor function) and the generated
+ * import targets `./x.tsi` (companions retired).
+ *
+ * Emit 15: checker-backed derivation — `__nola.types` gains literal / union /
+ * nullable / tuple / record (and object's `{ additional }`); every derivation
+ * site in the body calls an appendix accessor (`__nola_type_$N()` for inline
+ * extractor types and contextual parameters) instead of carrying an inline
+ * combinator expression. An emit-14 runtime has no union/nullable/… keys.
+ *
+ * Emit 16: JSDoc constraints — a carrier gains `.constrain({ … })` (string /
+ * number / array keywords of the JSON Schema validation vocabulary, emitted
+ * from `@format`, `@minimum`, `@minItems`, … tags); the schema carries the
+ * keywords and validation enforces them. An emit-15 carrier has no
+ * `constrain` method.
  */
-export const NOLA_EMIT = 13;
+export const NOLA_EMIT = 16;
 
 /**
  * The narrow public tier: an intent resolvable ONLY through `ask` — what a
@@ -516,6 +570,7 @@ export {
   NolaProviderError,
   NolaResolutionError,
   NolaSchemaError,
+  NolaValidationError,
   NolaVersionError,
   type ProviderErrorOptions,
   type ResolutionDetails,
@@ -571,3 +626,4 @@ export {
   scopeChain,
 } from "./render-classic.js";
 export { parseRetryAfter } from "./retry-after.js";
+export { formatIssue, formatIssuePath, formatIssues, type ValidationIssue } from "./validation.js";

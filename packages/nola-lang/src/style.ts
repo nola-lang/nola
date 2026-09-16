@@ -1,7 +1,7 @@
 import type { Palette } from "create-nola-lang";
 
 // `path:line:col CODE: message` (build/check/declarations), or `path CODE: message`
-// for the position-less reserved-companion refusal. The path is everything
+// for a position-less refusal such as a dangling view import (NOLA2007). The path is everything
 // before the last `:line:col` — a Windows drive letter carries its own colon.
 const HEAD = /^(.+?)(:\d+:\d+)? ((?:NOLA|TS)\d+): /;
 const GUTTER = /^(\d+ \|)( .*)?$/;

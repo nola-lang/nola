@@ -1,0 +1,69 @@
+---
+title: Schema derivation
+description: How Nola turns a TypeScript type into the JSON Schema an extractor, a contextual parameter or a type value carries, and what stays underivable.
+sidebar:
+  order: 70
+---
+
+Every `<T>` on an extractor, every `.param` type and every exported type in a `.tsi` becomes a JSON Schema. The derivation asks the TypeScript checker what the type *is* — the resolved type, not its spelling — so `Partial<User>`, `interface Employee extends Person`, a discriminated union or a type imported from a package all derive exactly as the equivalent inline object would.
+
+## Coverage
+
+| TypeScript | JSON Schema |
+| --- | --- |
+| `string`, `number`, `boolean` | `{ type: "string" }` … |
+| `"a" \| "b"`, string `enum`s | `{ type: "string", enum: ["a", "b"] }` |
+| `1 \| 2`, `true`, numeric `enum`s | `{ const: 1 }` inside `anyOf` |
+| `T \| null` | `{ anyOf: [T, { type: "null" }] }` |
+| `A \| B` (objects, scalars, mixed) | `{ anyOf: [A, B] }` — a shared literal key makes it a discriminated union for validation |
+| `T[]`, `ReadonlyArray<T>` | `{ type: "array", items: T }` |
+| `[string, number?]` | `{ type: "array", prefixItems: […], items: false, minItems, maxItems }` |
+| `{ a: string; b?: number }`, `interface`, `type` aliases | `{ type: "object", properties, required, additionalProperties: false }` |
+| `interface X extends Y`, `A & B` | the flattened members |
+| `Partial`, `Required`, `Pick`, `Omit`, other mapped types | the resulting members |
+| `Record<string, T>`, `{ [k: string]: T }` | `{ type: "object", additionalProperties: T }` |
+| generic types applied with arguments (`Box<number>`) | the instantiated members |
+| `Date` | `{ type: "string", format: "date-time" }`, revived to a `Date` |
+| recursive types | `$defs` + `$ref` |
+| types from another file or from a package | derived where they are declared; a `.tsi` or a [view](/docs/language/types-as-values/#views-of-plain-typescript) carries a named type's value |
+| JSDoc on a member | `description` |
+| JSDoc constraint tags (`@format`, `@minimum`, `@minItems`, …) | the keyword — see [Constraints](#constraints) |
+
+A `.tsi` file's own named types are referenced by name (`$defs` entries carry the declared name); a type imported from another project file is referenced as `<module>#<Name>`, so two files may export a `Node` each.
+
+## Constraints
+
+A JSDoc tag on a property signature or on a type alias declaration, named like the JSON Schema keyword it becomes. Every keyword is emitted into the schema and enforced by validation; the message is what the correction turn and `validate` report.
+
+| Tag | Applies to | Schema | Validation message on failure |
+| --- | --- | --- | --- |
+| `@minLength n` / `@maxLength n` | strings | `minLength` / `maxLength` | `expected at least 3 characters, got 1` |
+| `@pattern re` | strings | `pattern` (the rest of the tag text, a JavaScript regular expression without flags) | `expected a string matching ^[a-z]+$, got "A B"` |
+| `@format name` | strings | `format` | `expected a valid email, got "x"` |
+| `@minimum n` / `@maximum n` | numbers | `minimum` / `maximum` | `expected a number ≥ 13, got 9` |
+| `@exclusiveMinimum n` / `@exclusiveMaximum n` | numbers | `exclusiveMinimum` / `exclusiveMaximum` | `expected a number > 0, got 0` |
+| `@multipleOf n` | numbers | `multipleOf` (decided exactly on decimals) | `expected a multiple of 0.01, got 1.005` |
+| `@integer` | numbers | `type: "integer"` | `expected an integer, got 1.5` |
+| `@minItems n` / `@maxItems n` | arrays and tuples | `minItems` / `maxItems` | `expected at least 1 item, got 0` |
+| `@uniqueItems` | arrays and tuples | `uniqueItems` (items compared as canonical JSON) | `expected unique items, found a duplicate at index 2` |
+
+Formats: `date-time`, `date`, `time`, `email`, `uri`, `uuid`, `ipv4`, `ipv6`, `hostname`. Lengths count UTF-16 code units, as JavaScript's `length` does.
+
+Rules:
+
+- **Kind.** "Strings" includes string-literal unions and string enums; "numbers" includes numeric literals. The kind is decided on the non-null, non-undefined part of the type, so `@minLength 1` on `string | null` constrains the string and lets `null` through. A tag on any other kind — an object, a boolean, a `Date`, a mixed union such as `string | number` — is [`NOLA2012`](/docs/reference/error-codes/#nola2012).
+- **Values.** Numeric tags need a finite number; `@pattern` and `@format` need a value; `@integer` and `@uniqueItems` take none. A missing, malformed or repeated tag, or an unknown format, is [`NOLA2012`](/docs/reference/error-codes/#nola2012).
+- **Aliases.** Tags on `type Id = string` live with `Id`; a property `id: Id` may add its own. Tags on an `interface` or `class` declaration itself are not constraints and are ignored, as are unrelated JSDoc tags (`@see`, `@deprecated`, `@param`).
+- **Dialects.** `~standard.jsonSchema` renders the keywords for every target; OpenAPI 3.0 gets `exclusiveMinimum: true` beside `minimum`, and a constrained recursive reference is wrapped in `allOf` where the dialect ignores siblings of `$ref`.
+
+## Not derivable
+
+`Map`, `Set`, `Promise`, `RegExp`, functions and methods, `symbol`, `bigint`, `unknown`, `any`, `never`, tuple rest elements, number index signatures, and a generic type used without arguments (`Box<T>` as declared — instantiate it). An extractor over one of these is [`NOLA2002`](/docs/reference/error-codes/#nola2002); a `.param` follows the [contextual-parameter policy](/docs/language/contextual-parameters/#when-a-type-is-not-derivable); an exported type becomes an `UnsupportedType` value whose use is a compile-time error carrying the reason.
+
+## Validation
+
+A model's reply is validated against the resolved schema in one pass that reports **every** issue, not the first: a correction turn fixes all of them at once, and `validate` on a [type value](/docs/language/types-as-values/) returns the full list. A union whose members share a literal-typed key is validated by that key — the issues name the chosen branch's members — while any other union takes the first matching member and otherwise reports one issue naming the alternatives. `Date` fields come back revived.
+
+## Where derivation runs
+
+The checker runs wherever runtime output is produced: `nola run` (the loader), `nola build`, `nola check`, the bundler plugins and the Turbopack loader — one TypeScript language service per process, rooted at your nearest `tsconfig.json` (strict NodeNext defaults without one). The editor keeps hover and completion instant and runs the same derivation lazily on each diagnostics pass, so an underivable type shows up as a `nola` diagnostic at the type.

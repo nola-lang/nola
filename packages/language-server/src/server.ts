@@ -4,14 +4,16 @@
 // - create(projectContext) returns { languagePlugins: LanguagePlugin<URI>[],
 //   setup?({ language, project }) } — project is ProjectContext, whose
 //   `typescript.languageServiceHost` (augmented by @volar/typescript) is where
-//   companions decorate.
+//   views decorate (after Volar's own decoration, so `.tsi` misses become views).
 // - volar-service-typescript: create(ts) -> LanguageServicePlugin[].
+
+import { useTypeScript } from "@nola-lang/derive";
 import { createNolaLanguagePlugin } from "@nola-lang/language-core";
-import { findProjectRoot } from "@nola-lang/node-loader";
+import { findProjectRoot } from "@nola-lang/node-loader/project-root";
 import {
   decorateHostHideShadowedDeclarations,
-  decorateHostWithCompanions,
   decorateHostWithRuntimeStub,
+  decorateHostWithViews,
 } from "@nola-lang/typescript-plugin";
 import {
   createConnection,
@@ -34,6 +36,9 @@ connection.onInitialize((params) => {
     throw new Error("initializationOptions.typescript.tsdk is required (path to a typescript/lib directory)");
   }
   const tsdk = loadTsdkByPath(tsdkPath, params.locale);
+  // derive walks the programs Volar builds on this tsdk: it must use the SAME
+  // TypeScript, and the bundle ships none of its own (typescript is external).
+  useTypeScript(tsdk.typescript);
   const rootDir = server.workspaceFolders.all[0]?.fsPath ?? process.cwd();
   const sourceRoot = findProjectRoot(rootDir);
 
@@ -45,7 +50,7 @@ connection.onInitialize((params) => {
         const host = project.typescript?.languageServiceHost;
         if (host) {
           decorateHostHideShadowedDeclarations(tsdk.typescript, host);
-          decorateHostWithCompanions(tsdk.typescript, host, { sourceRoot });
+          decorateHostWithViews(tsdk.typescript, host, { sourceRoot });
           // Before `npm install` (or for a bare .tsi) the lowered appendix
           // import of @nola-lang/runtime has nothing to resolve to; serve the
           // compiler's ambient stub like `nola check` does, so the editor
@@ -54,7 +59,7 @@ connection.onInitialize((params) => {
         }
       },
     })),
-    [...createTypeScriptServices(tsdk.typescript), createNolaServicePlugin(tsdk.typescript)],
+    [...createTypeScriptServices(tsdk.typescript), createNolaServicePlugin(tsdk.typescript, { sourceRoot })],
   );
 });
 

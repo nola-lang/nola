@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import {
@@ -11,6 +11,9 @@ import {
   resolveNolaConfig,
 } from "@nola-lang/runtime";
 import { bundleConfig } from "./bundle-config.js";
+import { findUp } from "./project-root.js";
+
+export { findProjectRoot } from "./project-root.js";
 
 // Apply a project-root `.env` into process.env before the config is evaluated, so
 // `nola.config.ts` (and anything it reads, e.g. OPENAI_API_KEY) sees it. Precedence
@@ -23,32 +26,6 @@ async function applyDotEnv(dir: string): Promise<void> {
   for (const [key, value] of Object.entries(parsed)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
-}
-
-function findUp(startDir: string, name: string): string | null {
-  let dir = startDir;
-  for (;;) {
-    const candidate = join(dir, name);
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
-/**
- * The project root: the directory holding the nearest `nola.config.ts`, else `startDir`.
- * Used to relativize the paths baked into lowered output, so `dist/` never carries the
- * build machine's directory layout.
- *
- * Always absolute — `displayPathFor` prefix-matches this against an absolute file path,
- * and a relative root would match nothing and silently fall back to emitting the
- * absolute path.
- */
-export function findProjectRoot(startDir = process.cwd()): string {
-  const from = resolve(startDir);
-  const configPath = findUp(from, "nola.config.ts");
-  return configPath ? dirname(configPath) : from;
 }
 
 /** Evaluate nola.config.ts (bundled: relative imports inlined, packages external) via temp-module import. */

@@ -1,8 +1,8 @@
-import type { JsonSchema } from "@nola-lang/core";
 import type { InferenceComposer } from "../../ask/composer.js";
 import type { ExtractPromptScope, PromptTemplate } from "../../ask/prompt-render.js";
 import { type AskIdentity, InferContext } from "../../infer-context/infer-context.js";
 import type { NolaRuntime } from "../../runtime/index.js";
+import type { TypeCarrier } from "../../types/infer-type.js";
 
 export type FunctionCallIntentParams = {
   fn: unknown;
@@ -14,14 +14,14 @@ export type FunctionCallIntentParams = {
   loc?: string;
   /** compiler-stamped source identity (AskDefinition spec §2); line/col excluded */
   def?: string;
-  /** the combined slot schema — set by forSlots() for the slot-filling ask; never authored */
-  slotSchema?: JsonSchema;
+  /** the combined slot carrier — set by forSlots() for the slot-filling ask; never authored */
+  slotType?: TypeCarrier<unknown>;
 };
 
 /**
  * The call intent's own context node — carries the full init, including the
  * live `fn` and `args`. Composes NOTHING until `forSlots()` hands it the
- * combined slot schema: that node is the ask-site node of the slot-filling
+ * combined slot carrier: that node is the ask-site node of the slot-filling
  * ask and composes `intent: "call"` (records-view spec §3.4). Live values
  * never reach prompt text, and call intents mint no frame, so this data
  * never feeds Frame.describe/toTrace.
@@ -32,9 +32,9 @@ export class FunctionCallContext extends InferContext<FunctionCallIntentParams> 
     super(params, runtime);
   }
 
-  /** The node for the slot-filling ask: this init plus the combined slot schema. */
-  forSlots(slotSchema: JsonSchema): FunctionCallContext {
-    return new FunctionCallContext({ ...this.data, slotSchema }, this.runtime);
+  /** The node for the slot-filling ask: this init plus the combined slot carrier (one object, one property per slot). */
+  forSlots(slotType: TypeCarrier<unknown>): FunctionCallContext {
+    return new FunctionCallContext({ ...this.data, slotType }, this.runtime);
   }
 
   /** The synthesized request the model sees — the classic TASK text of a call, unchanged since the sigil-less spec. */
@@ -43,9 +43,13 @@ export class FunctionCallContext extends InferContext<FunctionCallIntentParams> 
     return `Generate the arguments for calling the function "${this.data.name}".${hint}`;
   }
 
+  override outputType(): TypeCarrier<unknown> | undefined {
+    return this.data.slotType;
+  }
+
   override compose(composer: InferenceComposer): void {
-    const { slotSchema, name, instruction, template } = this.data;
-    if (!slotSchema) return;
+    const { slotType, name, instruction, template } = this.data;
+    if (!slotType) return;
     composer
       .intent("call")
       .input({
@@ -54,7 +58,7 @@ export class FunctionCallContext extends InferContext<FunctionCallIntentParams> 
         ...(instruction ? { hint: instruction } : {}),
         ...(template ? { template } : {}),
       })
-      .output(slotSchema);
+      .output(slotType);
   }
 
   override askIdentity(): AskIdentity {

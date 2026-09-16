@@ -50,13 +50,16 @@ export async function transformTsi(
   source: string,
   file: string,
   ctx: ProjectContext,
-): Promise<{ code: string; map: string }> {
-  const { code, map } = await transformNola(source, file, {
+): Promise<{ code: string; map: string; deps: string[] }> {
+  const { code, map, deps } = await transformNola(source, file, {
     sourceRoot: ctx.sourceRoot,
     underivableContextType: ctx.underivableContextType,
+    // emit 15: the checker fills in the appendix accessors; `deps` are the
+    // declaration files it read — type-only edges bundlers cannot see
+    derive: (f, phase1) => ctx.service.derive(f, phase1).answers,
   });
   if (ctx.target === "app" && ctx.configPath !== null) {
-    return { code: `${code}\nimport ${JSON.stringify(wiringIdFor(ctx.configPath))};\n`, map };
+    return { code: `${code}\nimport ${JSON.stringify(wiringIdFor(ctx.configPath))};\n`, map, deps };
   }
-  return { code, map };
+  return { code, map, deps };
 }

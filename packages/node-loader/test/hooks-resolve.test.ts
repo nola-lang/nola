@@ -82,3 +82,51 @@ describe("resolve .js→.ts fallback", () => {
     expect(calls).toEqual(["./handlers.js"]);
   });
 });
+
+describe("resolve: the *.tsi rule", () => {
+  it("a real .tsi on disk resolves through the default resolver", async () => {
+    const { parentURL, existing } = await projectDir(["models.tsi"]);
+    const { next, calls } = fakeNextResolve(existing);
+    const result = await resolve("./models.tsi", { parentURL }, next);
+    expect(result.url.endsWith("models.tsi")).toBe(true);
+    expect(calls).toEqual(["./models.tsi"]);
+  });
+
+  it("a missing .tsi with a sibling .ts resolves to the marked view URL", async () => {
+    const { dir, parentURL, existing } = await projectDir(["models.ts"]);
+    const { next, calls } = fakeNextResolve(existing);
+    const result = await resolve("./models.tsi", { parentURL }, next);
+    expect(result.url).toBe(`${pathToFileURL(join(dir, "models.ts")).href}?nola-view`);
+    expect(result.shortCircuit).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it("falls back to a .d.ts source", async () => {
+    const { dir, parentURL, existing } = await projectDir(["api.d.ts"]);
+    const { next } = fakeNextResolve(existing);
+    const result = await resolve("./api.tsi", { parentURL }, next);
+    expect(result.url).toBe(`${pathToFileURL(join(dir, "api.d.ts")).href}?nola-view`);
+  });
+
+  it("a live .tsi beats a sibling .ts (deterministic, spec decision 5)", async () => {
+    const { parentURL, existing } = await projectDir(["models.ts", "models.tsi"]);
+    const { next, calls } = fakeNextResolve(existing);
+    await resolve("./models.tsi", { parentURL }, next);
+    expect(calls).toEqual(["./models.tsi"]);
+  });
+
+  it("nothing on disk is NOLA2007 ViewUnavailable", async () => {
+    const { parentURL, existing } = await projectDir([]);
+    const { next } = fakeNextResolve(existing);
+    await expect(resolve("./missing.tsi", { parentURL }, next)).rejects.toThrow(
+      /NOLA2007.*names neither a Nola file nor a TypeScript module/,
+    );
+  });
+
+  it("the .js→.ts fallback still applies from a view importer (query in the parent URL)", async () => {
+    const { dir, parentURL, existing } = await projectDir(["models.ts"]);
+    const { next } = fakeNextResolve(existing);
+    const result = await resolve("./models.js", { parentURL: `${parentURL}?nola-view` }, next);
+    expect(result.url).toBe(pathToFileURL(join(dir, "models.ts")).href);
+  });
+});

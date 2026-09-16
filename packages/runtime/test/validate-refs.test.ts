@@ -28,12 +28,12 @@ describe("validate with $defs/$ref", () => {
   it("rejects a violation deep inside the recursion with a path", () => {
     const r = validate(TREE, { label: "root", kids: [{ label: 7 }] });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain("$.kids[0].label");
+    if (!r.ok) expect(r.issues[0]?.path).toEqual(["kids", 0, "label"]);
   });
 
   it("fails cleanly on an unknown $ref", () => {
     const r = validate({ $ref: "#/$defs/Missing" }, {});
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain("Missing");
+    if (!r.ok) expect(r.issues[0]?.message).toContain("Missing");
   });
 });

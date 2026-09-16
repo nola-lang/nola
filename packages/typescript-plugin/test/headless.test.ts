@@ -1,9 +1,13 @@
 // The Track 2 exit criterion (spec §6d): a real ts.LanguageService, decorated
-// by Volar + the companion host, over an in-memory project — tsserver-
-// equivalent behavior with no editor.
+// by Volar + the view host, over an in-memory project — tsserver-equivalent
+// behavior with no editor.
 import { RUNTIME_AMBIENT_STUB } from "@nola-lang/compiler";
 import { createNolaLanguagePlugin } from "@nola-lang/language-core";
-import { decorateHostHideShadowedDeclarations, decorateHostWithCompanions } from "@nola-lang/typescript-plugin";
+import {
+  decorateHostHideShadowedDeclarations,
+  decorateHostWithViews,
+  decorateLanguageServiceWithDerivationDiagnostics,
+} from "@nola-lang/typescript-plugin";
 import { createLanguage } from "@volar/language-core";
 import { createProxyLanguageService, decorateLanguageServiceHost, resolveFileLanguageId } from "@volar/typescript";
 import ts from "typescript";
@@ -48,6 +52,21 @@ const BAD_TSN = [
   "",
 ].join("\n");
 
+// A plain .ts importing `./models.tsi` with NO such file: the view of models.ts
+// (emit 14) — the interface AND its InferType value under one name.
+const SCHEMA = [
+  'import { Person } from "./models.tsi";',
+  "export const s = Person.toJsonSchema();",
+  "export const bad: number = Person;",
+  "",
+].join("\n");
+// An exported type gets a value inserted right after it; positions after the
+// insert must still map to source lines.
+const VALUES = "export type P = { x: number };\nconst wrong: string = 1;\n";
+// Underivable types: phase-1 output is inert, so the lazy derivation pass on
+// getSemanticDiagnostics reports them (emit 15), mapped to the source ranges.
+const EXOTIC = "export infer function f(.x: Map<string, number>) {\n  return ask ..`y`<Set<string>>;\n}\n";
+
 const files = new Map<string, Entry>();
 let proxy: ts.LanguageService;
 
@@ -70,6 +89,9 @@ beforeAll(() => {
   setFile(`${ROOT}/report.tsi`, REPORT);
   setFile(`${ROOT}/main.ts`, MAIN);
   setFile(`${ROOT}/bad.tsi`, BAD_TSN);
+  setFile(`${ROOT}/schema.ts`, SCHEMA);
+  setFile(`${ROOT}/values.tsi`, VALUES);
+  setFile(`${ROOT}/exotic.tsi`, EXOTIC);
   setFile("/stubs/runtime.d.ts", RUNTIME_AMBIENT_STUB);
   // A stale on-disk build artifact (the old adjacent-declaration emit). With
   // allowArbitraryExtensions TS would resolve `./report.tsi` to it FIRST,
@@ -93,7 +115,14 @@ beforeAll(() => {
 
   const host: ts.LanguageServiceHost = {
     getCompilationSettings: () => options,
-    getScriptFileNames: () => [`${ROOT}/main.ts`, `${ROOT}/report.tsi`, `${ROOT}/bad.tsi`],
+    getScriptFileNames: () => [
+      `${ROOT}/main.ts`,
+      `${ROOT}/report.tsi`,
+      `${ROOT}/bad.tsi`,
+      `${ROOT}/schema.ts`,
+      `${ROOT}/values.tsi`,
+      `${ROOT}/exotic.tsi`,
+    ],
     getScriptVersion: (f) => String(files.get(norm(f))?.version ?? 0),
     getScriptSnapshot: (f) => {
       const entry = files.get(norm(f));
@@ -105,6 +134,16 @@ beforeAll(() => {
     getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
     fileExists: (f) => files.has(norm(f)) || ts.sys.fileExists(f),
     readFile: (f) => files.get(norm(f))?.text ?? ts.sys.readFile(f),
+    // tsserver's Project always implements this; Volar decorates it only when
+    // present (its own `.tsi` resolver), and the view host wraps Volar's — so a
+    // faithful headless stack needs the base resolver here too.
+    resolveModuleNameLiterals: (literals, containingFile, _redirected, opts) =>
+      literals.map((lit) => ({
+        resolvedModule: ts.resolveModuleName(lit.text, containingFile, opts, {
+          fileExists: (f) => host.fileExists?.(f) ?? false,
+          readFile: (f) => host.readFile?.(f),
+        }).resolvedModule,
+      })),
     directoryExists: (d) => {
       const key = `${norm(d).replace(/\/+$/, "")}/`;
       for (const f of files.keys()) if (f.startsWith(key)) return true;
@@ -113,10 +152,10 @@ beforeAll(() => {
   };
 
   // Order matches the tsserver plugin: shadowed-declaration hiding innermost,
-  // then companions, then Volar's decoration (outermost, owns .tsi resolution
-  // into virtual scripts).
+  // then Volar's decoration (owns .tsi resolution into virtual scripts), then
+  // the view host OUTERMOST — it answers only the `.tsi` literals Volar left
+  // unresolved (no such Nola file), with the view of the plain module.
   decorateHostHideShadowedDeclarations(ts, host);
-  decorateHostWithCompanions(ts, host, { sourceRoot: ROOT });
 
   const nolaPlugin = createNolaLanguagePlugin<string>((fileName) => fileName, { sourceRoot: ROOT });
   const language = createLanguage<string>(
@@ -134,8 +173,11 @@ beforeAll(() => {
     },
   );
   decorateLanguageServiceHost(ts, language, host);
+  decorateHostWithViews(ts, host, { sourceRoot: ROOT });
 
   const base = ts.createLanguageService(host);
+  // the tsserver plugin decorates the INNER service the same way, before Volar proxies it
+  decorateLanguageServiceWithDerivationDiagnostics(ts, base, () => language, { sourceRoot: ROOT });
   const proxied = createProxyLanguageService(base);
   proxied.initialize(language);
   proxy = proxied.proxy;
@@ -178,7 +220,36 @@ describe("headless editor stack (tsserver-equivalent)", () => {
     expect(line).toBe(2);
   });
 
-  it("companion freshness: an unsaved edit to models.ts propagates", () => {
+  it("plain .ts importing ./models.tsi (no such file) gets the view: value typed, wrong assignment flagged", () => {
+    const diags = proxy.getSemanticDiagnostics(`${ROOT}/schema.ts`);
+    expect(diags.map((d) => d.code)).toEqual([2322]);
+    const pos = (files.get(`${ROOT}/schema.ts`) as Entry).text.indexOf("Person.toJsonSchema");
+    const info = ts.displayPartsToString(proxy.getQuickInfoAtPosition(`${ROOT}/schema.ts`, pos)?.displayParts);
+    expect(info).toContain("InferType<Person>");
+  });
+
+  it("positions after an inserted type value still map to the source line", () => {
+    const diags = proxy.getSemanticDiagnostics(`${ROOT}/values.tsi`);
+    const mismatch = diags.find((d) => d.code === 2322);
+    expect(mismatch).toBeDefined();
+    const text = (files.get(`${ROOT}/values.tsi`) as Entry).text;
+    const start = mismatch?.start ?? -1;
+    expect(text.slice(0, start).split("\n").length).toBe(2);
+    expect(text.slice(start, start + "wrong".length)).toBe("wrong");
+  });
+
+  it("lazy derivation diagnostics: NOLA2002 at the extractor <T>, NOLA2008 at the annotation, in source coordinates", () => {
+    const diags = proxy.getSemanticDiagnostics(`${ROOT}/exotic.tsi`).filter((d) => d.source === "nola");
+    expect(diags.map((d) => d.code).sort()).toEqual([2002, 2008]);
+    const text = (files.get(`${ROOT}/exotic.tsi`) as Entry).text;
+    const at = (d: ts.Diagnostic | undefined) => text.slice(d?.start ?? -1, (d?.start ?? 0) + (d?.length ?? 0));
+    const extract = diags.find((d) => d.code === 2002);
+    expect(at(extract)).toBe("Set<string>");
+    expect(String(extract?.messageText)).toContain("NOLA2002");
+    expect(at(diags.find((d) => d.code === 2008))).toBe("Map<string, number>");
+  });
+
+  it("view freshness: an unsaved edit to models.ts propagates", () => {
     // MODELS_V1 has no `nickname` -> main.ts's `p.nickname` errors
     const before = proxy.getSemanticDiagnostics(`${ROOT}/main.ts`);
     expect(before.some((d) => d.code === 2339)).toBe(true);

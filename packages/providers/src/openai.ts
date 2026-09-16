@@ -19,9 +19,10 @@ function toStrict(schema: JsonSchema): StrictSchema {
   const out = toStrictNode(schema);
   // $defs only ever appears at the root of our emissions; transform each def
   // through the same strict rewrite so refs resolve to strict shapes.
-  if (schema.$defs) {
+  const rootDefs = "$defs" in schema ? schema.$defs : undefined;
+  if (rootDefs) {
     const defs: Record<string, StrictSchema> = {};
-    for (const [key, def] of Object.entries(schema.$defs)) defs[key] = toStrictNode(def);
+    for (const [key, def] of Object.entries(rootDefs)) defs[key] = toStrictNode(def);
     out.$defs = defs;
   }
   return out;
@@ -29,17 +30,39 @@ function toStrict(schema: JsonSchema): StrictSchema {
 
 function toStrictNode(schema: JsonSchema): StrictSchema {
   if ("$ref" in schema) return { $ref: schema.$ref };
+  // emit 15 shapes: choice and literals pass through; strict mode accepts anyOf/const
+  if ("anyOf" in schema) return { anyOf: schema.anyOf.map(toStrictNode) };
+  if ("const" in schema) return { const: schema.const };
   switch (schema.type) {
     case "object": {
+      if (!("properties" in schema)) {
+        return { type: "object", additionalProperties: toStrictNode(schema.additionalProperties) };
+      }
       const properties: Record<string, StrictSchema> = {};
       for (const [key, prop] of Object.entries(schema.properties)) {
         const strict = toStrictNode(prop);
         properties[key] = schema.required.includes(key) ? strict : { anyOf: [strict, { type: "null" }] };
       }
-      return { type: "object", properties, required: Object.keys(schema.properties), additionalProperties: false };
+      return {
+        type: "object",
+        properties,
+        required: Object.keys(schema.properties),
+        additionalProperties: schema.additionalProperties === false ? false : toStrictNode(schema.additionalProperties),
+      };
     }
     case "array":
+      if ("prefixItems" in schema) {
+        return {
+          type: "array",
+          prefixItems: schema.prefixItems.map(toStrictNode),
+          items: false,
+          minItems: schema.minItems,
+          maxItems: schema.maxItems,
+        };
+      }
       return { type: "array", items: toStrictNode(schema.items) };
+    case "null":
+      return { type: "null" };
     default:
       return schema.type === "string" && schema.enum
         ? { type: "string", enum: [...schema.enum] }
@@ -74,14 +97,22 @@ function recoverFailedGeneration(errorBody: string, enveloped: boolean, schema: 
 
 /** Remove null-valued optionals the strict transport introduced. */
 function fromStrict(value: unknown, schema: JsonSchema, defs?: Record<string, JsonSchema>): unknown {
-  const activeDefs = schema.$defs ? { ...defs, ...schema.$defs } : defs;
+  const ownDefs = "$defs" in schema ? schema.$defs : undefined;
+  const activeDefs = ownDefs ? { ...defs, ...ownDefs } : defs;
   if ("$ref" in schema) {
     const name = /^#\/\$defs\/(.+)$/.exec(schema.$ref)?.[1];
     const target = name ? activeDefs?.[name] : undefined;
     // Data-driven recursion: each step consumes value structure, so it terminates.
     return target ? fromStrict(value, target, activeDefs) : value;
   }
-  if (schema.type === "object" && typeof value === "object" && value !== null && !Array.isArray(value)) {
+  if ("anyOf" in schema || "const" in schema) return value;
+  if (
+    schema.type === "object" &&
+    "properties" in schema &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
       const propSchema = schema.properties[key];
@@ -90,8 +121,9 @@ function fromStrict(value: unknown, schema: JsonSchema, defs?: Record<string, Js
     }
     return out;
   }
-  if (schema.type === "array" && Array.isArray(value)) {
-    return value.map((item) => fromStrict(item, schema.items, activeDefs));
+  if (schema.type === "array" && "items" in schema && schema.items !== false && Array.isArray(value)) {
+    const items = schema.items;
+    return value.map((item) => fromStrict(item, items, activeDefs));
   }
   return value;
 }
@@ -117,7 +149,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
       const { system: baseSystem, messages, output } = req.payload;
       const reqSchema = output.syntax === "json" ? output.schema : undefined;
       const rootShape = reqSchema === undefined ? undefined : resolveRootRef(reqSchema);
-      const enveloped = rootShape !== undefined && !("$ref" in rootShape) && rootShape.type !== "object";
+      const enveloped = rootShape !== undefined && !("$ref" in rootShape) && !("type" in rootShape && rootShape.type === "object");
       const transport: JsonSchema | undefined =
         reqSchema === undefined ? undefined : enveloped ? envelope(reqSchema) : reqSchema;
       const system = enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem;

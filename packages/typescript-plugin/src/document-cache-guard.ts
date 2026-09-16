@@ -11,7 +11,7 @@ interface ProjectServiceInternals {
 /**
  * tsserver's DocumentRegistry uses the ProjectService as an external source
  * file cache and ASSERTS that every cached path has a ScriptInfo
- * (`Debug.checkDefined` in ProjectService.setDocument). Synthetic companion
+ * (`Debug.checkDefined` in ProjectService.setDocument). Synthetic view
  * modules are host-level scripts with no on-disk file: tsserver's
  * watch/ScriptInfo lifecycle drops their info shortly after creation, and
  * from then on EVERY program rebuild (any edit) dies in that assert —

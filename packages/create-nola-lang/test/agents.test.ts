@@ -3,111 +3,158 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  AGENT_IDS,
-  defaultAgents,
-  detectAgents,
-  parseAgentsFlag,
-  readSkillSource,
-  writeAgentSkills,
-} from "../src/agents.js";
+import { AGENT_IDS, defaultAgents, parseAgentsFlag, readSkillSource, writeAgentSkills } from "../src/agents.js";
 import { ownVersion } from "../src/scaffold.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-agents-"));
 /** The pointer form these adapters replaced — no adapter may name it again. */
 const LEGACY = "node_modules/nola-lang/skills/nola";
+const SKILL_DIRS = [".claude/skills/nola", ".agents/skills/nola"] as const;
+const REFERENCES = ["syntax.md", "patterns.md", "config.md", "pitfalls.md"] as const;
 
 describe("writeAgentSkills", () => {
-  it("writes self-contained content for all four agents — no node_modules pointer", async () => {
+  it("claude + universal write the canonical directory twice — .claude/skills and .agents/skills", async () => {
     const dir = await tmp();
     const version = await ownVersion();
-    const result = await writeAgentSkills(dir, [...AGENT_IDS]);
+    const result = await writeAgentSkills(dir, ["claude", "universal"]);
 
-    expect(result.wrote).toContain(".claude/skills/nola/SKILL.md");
-    expect(result.wrote).toContain(".cursor/rules/nola.mdc");
-    expect(result.wrote).toContain(".github/instructions/nola.instructions.md");
-    expect(result.wrote).toContain("AGENTS.md");
+    for (const base of SKILL_DIRS) {
+      expect(result.wrote).toContain(`${base}/SKILL.md`);
+      const skill = await readFile(join(dir, ...base.split("/"), "SKILL.md"), "utf8");
+      expect(skill).toMatch(/^---\n/);
+      expect(skill).toMatch(/^name: nola$/m);
+      expect(skill).toContain(`<!-- nola-skill v${version}`);
+      expect(skill).not.toContain(LEGACY);
+      for (const ref of REFERENCES) {
+        expect(result.wrote).toContain(`${base}/references/${ref}`);
+        const copied = join(dir, ...base.split("/"), "references", ref);
+        expect((await readFile(copied, "utf8")).length, `${base}/${ref} is real content`).toBeGreaterThan(1500);
+      }
+    }
     expect(result.skipped).toEqual([]);
     expect(result.stale).toBe(false);
-
-    for (const rel of result.wrote) {
-      const text = await readFile(join(dir, rel), "utf8");
-      expect(text, `${rel} must not point into node_modules`).not.toContain(LEGACY);
-    }
-    // The context-injected adapters carry the real rules, not an instruction to go read them.
-    for (const rel of [".cursor/rules/nola.mdc", ".github/instructions/nola.instructions.md", "AGENTS.md"]) {
-      const text = await readFile(join(dir, rel), "utf8");
-      expect(text, `${rel} inlines the skill body`).toContain("Where Nola diverges from TypeScript");
-      expect(text, `${rel} is stamped`).toContain(`<!-- nola-skill v${version}`);
-    }
-  });
-
-  it("claude gets a full copy of the skill directory, references included", async () => {
-    const dir = await tmp();
-    await writeAgentSkills(dir, ["claude"]);
-    const skill = await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8");
-    expect(skill).toMatch(/^---\n/);
-    expect(skill).toMatch(/^name: nola$/m);
-    expect(skill).toContain(`<!-- nola-skill v${await ownVersion()}`);
-    for (const ref of ["syntax.md", "patterns.md", "config.md", "pitfalls.md"]) {
-      const copied = join(dir, ".claude", "skills", "nola", "references", ref);
-      expect(existsSync(copied), ref).toBe(true);
-      expect((await readFile(copied, "utf8")).length, `${ref} is real content`).toBeGreaterThan(1500);
-    }
-  });
-
-  it("cursor scopes to .tsi via globs; copilot via applyTo", async () => {
-    const dir = await tmp();
-    await writeAgentSkills(dir, ["cursor", "copilot"]);
-    const mdc = await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8");
-    expect(mdc).toContain('globs: ["**/*.tsi", "nola.config.ts"]');
-    expect(mdc).toContain("alwaysApply: false");
-    const instructions = await readFile(join(dir, ".github", "instructions", "nola.instructions.md"), "utf8");
-    expect(instructions).toContain('applyTo: "**/*.tsi"');
-  });
-
-  it("writes only the requested agents", async () => {
-    const dir = await tmp();
-    const result = await writeAgentSkills(dir, ["cursor"]);
-    expect(result.wrote).toEqual([".cursor/rules/nola.mdc"]);
+    // The retired adapters are never written.
+    expect(existsSync(join(dir, ".cursor"))).toBe(false);
+    expect(existsSync(join(dir, ".github"))).toBe(false);
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
-    expect(existsSync(join(dir, ".claude"))).toBe(false);
+  });
+
+  it("claude alone writes only .claude/skills; universal alone only .agents/skills", async () => {
+    const a = await tmp();
+    const claude = await writeAgentSkills(a, ["claude"]);
+    expect(claude.wrote.every((p) => p.startsWith(".claude/skills/nola/"))).toBe(true);
+    expect(existsSync(join(a, ".agents"))).toBe(false);
+    const b = await tmp();
+    const universal = await writeAgentSkills(b, ["universal"]);
+    expect(universal.wrote.every((p) => p.startsWith(".agents/skills/nola/"))).toBe(true);
+    expect(existsSync(join(b, ".claude"))).toBe(false);
+  });
+
+  it("both copies are byte-identical", async () => {
+    const dir = await tmp();
+    await writeAgentSkills(dir, ["claude", "universal"]);
+    for (const file of ["SKILL.md", ...REFERENCES.map((r) => `references/${r}`)]) {
+      const a = await readFile(join(dir, ".agents", "skills", "nola", ...file.split("/")), "utf8");
+      const b = await readFile(join(dir, ".claude", "skills", "nola", ...file.split("/")), "utf8");
+      expect(a, file).toBe(b);
+    }
+  });
+
+  it("AGENTS.md inlines the skill body, is stamped, and points at the project-local skill copies", async () => {
+    const dir = await tmp();
+    const version = await ownVersion();
+    const result = await writeAgentSkills(dir, ["agents-md"]);
+    expect(result.wrote).toEqual(["AGENTS.md"]);
+    const text = await readFile(join(dir, "AGENTS.md"), "utf8");
+    expect(text).toContain("## Nola");
+    expect(text).toContain("Where Nola diverges from TypeScript");
+    expect(text).toContain(`<!-- nola-skill v${version}`);
+    expect(text).toContain(".agents/skills/nola/references/");
+    expect(text).toContain(".claude/skills/nola/references/");
+    expect(text).not.toContain(LEGACY);
+    expect(existsSync(join(dir, ".agents"))).toBe(false);
   });
 
   it("a second run at the same version reports up to date and rewrites nothing", async () => {
     const dir = await tmp();
-    await writeAgentSkills(dir, ["cursor", "claude"]);
-    const again = await writeAgentSkills(dir, ["cursor", "claude"]);
+    await writeAgentSkills(dir, ["claude", "universal"]);
+    const again = await writeAgentSkills(dir, ["claude", "universal"]);
     expect(again.wrote).toEqual([]);
     expect(again.stale).toBe(false);
-    expect(again.skipped.join("\n")).toContain("is up to date");
+    const notes = again.skipped.join("\n");
+    expect(notes).toContain(".agents/skills/nola/SKILL.md is up to date");
+    expect(notes).toContain(".claude/skills/nola/SKILL.md is up to date");
   });
 
-  it("a stale stamp is reported, and replaced only under force", async () => {
+  it("each copy is classified on its own — a project with only the old Claude copy gains .agents/", async () => {
     const dir = await tmp();
-    await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
-    const old = "<!-- nola-skill v0.0.1 — regenerate with: nola skill install --force -->\nold body\n";
-    await writeFile(join(dir, ".cursor", "rules", "nola.mdc"), old);
+    await mkdir(join(dir, ".claude", "skills", "nola"), { recursive: true });
+    const old = "---\nname: nola\n---\n<!-- nola-skill v0.0.1 — regenerate with: nola skill install --force -->\nold\n";
+    await writeFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), old);
 
-    const held = await writeAgentSkills(dir, ["cursor"]);
-    expect(held.wrote).toEqual([]);
+    const held = await writeAgentSkills(dir, ["claude", "universal"]);
+    expect(held.wrote).toContain(".agents/skills/nola/SKILL.md");
+    expect(held.wrote).not.toContain(".claude/skills/nola/SKILL.md");
     expect(held.stale).toBe(true);
-    expect(held.skipped.join("\n")).toMatch(/is stale \(v0\.0\.1 → v.+\) — re-run with --force/);
-    expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).toBe(old);
+    expect(held.skipped.join("\n")).toMatch(
+      /\.claude\/skills\/nola\/SKILL\.md is stale \(v0\.0\.1 → v.+\) — re-run with --force/,
+    );
+    expect(await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8")).toBe(old);
 
-    const forced = await writeAgentSkills(dir, ["cursor"], { force: true });
-    expect(forced.wrote).toEqual([".cursor/rules/nola.mdc"]);
-    expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).not.toBe(old);
+    const forced = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
+    expect(forced.wrote).toContain(".claude/skills/nola/SKILL.md");
+    expect(forced.wrote).not.toContain(".agents/skills/nola/SKILL.md");
+    expect(await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8")).not.toBe(old);
   });
 
-  it("never overwrites an unstamped file, even with force", async () => {
+  it("never overwrites an unstamped skill copy, even with force", async () => {
+    const dir = await tmp();
+    await mkdir(join(dir, ".agents", "skills", "nola"), { recursive: true });
+    await writeFile(join(dir, ".agents", "skills", "nola", "SKILL.md"), "# mine\n");
+    const result = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
+    expect(await readFile(join(dir, ".agents", "skills", "nola", "SKILL.md"), "utf8")).toBe("# mine\n");
+    expect(result.wrote).not.toContain(".agents/skills/nola/SKILL.md");
+    expect(result.wrote).toContain(".claude/skills/nola/SKILL.md");
+    expect(result.skipped.join("\n")).toContain(".agents/skills/nola/SKILL.md already exists and was not generated by nola");
+  });
+
+  it("stamped legacy adapters are superseded by the universal target, and deleted only under force", async () => {
+    const dir = await tmp();
+    const stamp = "<!-- nola-skill v0.1.7 — regenerate with: nola skill install --force -->";
+    await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
+    await mkdir(join(dir, ".github", "instructions"), { recursive: true });
+    const rule = join(dir, ".cursor", "rules", "nola.mdc");
+    const instructions = join(dir, ".github", "instructions", "nola.instructions.md");
+    await writeFile(rule, `---\nglobs: ["**/*.tsi"]\n---\n${stamp}\nold\n`);
+    await writeFile(instructions, `---\napplyTo: "**/*.tsi"\n---\n${stamp}\nold\n`);
+
+    // The claude target alone says nothing about them — they belong to the .agents/skills story.
+    const claudeOnly = await writeAgentSkills(dir, ["claude"], { force: true });
+    expect(claudeOnly.removed).toEqual([]);
+    expect(claudeOnly.skipped.join("\n")).not.toContain("superseded");
+
+    const held = await writeAgentSkills(dir, ["universal"]);
+    expect(held.stale).toBe(true);
+    const notes = held.skipped.join("\n");
+    expect(notes).toMatch(/\.cursor\/rules\/nola\.mdc is superseded by \.agents\/skills\/nola.*--force/);
+    expect(notes).toMatch(/\.github\/instructions\/nola\.instructions\.md is superseded by \.agents\/skills\/nola.*--force/);
+    expect(existsSync(rule)).toBe(true);
+    expect(existsSync(instructions)).toBe(true);
+
+    const forced = await writeAgentSkills(dir, ["universal"], { force: true });
+    expect(existsSync(rule)).toBe(false);
+    expect(existsSync(instructions)).toBe(false);
+    expect(forced.removed).toEqual([".cursor/rules/nola.mdc", ".github/instructions/nola.instructions.md"]);
+  });
+
+  it("an unstamped legacy path is a user file — left alone and unmentioned", async () => {
     const dir = await tmp();
     await mkdir(join(dir, ".cursor", "rules"), { recursive: true });
     await writeFile(join(dir, ".cursor", "rules", "nola.mdc"), "// mine\n");
-    const result = await writeAgentSkills(dir, ["cursor"], { force: true });
+    const result = await writeAgentSkills(dir, ["universal"], { force: true });
     expect(await readFile(join(dir, ".cursor", "rules", "nola.mdc"), "utf8")).toBe("// mine\n");
-    expect(result.wrote).toEqual([]);
-    expect(result.skipped.join("\n")).toContain("was not generated by nola");
+    expect(result.removed).toEqual([]);
+    expect(result.skipped.join("\n")).not.toContain("nola.mdc");
   });
 
   it("an existing AGENTS.md is never modified — the section comes back as a paste snippet", async () => {
@@ -130,56 +177,37 @@ describe("readSkillSource", () => {
     const s = await readSkillSource();
     expect(s.frontmatter).toMatch(/^name: nola$/m);
     expect(s.body).toContain("Where Nola diverges from TypeScript");
-    // The references index is the claude adapter's job — inline adapters stop before it.
+    // The references index is the skill directory's job — the inline section stops before it.
     expect(s.body).not.toContain("## References");
     expect(s.full).toContain("## References");
   });
 });
 
-describe("detectAgents / defaultAgents", () => {
-  it("detects nothing in an empty dir; default is Claude Code alone", async () => {
-    const dir = await tmp();
-    expect(detectAgents(dir)).toEqual([]);
-    expect(defaultAgents(dir)).toEqual(["claude"]);
-  });
-
-  it("detects claude via .claude/ or CLAUDE.md", async () => {
-    const a = await tmp();
-    await mkdir(join(a, ".claude"));
-    expect(detectAgents(a)).toEqual(["claude"]);
-    const b = await tmp();
-    await writeFile(join(b, "CLAUDE.md"), "x");
-    expect(detectAgents(b)).toEqual(["claude"]);
-  });
-
-  it("detects cursor via .cursor/ and copilot via .github/", async () => {
-    const dir = await tmp();
-    await mkdir(join(dir, ".cursor"));
-    await mkdir(join(dir, ".github"));
-    expect(detectAgents(dir)).toEqual(["cursor", "copilot"]);
-    expect(defaultAgents(dir)).toEqual(["cursor", "copilot", "claude"]);
-  });
-
-  it("a detected claude is not preselected twice", async () => {
-    const dir = await tmp();
-    await mkdir(join(dir, ".claude"));
-    expect(defaultAgents(dir)).toEqual(["claude"]);
-  });
-
-  it("a nonexistent dir detects nothing", () => {
-    expect(detectAgents(join("definitely", "not", "here"))).toEqual([]);
+describe("defaultAgents", () => {
+  it("preselects both skill copies, whatever the project contains", async () => {
+    const empty = await tmp();
+    expect(defaultAgents(empty)).toEqual(["claude", "universal"]);
+    const busy = await tmp();
+    await mkdir(join(busy, ".cursor"));
+    await mkdir(join(busy, ".github"));
+    await writeFile(join(busy, "AGENTS.md"), "x");
+    expect(defaultAgents(busy)).toEqual(["claude", "universal"]);
   });
 });
 
 describe("parseAgentsFlag", () => {
   it("parses a comma list, deduped", () => {
-    expect(parseAgentsFlag("claude,cursor,claude")).toEqual(["claude", "cursor"]);
+    expect(parseAgentsFlag("claude,universal,agents-md,claude")).toEqual(["claude", "universal", "agents-md"]);
   });
   it("all expands to every id; none to empty", () => {
     expect(parseAgentsFlag("all")).toEqual([...AGENT_IDS]);
+    expect(AGENT_IDS).toEqual(["claude", "universal", "agents-md"]);
     expect(parseAgentsFlag("none")).toEqual([]);
   });
-  it("rejects an unknown id listing valid values", () => {
-    expect(() => parseAgentsFlag("claude,emacs")).toThrow(/invalid --agents "claude,emacs".*claude.*agents-md/);
+  it("rejects the retired ids like any unknown id, listing valid values", () => {
+    for (const old of ["cursor", "copilot", "skills"]) {
+      expect(() => parseAgentsFlag(old)).toThrow(new RegExp(`invalid --agents "${old}".*claude, universal, agents-md`));
+    }
+    expect(() => parseAgentsFlag("claude,emacs")).toThrow(/invalid --agents "claude,emacs".*claude, universal, agents-md/);
   });
 });

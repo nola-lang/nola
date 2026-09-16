@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/console",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Nola Console: local trace ingestion, storage and API for observing every ask — started with `nola console`",
   "keywords": [
     "nola",
@@ -33,11 +33,12 @@
   },
   "files": [
     "dist",
-    "!dist/.tsbuildinfo"
+    "!dist/.tsbuildinfo",
+    "!dist/**/*.map"
   ],
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "@nola-lang/core": "0.1.7",
+    "@nola-lang/core": "0.1.8",
     "hono": "^4.6.0"
   },
   "engines": {

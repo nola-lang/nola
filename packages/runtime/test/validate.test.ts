@@ -29,12 +29,18 @@ describe("validate", () => {
   });
 
   it("rejects missing required, unknown keys, null-for-optional", () => {
-    expect(validate(user, { name: "n" })).toMatchObject({ ok: false, error: expect.stringContaining("id") });
-    expect(validate(user, { id: "a", extra: 1 })).toMatchObject({ ok: false, error: expect.stringContaining("extra") });
+    expect(validate(user, { name: "n" })).toEqual({
+      ok: false,
+      issues: [{ path: [], message: "missing required property 'id'" }],
+    });
+    expect(validate(user, { id: "a", extra: 1 })).toEqual({
+      ok: false,
+      issues: [{ path: [], message: "unknown property 'extra'" }],
+    });
     expect(validate(user, { id: "a", name: null }).ok).toBe(false);
   });
 
-  it("reports a path in nested errors", () => {
+  it("reports a structured path in nested errors", () => {
     const nested: JsonSchema = {
       type: "object",
       properties: {
@@ -50,7 +56,7 @@ describe("validate", () => {
     };
     const r = validate(nested, { geo: { lat: "x" } });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain("$.geo.lat");
+    if (!r.ok) expect(r.issues).toEqual([{ path: ["geo", "lat"], message: "expected finite number, got string" }]);
   });
 
   it("checks enum membership on string schemas", () => {
@@ -59,8 +65,8 @@ describe("validate", () => {
     const r = validate(schema, "fraud");
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error).toContain('"billing"');
-      expect(r.error).toContain('"refund"');
+      expect(r.issues[0]?.message).toContain('"billing"');
+      expect(r.issues[0]?.message).toContain('"refund"');
     }
     expect(validate(schema, 5).ok).toBe(false);
   });

@@ -9,10 +9,10 @@ describe("extract lowering v2", () => {
     const { code, diagnostics } = compileNola("const i = ..`ticket id`<string>;\n", "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola.types.string(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
+      `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola_type_$1(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
     );
     expect(code).toContain('import { __nola } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(13);");
+    expect(code).toContain("__nola.useRuntime(16);");
   });
 
   it("wraps each ${} substitution in __nola.fmt and keeps the template", () => {
@@ -27,27 +27,6 @@ describe("extract lowering v2", () => {
   it("an untyped extractor stays <any> with a string schema", () => {
     const { code } = compileNola("const i = ..`free text`;\n", "x.tsi");
     expect(code).toContain("__nola.intents.ExtractIntent<any>({ instruction: `free text`, type: __nola.types.string()");
-  });
-
-  it("unsupported <T> still reports NOLA2002", () => {
-    const { diagnostics } = compileNola("const i = ..`x`<Map<string, string>>;\n", "x.tsi");
-    expect(diagnostics.map((d) => d.code)).toContain("NOLA2002");
-  });
-
-  it("<Date> derives the built-in date type (emit 9)", () => {
-    const { code, diagnostics } = compileNola("const i = ..`when`<Date>;\n", "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      `__nola.intents.ExtractIntent<Date>({ instruction: \`when\`, type: __nola.types.date(), loc: "1:11", def: "${defHash("x.tsi", "extract", "when", "Date")}" })`,
-    );
-  });
-
-  it("a local declaration shadows the built-in Date", () => {
-    const src = "type Date = { iso: string };\nconst i = ..`when`<Date>;\n";
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('type: __nola.types.ref("Date", __nola_type_Date)');
-    expect(code).not.toContain("__nola.types.date()");
   });
 
   it("appends the runtime import at end of file exactly once", () => {
@@ -79,7 +58,7 @@ describe("extractor prompt templates (${.member})", () => {
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      `await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: "type: \${.type} for \${a}", template: (__nola_s) => __nola.tpl\`type: \${__nola_s.type} for \${a}\`, type: __nola.types.string(), loc: "2:17", def: "${defHash("x.tsi", "extract", "type: ${.type} for ${a}", "string")}" }), __frame)`,
+      `await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: "type: \${.type} for \${a}", template: (__nola_s) => __nola.tpl\`type: \${__nola_s.type} for \${a}\`, type: __nola_type_$2(), loc: "2:17", def: "${defHash("x.tsi", "extract", "type: ${.type} for ${a}", "string")}" }), __frame)`,
     );
     // a lexical hole inside a template is NOT fmt-wrapped (tpl formats)
     expect(code).not.toContain("__nola.fmt(a)");

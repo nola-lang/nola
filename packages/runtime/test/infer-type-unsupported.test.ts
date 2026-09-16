@@ -14,7 +14,7 @@ describe("__nola.types.unsupported", () => {
   });
 
   it("cross-file-style mutual recursion stays finite and validates", () => {
-    // simulates two companions whose accessors reference each other; only the
+    // simulates two views whose accessors reference each other; only the
     // loop-closing name becomes a $def — the other type inlines into it.
     const a = (): InferType<unknown> => t.object({ b: t.optional(t.ref("src/b#B", b)) });
     const b = (): InferType<unknown> => t.object({ a: t.optional(t.ref("src/a#A", a)) });

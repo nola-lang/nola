@@ -7,17 +7,21 @@ const SRC = ["infer function go(a: string) {", "  const v = ask ..`v from ${a}`<
   "\n",
 );
 
+// Phase-1 output (emit 15): the param annotation and the extractor's <T> are
+// site accessors with inert bodies; finalizeDerivations fills them in.
 const OUT = [
   "function go(a: string) {",
   "  return __nola.intents.Intent(async (__frame) => { void a;",
-  `  const v = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: \`v from \${__nola.fmt(a)}\`, type: __nola.types.string(), loc: "2:17", def: "${defHash("x.tsi", "extract", "v from ${a}", "string")}" }), __frame);`,
+  `  const v = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: \`v from \${__nola.fmt(a)}\`, type: __nola_type_$2(), loc: "2:17", def: "${defHash("x.tsi", "extract", "v from ${a}", "string")}" }), __frame);`,
   "  return v;",
-  '  }, __nola_file_ctx().func({ fn: "go", instruction: "", args: [{ name: "a", type: __nola.types.string() }] }));',
+  '  }, __nola_file_ctx().func({ fn: "go", instruction: "", args: [{ name: "a", type: __nola_type_$1() }] }));',
   "}",
   "",
   'import { __nola } from "@nola-lang/runtime";',
-  "__nola.useRuntime(13);",
+  "__nola.useRuntime(16);",
   'function __nola_file_ctx() { return __nola.context.file("x.tsi"); }',
+  'function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> | undefined { return (undefined as never); }',
+  'function __nola_type_$2(): import("@nola-lang/runtime").InferType<unknown> { return (undefined as never); }',
   "",
 ].join("\n");
 
@@ -35,7 +39,7 @@ describe("infer function lowering", () => {
     expect(diagnostics).toEqual([]);
     expect(code).toContain("export function getUser(m: string) {");
     expect(code).toContain(
-      '.func({ fn: "getUser", instruction: "extract the user", args: [{ name: "m", type: __nola.types.string() }] })',
+      '.func({ fn: "getUser", instruction: "extract the user", args: [{ name: "m", type: __nola_type_$1() }] })',
     );
     expect(code).not.toContain("`extract the user`");
   });
@@ -92,7 +96,7 @@ describe("infer function lowering", () => {
     expect(scopes[0]).toEqual({ file: "x.tsi", fn: "go", instruction: "" });
   });
 
-  it("harvests params: name+type for all, contextual+value for `..` params", () => {
+  it("harvests params: name + site accessor for annotated ones, contextual+value for `..` params", () => {
     const src = [
       "type User = { name: string };",
       "infer function analyze(.user: User, limit: number) {",
@@ -100,41 +104,29 @@ describe("infer function lowering", () => {
       "}",
       "",
     ].join("\n");
-    const { code, diagnostics } = compileNola(src, "x.tsi");
+    const { code, diagnostics, meta } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
       '.func({ fn: "analyze", instruction: "", args: [' +
-        '{ name: "user", type: __nola.types.ref("User", __nola_type_User), contextual: true, value: user }, ' +
-        '{ name: "limit", type: __nola.types.number() }] })',
+        '{ name: "user", type: __nola_type_$1(), contextual: true, value: user }, ' +
+        '{ name: "limit", type: __nola_type_$2() }] })',
     );
     // the `..` bytes are stripped from the lowered param list
     expect(code).toContain("function analyze(user: User, limit: number)");
-    expect(code).toContain("function __nola_type_User()");
+    // a contextual param follows the configured policy; a plain one derives under "omit"
+    expect(meta.derivations.map((d) => [d.accessor, d.kind, d.policy])).toEqual([
+      ["__nola_type_$1", "context", "error"],
+      ["__nola_type_$2", "context", "omit"],
+    ]);
+    expect(src.slice(meta.derivations[0]?.source.start, meta.derivations[0]?.source.end)).toBe("User");
+    expect(code.slice(meta.derivations[1]?.lowered.start, meta.derivations[1]?.lowered.end)).toBe("number");
   });
 
-  it("unannotated and underivable param types omit `type` without a diagnostic", () => {
+  it("an unannotated param omits `type`; an annotated plain param gets a site accessor (the checker decides derivability)", () => {
     const src = "infer function go(x, cb: () => void) {\n  return 1;\n}\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('.func({ fn: "go", instruction: "", args: [{ name: "x" }, { name: "cb" }] })');
-  });
-
-  it("a Date member derives (emit 9): the param type refs an accessor carrying types.date()", () => {
-    const src = [
-      "type User = { name: string; dob: Date };",
-      "infer function analyze(.user: User) {",
-      "  return 1;",
-      "}",
-      "",
-    ].join("\n");
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      '.func({ fn: "analyze", instruction: "", args: [' +
-        '{ name: "user", type: __nola.types.ref("User", __nola_type_User), contextual: true, value: user }] })',
-    );
-    expect(code).toContain("dob: __nola.types.date()");
-    expect(code).toContain("function __nola_type_User()");
+    expect(code).toContain('.func({ fn: "go", instruction: "", args: [{ name: "x" }, { name: "cb", type: __nola_type_$1() }] })');
   });
 
   it("the executor captures every param — unused ones stay debug-hoverable", () => {
@@ -176,138 +168,10 @@ describe("infer function lowering", () => {
   });
 });
 
-describe("underivable contextual param policy (compiler.underivableContextType)", () => {
-  // ref("User", __nola_type_User) derivation is lazy: the shallow ref succeeds
-  // and only the accessor-body derivation sees the unsupported function member.
-  const POISONED = [
-    "type User = { name: string; cb: () => void };",
-    "infer function analyze(.user: User) {",
-    "  return 1;",
-    "}",
-    "",
-  ].join("\n");
-
-  it("error (the default): NOLA2008 at the param type annotation, no type emitted", () => {
-    const { code, diagnostics } = compileNola(POISONED, "x.tsi");
-    expect(diagnostics).toHaveLength(1);
-    const d = diagnostics[0] as (typeof diagnostics)[0];
-    expect(d.code).toBe("NOLA2008");
-    expect(d.message).toContain("'user'");
-    expect(d.message).toContain("underivableContextType");
-    expect(POISONED.slice(d.start, d.end)).toBe("User");
-    expect(code).not.toContain("__nola_type_User");
-  });
-
-  it("error: a shallowly underivable annotation diagnoses too", () => {
-    const src = "infer function go(.cb: () => void) {\n  return 1;\n}\n";
-    const { diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA2008"]);
-  });
-
-  it("error: plain params stay exempt — only `..` contextual params diagnose", () => {
-    const src = "infer function go(cb: () => void) {\n  return 1;\n}\n";
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('args: [{ name: "cb" }]');
-  });
-
-  it("omit: yesterday's silent behavior, now an explicit opt-in — no dangling accessor ref", () => {
-    const { code, diagnostics } = compileNola(POISONED, "x.tsi", { underivableContextType: "omit" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      '.func({ fn: "analyze", instruction: "", args: [{ name: "user", contextual: true, value: user }] })',
-    );
-    expect(code).not.toContain("__nola_type_User");
-  });
-
-  it("prune: drops the underivable member, keeps the rest", () => {
-    const { code, diagnostics } = compileNola(POISONED, "x.tsi", { underivableContextType: "prune" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      '.func({ fn: "analyze", instruction: "", args: [' +
-        '{ name: "user", type: __nola.types.ref("User", __nola_type_User), contextual: true, value: user }] })',
-    );
-    expect(code).toContain("return __nola.types.object({ name: __nola.types.string() });");
-  });
-
-  it("prune: a nested inline object loses just the bad field", () => {
-    const src = [
-      "type User = { name: string; meta: { level: number; cb: () => void } };",
-      "infer function analyze(.user: User) {",
-      "  return 1;",
-      "}",
-      "",
-    ].join("\n");
-    const { code, diagnostics } = compileNola(src, "x.tsi", { underivableContextType: "prune" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      "return __nola.types.object({ name: __nola.types.string(), meta: __nola.types.object({ level: __nola.types.number() }) });",
-    );
-  });
-
-  it("prune: a member referencing a fully-underivable named type is dropped (dead-ref iteration)", () => {
-    const src = [
-      "type Handler = { cb: () => void };",
-      "type User = { name: string; handler: Handler };",
-      "infer function analyze(.user: User) {",
-      "  return 1;",
-      "}",
-      "",
-    ].join("\n");
-    const { code, diagnostics } = compileNola(src, "x.tsi", { underivableContextType: "prune" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain("return __nola.types.object({ name: __nola.types.string() });");
-    expect(code).not.toContain("__nola_type_Handler");
-  });
-
-  it("prune: a type that prunes to nothing falls back to omit", () => {
-    const src = ["type Bare = { cb: () => void };", "infer function analyze(.b: Bare) {", "  return 1;", "}", ""].join(
-      "\n",
-    );
-    const { code, diagnostics } = compileNola(src, "x.tsi", { underivableContextType: "prune" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('args: [{ name: "b", contextual: true, value: b }]');
-    expect(code).not.toContain("__nola_type_Bare");
-  });
-
-  it("prune: recursion through a prunable type still derives (cycle-safe)", () => {
-    const src = [
-      "type Node = { next?: Node; cb: () => void };",
-      "infer function walk(.n: Node) {",
-      "  return 1;",
-      "}",
-      "",
-    ].join("\n");
-    const { code, diagnostics } = compileNola(src, "x.tsi", { underivableContextType: "prune" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      'return __nola.types.object({ next: __nola.types.optional(__nola.types.ref("Node", __nola_type_Node)) });',
-    );
-  });
-
-  it("prune: a fully derivable type emits byte-identically to the default path", () => {
-    const src = [
-      "type User = { name: string };",
-      "infer function analyze(.user: User) {",
-      "  return 1;",
-      "}",
-      "",
-    ].join("\n");
-    const strict = compileNola(src, "x.tsi").code;
-    const pruned = compileNola(src, "x.tsi", { underivableContextType: "prune" }).code;
-    expect(pruned).toBe(strict);
-  });
-
-  it("extract sites keep their hard error in every mode", () => {
-    const src = ["type Bad = { cb: () => void };", "infer function go() {", "  return ask ..`v`<Bad>;", "}", ""].join(
-      "\n",
-    );
-    for (const mode of ["error", "prune", "omit"] as const) {
-      const { diagnostics } = compileNola(src, "x.tsi", { underivableContextType: mode });
-      expect(diagnostics.map((d) => d.code)).toContain("NOLA2002");
-    }
-  });
-});
+// The underivable-contextual-param policy (error / prune / omit) is applied by
+// the checker pass: see packages/derive/test/service.test.ts and
+// packages/compiler/test/finalize.test.ts. Phase 1 only records the policy on
+// the request (see "harvests params" above).
 
 describe("infer-function marker templates (${.member})", () => {
   it("copies a scope-hole marker into a template closure at the body close; instruction keeps the raw text", () => {
@@ -316,7 +180,7 @@ describe("infer-function marker templates (${.member})", () => {
     expect(diagnostics).toEqual([]);
     expect(code).toContain("function go(m: string) {");
     expect(code).toContain(
-      '.func({ fn: "go", instruction: "CTX ${.signature}\\n${.args.map(a => `- ${a.name}`)}\\n${.next}", template: (__nola_s) => __nola.tpl`CTX ${__nola_s.signature}\n${__nola_s.args.map(a => `- ${a.name}`)}\n${__nola_s.next}`, args: [{ name: "m", type: __nola.types.string(), contextual: true, value: m }] })',
+      '.func({ fn: "go", instruction: "CTX ${.signature}\\n${.args.map(a => `- ${a.name}`)}\\n${.next}", template: (__nola_s) => __nola.tpl`CTX ${__nola_s.signature}\n${__nola_s.args.map(a => `- ${a.name}`)}\n${__nola_s.next}`, args: [{ name: "m", type: __nola_type_$1(), contextual: true, value: m }] })',
     );
     // the marker's verbatim runs are anchored back to the source
     const anchored = meta.anchors.map((a) => src.slice(a.sourceStart, a.sourceEnd));

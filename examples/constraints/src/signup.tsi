@@ -1,0 +1,16 @@
+// JSDoc constraint tags (emit 16): the keyword names ARE the JSON Schema
+// keywords. The model sees them in the schema; validation enforces them.
+export interface Signup {
+  /** @format email */
+  email: string;
+  /** the public handle @minLength 3 @maxLength 32 @pattern ^[a-z0-9_]+$ */
+  handle: string;
+  /** @integer @minimum 13 @maximum 120 */
+  age: number;
+  /** @minItems 1 @maxItems 10 @uniqueItems */
+  tags: string[];
+}
+
+export infer function parseSignup(.text: string) {
+  return ask ..`the signup form described in the text`<Signup>;
+}

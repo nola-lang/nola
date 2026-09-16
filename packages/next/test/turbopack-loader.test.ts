@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import nolaTurbopackLoader from "../src/turbopack-loader.js";
@@ -29,5 +31,16 @@ describe("turbopack loader", () => {
     expect(spec.startsWith("/")).toBe(false);
     expect(/^[A-Za-z]:\//.test(spec)).toBe(false);
     expect(code).toContain('__nola_rt.configure(__nola_user_config, { source: "nola.config.ts" })');
+  });
+
+  it("inlines views of plain .ts type sources (Turbopack has no virtual modules)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nola-turbo-"));
+    writeFileSync(join(dir, "models.ts"), "export interface Person { name: string }\n");
+    const tsi = join(dir, "report.tsi");
+    writeFileSync(tsi, 'import type { Person } from "./models.js";\nexport const i = ..`who`<Person>;\n');
+    const code = await runLoader(tsi);
+    expect(code).not.toContain("models.tsi");
+    expect(code).toContain("__nola_view_models_Person");
+    expect(code).toContain("function __nola_type_Person()");
   });
 });

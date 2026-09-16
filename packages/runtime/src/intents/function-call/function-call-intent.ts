@@ -1,7 +1,8 @@
-import { type ConsoleTask, createDebugTask, type JsonSchema, NolaResolutionError, Site } from "@nola-lang/core";
+import { type ConsoleTask, createDebugTask, NolaResolutionError, Site } from "@nola-lang/core";
 import { JsonInference } from "../../ask/inference-json.js";
 import type { InferContext } from "../../infer-context/infer-context.js";
 import { type Frame, type NolaRuntime, nolaRuntime } from "../../runtime/index.js";
+import { inferTypes, type TypeCarrier } from "../../types/infer-type.js";
 import { ExecutableIntent } from "../executable-intent.js";
 import { ExtractIntent } from "../extract/extract-intent.js";
 import { Intent, type IntentOptions } from "../intent.js";
@@ -65,7 +66,8 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
   }
 
   private substitute(value: unknown, path: string, values: Record<string, unknown>): unknown {
-    if (value instanceof ExtractIntent) return value.reviveValue(values[path]);
+    // already revived: the slot-filling ask validated the combined carrier in one pass
+    if (value instanceof ExtractIntent) return values[path];
     if (Array.isArray(value)) return value.map((el, i) => this.substitute(el, `${path}_${i}`, values));
     if (this.isPlainObject(value)) {
       const out: Record<string, unknown> = {};
@@ -86,30 +88,21 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
     });
     let finalArgs = this.init.args;
     if (slots.length > 0) {
-      const properties: Record<string, JsonSchema> = {};
-      const rootDefs: Record<string, JsonSchema> = {};
+      // One object carrier, one property per slot, each described by its
+      // instruction. Cyclic slot types serialize as $defs through the carrier
+      // exactly as a plain extract does, so nothing is hoisted by hand.
+      const props: Record<string, TypeCarrier<unknown>> = {};
       for (const s of slots) {
-        const { $defs, ...slotSchema } = s.intent.spec.schema as JsonSchema & { $defs?: Record<string, JsonSchema> };
-        // Hoist slot-level $defs to the combined root so "#/$defs/<name>"
-        // pointers stay resolvable. Identical names come from identical type
-        // expansions, so keep-first is safe.
-        for (const [k, v] of Object.entries($defs ?? {})) rootDefs[k] ??= v;
-        properties[s.path] = { ...slotSchema, description: s.intent.spec.instruction } as JsonSchema;
+        const slotType = s.intent.slotType() ?? inferTypes.string();
+        props[s.path] = slotType.describe(s.intent.spec.instruction);
       }
-      const schema: JsonSchema = {
-        type: "object",
-        properties,
-        required: slots.map((s) => s.path),
-        additionalProperties: false,
-        ...(Object.keys(rootDefs).length > 0 ? { $defs: rootDefs } : {}),
-      };
       // ONE combined ask for every slot — composed by this call's own node
       // (intent: "call"); the classic rendering is the same TASK grammar as a plain extract.
       const values = (await new JsonInference({
         frame,
         site: new Site(frame.sourceFile(), this.init.loc ?? "?"),
         options: this.options,
-        context: this.inferContext.forSlots(schema),
+        context: this.inferContext.forSlots(inferTypes.object(props)),
       }).infer()) as Record<string, unknown>;
       finalArgs = this.init.args.map((arg, i) => this.substitute(arg, `arg${i}`, values));
     }

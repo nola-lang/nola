@@ -17,10 +17,10 @@ describe("styleDiagnostics", () => {
     );
   });
 
-  it("accents a position-less diagnostic (reserved companion path)", () => {
-    const text = "src/x.nola.ts NOLA2006: the *.nola.* filename namespace is reserved";
+  it("accents a position-less diagnostic (a dangling view import)", () => {
+    const text = 'src/report.tsi NOLA2007: "./missing.tsi" names neither a Nola file nor a TypeScript module';
     expect(styleDiagnostics(text, tagPalette)).toBe(
-      "<path>src/x.nola.ts</path> <error>NOLA2006</error>: the *.nola.* filename namespace is reserved",
+      '<path>src/report.tsi</path> <error>NOLA2007</error>: "./missing.tsi" names neither a Nola file nor a TypeScript module',
     );
   });
 

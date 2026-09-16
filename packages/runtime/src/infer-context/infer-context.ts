@@ -1,6 +1,7 @@
 import type { AskKind } from "@nola-lang/core";
 import type { InferenceComposer } from "../ask/composer.js";
 import type { NolaRuntime } from "../runtime/index.js";
+import type { TypeCarrier } from "../types/infer-type.js";
 
 /** What the ask boundary reports about the ask-site node: the kind, the display strings, the def stamp. */
 export interface AskIdentity {
@@ -36,6 +37,15 @@ export class InferContext<TInferParams extends Record<string, unknown> = Record<
 
   /** The ask-site identity; undefined for lineage nodes (system, file, function). */
   askIdentity(): AskIdentity | undefined {
+    return undefined;
+  }
+
+  /**
+   * The carrier the ask's reply is validated (and revived) against; undefined
+   * for lineage nodes and for the raw-JsonSchema seam. Overridden by the
+   * extract and call nodes (validation is carrier-driven since emit 15).
+   */
+  outputType(): TypeCarrier<unknown> | undefined {
     return undefined;
   }
 

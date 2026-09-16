@@ -1,7 +1,9 @@
 import { compileNola } from "@nola-lang/compiler";
+import { derivationDiagnostics } from "@nola-lang/derive";
 import { NolaVirtualCode } from "@nola-lang/language-core";
 import type { LanguageServicePlugin } from "@volar/language-service";
 import type ts from "typescript";
+import type { Provide } from "volar-service-typescript";
 import { URI } from "vscode-uri";
 
 /**
@@ -24,7 +26,8 @@ import { URI } from "vscode-uri";
  * no idea what `..` or a tagged infer header means, so only whitespace
  * decisions over plain-TS source regions are trusted.
  */
-export function createNolaServicePlugin(typescript: typeof ts): LanguageServicePlugin {
+export function createNolaServicePlugin(typescript: typeof ts, options: { sourceRoot: string }): LanguageServicePlugin {
+  const { sourceRoot } = options;
   return {
     name: "nola",
     capabilities: {
@@ -44,7 +47,6 @@ export function createNolaServicePlugin(typescript: typeof ts): LanguageServiceP
           const root = sourceScript?.generated?.root;
           const virtualCode = sourceScript?.generated?.embeddedCodes.get(decoded[1]);
           if (!sourceScript || !virtualCode || !(root instanceof NolaVirtualCode)) return undefined;
-          if (root.diagnostics.length === 0) return [];
 
           const mapper = context.language.maps.get(virtualCode, sourceScript);
           const toGenerated = (sourceOffset: number): number | undefined => {
@@ -66,6 +68,29 @@ export function createNolaServicePlugin(typescript: typeof ts): LanguageServiceP
               source: "nola",
               message: d.message,
             });
+          }
+          // The lazy derivation pass (spec §7): the embedded code is phase-1
+          // output, so underivable types are found here against the live
+          // program. Generated offsets — this IS the embedded document.
+          const ls =
+            typeof context.inject === "function"
+              ? context.inject<Provide, "typescript/languageService">("typescript/languageService")
+              : undefined;
+          const program = ls?.getProgram();
+          const fileName = decoded[0].fsPath.replace(/\\/g, "/");
+          const programFile = program?.getSourceFile(fileName);
+          if (program && programFile && root.derivations.length > 0) {
+            // the program's text is Volar's source-shaped whitespace shadow + this embedded text
+            const leadingOffset = programFile.text.length - virtualCode.snapshot.getLength();
+            for (const d of derivationDiagnostics(program, fileName, root.derivations, { sourceRoot, leadingOffset })) {
+              out.push({
+                range: { start: document.positionAt(d.generatedStart), end: document.positionAt(d.generatedEnd) },
+                severity: 1 as const,
+                code: d.code,
+                source: "nola",
+                message: d.message,
+              });
+            }
           }
           return out;
         },

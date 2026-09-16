@@ -1,8 +1,8 @@
 // The crash VS Code's own TypeScript (6.x) exposed: when a .tsi enters the
 // program through a plain-.ts import (NOT as a tsconfig root — include is
-// "src/**/*.ts" here), its companion module becomes a program source file,
+// "src/**/*.ts" here), its view module becomes a program source file,
 // and TS 6's project telemetry asserts every program file has a ScriptInfo
-// (Project.getScriptInfos). Companions are synthetic, so without the
+// (Project.getScriptInfos). Views are synthetic, so without the
 // ServerHost decoration the FIRST project load died with "Debug Failure.
 // False expression: getScriptInfo" and the whole project stayed broken.
 // typescript-vnext is a pinned npm alias of the TS version VS Code ships.
@@ -29,7 +29,7 @@ afterAll(() => {
   server?.kill();
 });
 
-describe("tsserver vnext over a non-root .tsi with a cross-file companion", () => {
+describe("tsserver vnext over a non-root .tsi with a cross-file view", () => {
   it("project load survives telemetry and index.ts type-checks clean", { timeout: 120_000 }, async () => {
     // VS Code opens files via updateOpen — the crash fired inside this very
     // request (project load → updateGraph → sendProjectTelemetry).

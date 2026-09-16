@@ -159,8 +159,8 @@ export infer function f(.t: string) {
 
 > unsupported type for intent schema: …
 
-**Cause:** an extractor's `<T>` names a type the compiler cannot turn into a JSON Schema — `Map`, `Set`, `RegExp`, functions, generics, class instances.
-**Fix:** ask for a JSON-shaped type and convert afterwards in plain TypeScript. See [Extractors](/docs/language/extractors/#derivable-types).
+**Cause:** an extractor's `<T>` resolves to a type the checker-backed derivation cannot turn into a JSON Schema — `Map`, `Set`, `Promise`, `RegExp`, functions, a generic used without arguments — or a member of it does; the message names the member and the type.
+**Fix:** ask for a JSON-shaped type and convert afterwards in plain TypeScript. See [Schema derivation](/docs/reference/schema-derivation/).
 
 ```tsi
 // not-checked — WRONG
@@ -207,25 +207,18 @@ export infer function fileTicket(.request: string) {
 }
 ```
 
-## NOLA2006
-
-> the *.nola.* filename namespace is reserved for generated companion modules — rename this file
-
-**Cause:** a hand-written file whose name contains `.nola.` — the namespace the compiler uses for the type carriers it generates for cross-file types.
-**Fix:** rename the file. Never import a `*.nola.*` module yourself.
-
 ## NOLA2007
 
-> cannot locate the type source for "…"
+> "./x.tsi" names neither a Nola file nor a TypeScript module
 
-**Cause:** a `.tsi` imports a type from a module whose source file the compiler cannot find next to the importer (wrong specifier, or the file is not a `.ts`/`.tsi` on disk).
-**Fix:** check the import — `import type { Person } from "./models.js"` must correspond to an on-disk `models.ts`. See [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file).
+**Cause:** a relative `.tsi` import — written by you in a `.ts` file, or generated for a type a `.tsi` imports — found no `x.tsi`, `x.ts` or `x.d.ts` next to the importer.
+**Fix:** check the specifier. `./models.tsi` means the Nola file `models.tsi` when it exists, otherwise the [view](/docs/language/types-as-values/#views-of-plain-typescript) of `models.ts`. See [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file).
 
 ## NOLA2008
 
 > contextual parameter '…' has a type that cannot be derived for inference: …. Set compiler.underivableContextType to "prune" or "omit" in nola.config.ts to allow it.
 
-**Cause:** a `.param` whose type is not derivable (same rules as `NOLA2002`); its value would have to be serialized into the prompt.
+**Cause:** a `.param` whose resolved type is not derivable (same rules as `NOLA2002`); its value would have to be serialized into the prompt. The message names the offending member.
 **Fix:** pass a JSON-shaped view, keep the exotic value as a plain parameter, or relax `compiler.underivableContextType` — see [Contextual parameters](/docs/language/contextual-parameters/#when-a-type-is-not-derivable).
 
 ```tsi
@@ -255,6 +248,20 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 **Cause:** `` ..`…` ``, a call intent or `ask` inside a `${}` hole of a marker or call hint (those literals are re-emitted from source).
 **Fix:** compute the value first and interpolate the result, or move the ask into the function body.
+
+## NOLA2011
+
+> exported type '…' would also become a value, but a value named '…' is already declared in this file — rename one of them
+
+**Cause:** every exported type alias and interface in a `.tsi` also becomes a runtime value under the same name ([Types as values](/docs/language/types-as-values/)), and this file already declares a `const`, `let`, `var`, `function`, `class` or `enum` with that name.
+**Fix:** rename the type or the value.
+
+## NOLA2012
+
+> property 'age' of Signup: @minLength applies to strings, not to number
+
+**Cause:** a JSDoc constraint tag ([Constraints](/docs/reference/schema-derivation/#constraints)) does not fit — the keyword is for another kind of type, its value is missing or not a number, the `@format` name is unknown, the `@pattern` is not a valid regular expression, or the tag is given twice. Raised at the type for every kind of site (exported type, extractor, contextual parameter); the contextual-parameter policy does not apply, and prune mode does not drop the member.
+**Fix:** move the tag to a member of the right kind, or correct its value.
 
 **Runtime errors (NOLA3xxx)**
 
@@ -374,6 +381,20 @@ Not raised — reserved.
 
 **Cause:** the loader was started under Bun or Deno.
 **Fix:** run on Node (≥ 22.18); any package manager is fine.
+
+## NOLA3016
+
+> value does not match …: …
+
+**Cause:** `parse()` on a type value rejected the input; the thrown `NolaValidationError` carries the structured `issues`.
+**Fix:** validate with `validate()` when rejection is expected, or fix the input. See [Validate and parse](/docs/language/types-as-values/#validate-and-parse).
+
+## NOLA3017
+
+> JSON Schema target '…' is not supported (expected one of 'draft-2020-12', 'draft-07', 'openapi-3.0')
+
+**Cause:** a Standard JSON Schema consumer asked `User["~standard"].jsonSchema.input()` / `.output()` for a dialect Nola does not emit. The spec requires a library to throw rather than hand back the wrong dialect.
+**Fix:** pass one of the three supported targets. See [Standard Schema](/docs/language/types-as-values/#standard-schema).
 
 **Bundler errors (NOLA4xxx)**
 

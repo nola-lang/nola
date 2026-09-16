@@ -1,22 +1,36 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownVersion } from "./scaffold.js";
 
-export type AgentId = "claude" | "cursor" | "copilot" | "agents-md";
+export type AgentId = "claude" | "universal" | "agents-md";
 
-export const AGENT_IDS: readonly AgentId[] = ["claude", "cursor", "copilot", "agents-md"];
+export const AGENT_IDS: readonly AgentId[] = ["claude", "universal", "agents-md"];
 
 /** `nola skill install`'s agents multiselect (the scaffold asks its own gated list, see flow.ts). */
 export const SKILL_AGENTS_QUESTION = "Set up coding agents? (Space toggles, Enter confirms)";
 
+/**
+ * Where each skill target writes the canonical directory (project-relative
+ * posix). Claude Code reads only `.claude/skills/`; `.agents/skills/` is the
+ * open Agent Skills location — "universal" in the skills CLI's vocabulary —
+ * that Cursor, Copilot, Codex, Gemini CLI and most other agents read.
+ */
+export const SKILL_DIRS: Readonly<Record<Exclude<AgentId, "agents-md">, string>> = {
+  claude: ".claude/skills/nola",
+  universal: ".agents/skills/nola",
+};
+
 /** Shared option list for every agents multiselect. */
 export const AGENT_OPTIONS: { value: AgentId; label: string; hint: string }[] = [
-  { value: "agents-md", label: "AGENTS.md", hint: "cross-agent instructions (Codex, Gemini CLI, …)" },
-  { value: "claude", label: "Claude Code", hint: ".claude/skills/nola/ (full skill + references)" },
-  { value: "cursor", label: "Cursor", hint: ".cursor/rules/nola.mdc" },
-  { value: "copilot", label: "GitHub Copilot", hint: ".github/instructions/nola.instructions.md" },
+  { value: "claude", label: "Claude Code", hint: ".claude/skills/nola/ (the only directory Claude Code reads)" },
+  {
+    value: "universal",
+    label: "Cursor, Copilot, Codex, Gemini CLI, …",
+    hint: ".agents/skills/nola/ (the open Agent Skills location)",
+  },
+  { value: "agents-md", label: "AGENTS.md", hint: "the skill body inline, for agents that read only AGENTS.md" },
 ];
 
 /**
@@ -32,16 +46,21 @@ const stamp = (version: string): string =>
   `<!-- nola-skill v${version} — regenerate with: nola skill install --force -->`;
 
 /**
- * Adapters that inject context inline embed SKILL.md's BODY verbatim, so no
- * adapter restates the language rules in its own words and the four can
- * never drift from each other (spec §2).
+ * Adapters written by 0.1.0–0.1.7 that the `.agents/skills` layout replaced
+ * (spec revision 2026-09-15). Stamped ones are ours to remove under --force.
+ */
+const LEGACY_ADAPTERS = [".cursor/rules/nola.mdc", ".github/instructions/nola.instructions.md"] as const;
+
+/**
+ * The AGENTS.md section embeds SKILL.md's BODY verbatim, so it can never
+ * drift from the skill directory (spec §2).
  */
 export interface SkillSource {
   /** the frontmatter block of SKILL.md, without the --- fences */
   frontmatter: string;
   /** the first heading up to (not including) `## References` */
   body: string;
-  /** the whole file, verbatim — what the claude adapter copies */
+  /** the whole file, verbatim — what the skill directories copy */
   full: string;
 }
 
@@ -55,32 +74,12 @@ export async function readSkillSource(): Promise<SkillSource> {
   return { frontmatter: fm[1] as string, body, full };
 }
 
-/** Points at the project-local copy — never node_modules (spec §1). */
+/** Points at the project-local copies — never node_modules (spec §1). */
 const LOCAL_REFERENCES = [
   "Deeper references, when this repo has them:",
-  "`.claude/skills/nola/references/` — syntax.md, patterns.md, config.md,",
-  "pitfalls.md.",
+  "`.agents/skills/nola/references/` or `.claude/skills/nola/references/` —",
+  "syntax.md, patterns.md, config.md, pitfalls.md.",
 ].join("\n");
-
-function cursorRule(s: SkillSource, version: string): string {
-  return [
-    "---",
-    "description: Nola (.tsi) language rules",
-    'globs: ["**/*.tsi", "nola.config.ts"]',
-    "alwaysApply: false",
-    "---",
-    stamp(version),
-    "",
-    s.body,
-    "",
-    LOCAL_REFERENCES,
-    "",
-  ].join("\n");
-}
-
-function copilotInstructions(s: SkillSource, version: string): string {
-  return ["---", 'applyTo: "**/*.tsi"', "---", stamp(version), "", s.body, "", LOCAL_REFERENCES, ""].join("\n");
-}
 
 /** The `## Nola` section for AGENTS.md — also the paste snippet when skipped. */
 export function agentsSection(s: SkillSource, version: string): string {
@@ -91,19 +90,9 @@ function agentsMd(s: SkillSource, version: string): string {
   return `# AGENTS.md\n\n${agentsSection(s, version)}`;
 }
 
-/** Agents whose tooling is already present in the project. */
-export function detectAgents(targetDir: string): AgentId[] {
-  const root = resolve(targetDir);
-  const found: AgentId[] = [];
-  if (existsSync(join(root, ".claude")) || existsSync(join(root, "CLAUDE.md"))) found.push("claude");
-  if (existsSync(join(root, ".cursor"))) found.push("cursor");
-  if (existsSync(join(root, ".github"))) found.push("copilot");
-  return found;
-}
-
-/** The interactive preselection: detected agents + Claude Code (the wizard's default agent — deduped when detected). */
-export function defaultAgents(targetDir: string): AgentId[] {
-  return [...new Set<AgentId>([...detectAgents(targetDir), "claude"])];
+/** The interactive preselection: both skill copies, so a plain Enter covers every skills-aware agent. */
+export function defaultAgents(_targetDir: string): AgentId[] {
+  return ["claude", "universal"];
 }
 
 /** "all" | "none" | comma list of ids; unknown ids throw listing valid values. */
@@ -125,6 +114,8 @@ export function parseAgentsFlag(value: string): AgentId[] {
 export interface AgentSetupResult {
   /** project-relative posix paths written */
   wrote: string[];
+  /** superseded stamped adapters deleted under --force (project-relative posix paths) */
+  removed: string[];
   /** human-readable notes about files left untouched */
   skipped: string[];
   /** true when something was left stale — the caller can suggest --force */
@@ -157,22 +148,22 @@ function disposition(path: string, existing: string, version: string, force: boo
   };
 }
 
-/** Copy the canonical skill dir verbatim (stamp aside) into .claude/skills/nola/. */
-async function writeClaudeSkill(root: string, s: SkillSource, version: string): Promise<string[]> {
-  const dir = join(root, ".claude", "skills", "nola");
+/** Copy the canonical skill dir verbatim (stamp aside) into `<root>/<base>/`. */
+async function writeSkillDir(root: string, base: string, s: SkillSource, version: string): Promise<string[]> {
+  const dir = join(root, ...base.split("/"));
   await mkdir(join(dir, "references"), { recursive: true });
   const stamped = s.full.replace(/^(---\n[\s\S]*?\n---\n)/, `$1${stamp(version)}\n`);
   await writeFile(join(dir, "SKILL.md"), stamped);
-  const wrote = [".claude/skills/nola/SKILL.md"];
+  const wrote = [`${base}/SKILL.md`];
   for (const name of (await readdir(join(SKILLS_DIR, "references"))).sort()) {
     await writeFile(join(dir, "references", name), await readFile(join(SKILLS_DIR, "references", name), "utf8"));
-    wrote.push(`.claude/skills/nola/references/${name}`);
+    wrote.push(`${base}/references/${name}`);
   }
   return wrote;
 }
 
 /**
- * Write the selected adapters as self-contained, version-stamped content.
+ * Write the selected targets as self-contained, version-stamped content.
  * Existing files are classified, never blindly overwritten (spec §3).
  */
 export async function writeAgentSkills(
@@ -185,52 +176,52 @@ export async function writeAgentSkills(
   const source = await readSkillSource();
   const force = opts.force === true;
   const wrote: string[] = [];
+  const removed: string[] = [];
   const skipped: string[] = [];
   let stale = false;
 
-  const flat: Record<Exclude<AgentId, "claude">, { path: string; content: string }> = {
-    cursor: { path: ".cursor/rules/nola.mdc", content: cursorRule(source, version) },
-    copilot: { path: ".github/instructions/nola.instructions.md", content: copilotInstructions(source, version) },
-    "agents-md": { path: "AGENTS.md", content: agentsMd(source, version) },
-  };
-
-  for (const id of AGENT_IDS) {
+  for (const id of ["claude", "universal"] as const) {
     if (!agents.includes(id)) continue;
-
-    if (id === "claude") {
-      const marker = join(root, ".claude", "skills", "nola", "SKILL.md");
-      if (existsSync(marker)) {
-        const d = disposition(".claude/skills/nola/SKILL.md", await readFile(marker, "utf8"), version, force);
-        if (!d.write) {
-          skipped.push(d.note);
-          stale ||= d.stale;
-          continue;
-        }
-      }
-      wrote.push(...(await writeClaudeSkill(root, source, version)));
-      continue;
-    }
-
-    const { path, content } = flat[id];
-    const abs = join(root, ...path.split("/"));
-    if (existsSync(abs)) {
-      // AGENTS.md is a user file: never modified, --force included.
-      if (id === "agents-md") {
-        skipped.push(
-          `AGENTS.md already exists — left untouched. Add this section manually:\n\n${agentsSection(source, version)}`,
-        );
-        continue;
-      }
-      const d = disposition(path, await readFile(abs, "utf8"), version, force);
+    const base = SKILL_DIRS[id];
+    const marker = join(root, ...base.split("/"), "SKILL.md");
+    if (existsSync(marker)) {
+      const d = disposition(`${base}/SKILL.md`, await readFile(marker, "utf8"), version, force);
       if (!d.write) {
         skipped.push(d.note);
         stale ||= d.stale;
         continue;
       }
     }
-    await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, content);
-    wrote.push(path);
+    wrote.push(...(await writeSkillDir(root, base, source, version)));
   }
-  return { wrote, skipped, stale };
+
+  if (agents.includes("universal")) {
+    // Stamped legacy adapters are ours: superseded by .agents/skills, removed under --force.
+    for (const path of LEGACY_ADAPTERS) {
+      const abs = join(root, ...path.split("/"));
+      if (!existsSync(abs) || !STAMP_RE.test(await readFile(abs, "utf8"))) continue;
+      if (force) {
+        await rm(abs);
+        removed.push(path);
+      } else {
+        skipped.push(`${path} is superseded by .agents/skills/nola — re-run with --force to remove it`);
+        stale = true;
+      }
+    }
+  }
+
+  if (agents.includes("agents-md")) {
+    const abs = join(root, "AGENTS.md");
+    if (existsSync(abs)) {
+      // AGENTS.md is a user file: never modified, --force included.
+      skipped.push(
+        `AGENTS.md already exists — left untouched. Add this section manually:\n\n${agentsSection(source, version)}`,
+      );
+    } else {
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, agentsMd(source, version));
+      wrote.push("AGENTS.md");
+    }
+  }
+  return { wrote, removed, skipped, stale };
 }

@@ -1,6 +1,6 @@
 ---
 title: TypeScript interop
-description: Crossing the .tsi/.ts boundary both ways — importing .tsi from .ts, importing plain TS from .tsi with ./x.js, where the types come from, and companion modules.
+description: Crossing the .tsi/.ts boundary both ways — importing .tsi from .ts, importing plain TS from .tsi with ./x.js, where the types come from, and views.
 sidebar:
   order: 100
 ---
@@ -87,15 +87,12 @@ export infer function extractPerson(.text: string) {
 }
 ```
 
-Behind the scenes the compiler generates a **companion module** — a type carrier named in the `*.nola.*` filename namespace — for each type source it needs. Two rules follow:
-
-- `*.nola.*` filenames are reserved. A hand-written file with such a name is [`NOLA2006`](/docs/reference/error-codes/#nola2006); rename it.
-- Never import a `*.nola.*` module yourself — only generated code does. If the compiler cannot locate the type source an import points at, that is [`NOLA2007`](/docs/reference/error-codes/#nola2007).
+Behind the scenes the compiler imports the type's value from `./models.tsi` — the [view](/docs/language/types-as-values/#views-of-plain-typescript) of `models.ts`. The same rule serves you: a plain `.ts` may import `{ Person } from "./models.tsi"` and get the interface and its `InferType` value. A `.tsi` specifier that names neither a Nola file nor a TypeScript module is [`NOLA2007`](/docs/reference/error-codes/#nola2007). Keep one basename per module: a `models.ts` next to a `models.tsi` is allowed, but `./models.tsi` always means the Nola file and the build warns.
 
 ```ts
 // not-checked
-import { Person } from "./models.nola.js";        // WRONG — internal
-import type { Person } from "./models.js";        // RIGHT
+import type { Person } from "./models.js";        // RIGHT — the type, for a schema in a .tsi
+import { Person } from "./models.tsi";            // RIGHT — the type AND its InferType value
 ```
 
 ## tsconfig
@@ -116,6 +113,6 @@ import type { Person } from "./models.js";        // RIGHT
 }
 ```
 
-`include` must be directory-style (`["src"]`, never `["src/**/*.ts"]`) so the editor tooling can admit `.tsi` files into the program while plain `tsc` ignores them; `module` / `moduleResolution` are NodeNext (hence the `./x.js` specifiers); `allowArbitraryExtensions` is required for the `.tsi` declaration pairs.
+`include` must be directory-style (`["src"]`, never `["src/**/*.ts"]`) so the editor tooling can admit `.tsi` files into the program while plain `tsc` ignores them; `module` / `moduleResolution` are NodeNext (hence the `./x.js` specifiers); `allowArbitraryExtensions` is required for the `.tsi` declaration pairs and for the `x.d.tsi.ts` files the bundler plugins write for views.
 
 Next: [Restrictions and reserved syntax](/docs/language/restrictions/)

@@ -23,14 +23,17 @@ export function compileNola(source: string, file: string, options: CompileOption
           },
         ],
         anchors: [],
-        companions: [],
+        views: [],
         mode: "bailed",
+        derivations: [],
+        appendixStart: -1,
       },
       diagnostics,
     };
   }
   const result = lower(source, file, ast as BaseNode, displayPathFor(file, options.sourceRoot), {
     underivableContextType: options.underivableContextType,
+    views: options.views,
   });
   return { ...result, diagnostics: [...diagnostics, ...result.diagnostics] };
 }

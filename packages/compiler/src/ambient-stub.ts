@@ -5,7 +5,7 @@
  * helper both import it. Keep in lockstep with __nola.ts + emit-surface.test.ts.
  */
 export const RUNTIME_AMBIENT_STUB = `
-export type JsonSchema = { type: string } & Record<string, unknown>;
+export type JsonSchema = ({ type: string } | { anyOf: unknown[] } | { const: unknown }) & Record<string, unknown>;
 export interface Askable<T = unknown> {
   withRetry(retries: number): Askable<T>;
   withModel(model: string): Askable<T>;
@@ -21,9 +21,26 @@ export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
 export interface InferContext {
   scope(data: Record<string, unknown>): InferContext;
 }
+export interface ValidationIssue { readonly path: ReadonlyArray<string | number>; readonly message: string; }
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; issues: ValidationIssue[] };
+export interface StandardSchemaV1Props<Input = unknown, Output = Input> {
+  readonly version: 1; readonly vendor: string;
+  readonly validate: (value: unknown) => { value: Output; issues?: undefined } | { issues: ReadonlyArray<{ message: string; path?: ReadonlyArray<PropertyKey> }> };
+  readonly jsonSchema: {
+    readonly input: (options: { target: string; libraryOptions?: Record<string, unknown> }) => Record<string, unknown>;
+    readonly output: (options: { target: string; libraryOptions?: Record<string, unknown> }) => Record<string, unknown>;
+  };
+  readonly types?: { input: Input; output: Output } | undefined;
+}
 export interface InferType<T = unknown> {
-  describe(text: string): InferType<T>;
   toJsonSchema(): JsonSchema;
+  validate(value: unknown): ValidationResult<T>;
+  parse(value: unknown): T;
+  readonly "~standard": StandardSchemaV1Props<unknown, T>;
+}
+export interface TypeCarrier<T = unknown> extends InferType<T> {
+  describe(text: string): TypeCarrier<T>;
+  constrain(constraints: Record<string, unknown>): TypeCarrier<T>;
 }
 export interface InvocationContext extends InferContext {
   readonly __nolaFunctionScope: true;
@@ -53,6 +70,7 @@ export interface Frame {
 export interface UnsupportedType<Reason extends string = string> {
   readonly __nolaTypeUnsupported: Reason;
 }
+export type TypeValueOf<Accessor, T> = Accessor extends () => UnsupportedType<infer R> ? UnsupportedType<R> : InferType<T>;
 export declare const __nola: {
   intents: {
     Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: InvocationContext): Intent<T>;
@@ -62,15 +80,20 @@ export declare const __nola: {
     }): Askable<T>;
   };
   types: {
-    string(): InferType<string>;
-    number(): InferType<number>;
-    boolean(): InferType<boolean>;
-    date(): InferType<Date>;
-    enum(labels: readonly string[]): InferType<string>;
-    array<T>(item: InferType<T>): InferType<T[]>;
-    object(props: Record<string, InferType<unknown>>): InferType<Record<string, unknown>>;
-    optional<T>(t: InferType<T>): InferType<T | undefined>;
-    ref<T = unknown>(name: string, resolve: () => InferType<T>): InferType<T>;
+    string(): TypeCarrier<string>;
+    number(): TypeCarrier<number>;
+    boolean(): TypeCarrier<boolean>;
+    date(): TypeCarrier<Date>;
+    enum(labels: readonly string[]): TypeCarrier<string>;
+    array<T>(item: InferType<T>): TypeCarrier<T[]>;
+    object(props: Record<string, InferType<unknown>>, options?: { additional?: InferType<unknown> }): TypeCarrier<Record<string, unknown>>;
+    literal(value: string | number | boolean): TypeCarrier<typeof value>;
+    tuple(items: InferType<unknown>[]): TypeCarrier<unknown[]>;
+    record<T>(value: InferType<T>): TypeCarrier<Record<string, T>>;
+    nullable<T>(t: InferType<T>): TypeCarrier<T | null>;
+    union(members: InferType<unknown>[]): TypeCarrier<unknown>;
+    optional<T>(t: InferType<T>): TypeCarrier<T | undefined>;
+    ref<T = unknown>(name: string, resolve: () => InferType<T> | (() => InferType<T>)): TypeCarrier<T>;
     unsupported<R extends string>(reason: R): UnsupportedType<R>;
   };
   context: {

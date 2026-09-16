@@ -20,7 +20,7 @@ dist/
     person.tsi.d.ts        # types for consumers
 ```
 
-- The output **mirrors the source tree** — `src/person.tsi` becomes `dist/src/person.tsi.js`. Companion modules for cross-file types are emitted as real files beside it.
+- The output **mirrors the source tree** — `src/person.tsi` becomes `dist/src/person.tsi.js`. Views of cross-file types are emitted beside it as `<name>.tsi.js` + `<name>.tsi.d.ts` (they re-export `./<name>.js`, so compile your plain `.ts` into the same tree).
 - For app projects (`build.target: "app"`, the default) the config is bundled **first** into `dist/nola.config.js` and every lowered module gets an import of it appended, so importing any built module configures the process. `nola build` refuses to overwrite a `dist/nola.config.js` it did not generate.
 - **`nola build` compiles `.tsi` files only.** A plain `.ts` entry such as `src/main.ts` is not part of its output — your production entry is a JavaScript (or separately compiled TypeScript) file that imports the built module.
 

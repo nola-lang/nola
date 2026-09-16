@@ -59,11 +59,42 @@ describe("emit-contract bump enforcement", () => {
       // text; line/col excluded; AskDefinition spec 2026-09-01). Namespace
       // keys unchanged — an emit-12 runtime would silently DROP the field,
       // losing definition analytics, hence the bump.
-      emit: 13,
+      // emit 14: types as values — every exported type alias / interface in a
+      // .tsi also exports `const <Name> = __nola_type_<Name>() as InferType<Name>`,
+      // cross-file refs pass `() => <imported value>` to __nola.types.ref (the
+      // resolver may now return an InferType OR an accessor function), and the
+      // generated import targets `./x.tsi` (companions retired). An emit-13
+      // runtime cannot unwrap the new ref resolver, hence the bump.
+      // emit 15: checker-backed derivation — literal / union / nullable / tuple /
+      // record combinators (+ object's `{ additional }`), and every derivation
+      // site in the body calls an appendix accessor (`__nola_type_$N()`) instead
+      // of carrying an inline combinator expression. An emit-14 runtime has no
+      // union/nullable/… keys, hence the bump.
+      // emit 16: JSDoc constraints — a carrier gains `.constrain({ … })` (the
+      // JSON Schema validation vocabulary emitted from `@format` / `@minimum` /
+      // `@minItems` … tags). A method beside `describe`, so the key snapshot
+      // below is unchanged; an emit-15 carrier has no `constrain`, hence the bump.
+      emit: 16,
       top: ["ask", "context", "fmt", "intents", "tpl", "types", "useRuntime"],
       context: ["file"],
       intents: ["ExtractIntent", "FunctionCallIntent", "Intent"],
-      types: ["array", "boolean", "date", "enum", "number", "object", "optional", "ref", "string", "unsupported"],
+      types: [
+        "array",
+        "boolean",
+        "date",
+        "enum",
+        "literal",
+        "nullable",
+        "number",
+        "object",
+        "optional",
+        "record",
+        "ref",
+        "string",
+        "tuple",
+        "union",
+        "unsupported",
+      ],
     });
   });
 });

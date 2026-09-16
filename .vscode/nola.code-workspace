@@ -78,6 +78,10 @@
 			"path": "../packages/compiler"
 		},
 		{
+			"name": " - derive",
+			"path": "../packages/derive"
+		},
+		{
 			"name": "RUNTIME",
 			"path": "<not exists3>",
 		},

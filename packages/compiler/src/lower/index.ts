@@ -1,10 +1,11 @@
 import type { BaseNode } from "@nola-lang/ast";
 import type { UnderivableContextTypeMode } from "@nola-lang/core";
-import type { CompileResult } from "../types.js";
+import type { CompileResult, ViewInlineOptions } from "../types.js";
 import { Lowerer } from "./lowerer.js";
 
 export interface LowerOptions {
   underivableContextType?: UnderivableContextTypeMode;
+  views?: ViewInlineOptions;
 }
 
 export function lower(

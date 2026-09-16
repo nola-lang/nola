@@ -130,7 +130,7 @@ function templateOption(t: TemplateDef): PrompterOption {
 
 /**
  * The setup step: a yes/no gate (default yes), then editor + coding agents in
- * one grouped checkbox list, VS Code and Claude Code preselected — so the
+ * one grouped checkbox list, VS Code and both skill copies preselected — so the
  * defaults are two Enters and the whole no is one. `--ide` / `--agents` each
  * fill their half — a group a flag already answered is not shown and the gate
  * narrows to the half that remains; a no leaves the asked halves at none.
@@ -655,7 +655,9 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       // An explicit editor choice is honored even when Nola itself was already set up.
       const ide = outcome.ide === "vscode" ? await writeVscodeSetup(outcome.dir) : { wrote: [], skipped: [] };
       const ag =
-        outcome.agents.length > 0 ? await writeAgentSkills(outcome.dir, outcome.agents) : { wrote: [], skipped: [] };
+        outcome.agents.length > 0
+          ? await writeAgentSkills(outcome.dir, outcome.agents)
+          : { wrote: [], removed: [], skipped: [] };
       for (const note of [...result.skipped, ...trial.skipped, ...ide.skipped, ...ag.skipped]) prompter.note(note);
       // applyTrial re-writes the config addNola just wrote — list it once.
       const trialWrote = trial.wrote.filter((f) => !result.wrote.includes(f));

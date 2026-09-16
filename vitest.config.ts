@@ -12,6 +12,10 @@ export default defineConfig({
         replacement: p("packages/babel-parser/src/index.ts"),
       },
       {
+        find: /^@nola-lang\/node-loader\/project-root$/,
+        replacement: p("packages/node-loader/src/project-root.ts"),
+      },
+      {
         find: /^@nola-lang\/([^/]+)$/,
         replacement: `${p("packages")}/$1/src/index.ts`,
       },

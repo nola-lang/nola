@@ -18,7 +18,9 @@ LLM-programming task (see its README for what it demonstrates).
 | [chain-of-thought](chain-of-thought/) | Two-step reasoning: a free-text ask interpolated into a typed ask |
 | [research-notes](research-notes/) | TS control flow orchestrating nola functions |
 | [contextual-args](contextual-args/) | `.param` contextual parameters and the `system: { message }` config key |
-| [cross-file-types](cross-file-types/) | A type imported from another file (companion module), self-recursive |
+| [cross-file-types](cross-file-types/) | A type imported from another file (a view of plain TypeScript), self-recursive; `schema.ts` prints its JSON Schema |
+| [rich-types](rich-types/) | A discriminated union, a `Partial<…>` and a `Record<…>` as extraction and value types — shapes only the checker can derive |
+| [constraints](constraints/) | JSDoc constraint tags (`@format`, `@minLength`, `@integer`, `@minItems`, …) as schema keywords the model reads and `validate` enforces — the correction turn lists every violation |
 | [recursive-tree](recursive-tree/) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively |
 | [prompt-template](prompt-template/) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor |
 | [file-ticket](file-ticket/) | Call intents: the model fills a function's arguments, sigil-less and hint forms |

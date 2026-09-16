@@ -1,5 +1,6 @@
-import { canonicalize, InferType, inferTypes as t } from "@nola-lang/runtime";
+import { canonicalize, inferTypes as t } from "@nola-lang/runtime";
 import { describe, expect, it } from "vitest";
+import { TypeCarrier } from "../src/types/infer-type.js";
 
 describe("InferType.toJsonSchema", () => {
   it("serializes scalars, enums, arrays, objects, optionals, descriptions", () => {
@@ -63,18 +64,18 @@ describe("InferType.toJsonSchema", () => {
     expect(JSON.stringify(schema)).toContain('"#/$defs/Node"');
   });
 
-  it("describe() is immutable and isInferType brands by property", () => {
+  it("describe() is immutable and TypeCarrier.is brands by property", () => {
     const a = t.string();
     const b = a.describe("x");
     expect(a).not.toBe(b);
     expect(a.toJsonSchema()).toEqual({ type: "string" });
-    expect(InferType.isInferType(b)).toBe(true);
-    expect(InferType.isInferType({ toJsonSchema() {} })).toBe(false);
+    expect(TypeCarrier.is(b)).toBe(true);
+    expect(TypeCarrier.is({ toJsonSchema() {} })).toBe(false);
   });
 });
 
-describe("InferType.refName", () => {
-  it("names a root ref, strips a companion's module qualifier, and is undefined for anonymous shapes", () => {
+describe("TypeCarrier.refName", () => {
+  it("names a root ref, strips a view's module qualifier, and is undefined for anonymous shapes", () => {
     const ticket = t.ref("Ticket", () => t.object({ id: t.string() }));
     expect(ticket.refName()).toBe("Ticket");
     expect(t.ref("src/types#Ticket", () => t.string()).refName()).toBe("Ticket");
@@ -83,7 +84,7 @@ describe("InferType.refName", () => {
   });
 });
 
-describe("InferType.toTypeText", () => {
+describe("TypeCarrier.toTypeText", () => {
   it("prints TypeScript for every carrier shape", () => {
     expect(t.string().toTypeText()).toBe("string");
     expect(t.enum(["quote", "order"]).toTypeText()).toBe('"quote" | "order"');
@@ -98,7 +99,7 @@ describe("InferType.toTypeText", () => {
     expect(t.object({}).toTypeText()).toBe("{}");
   });
 
-  it("names a ref without expanding it, stripping a companion qualifier; unsupported prints never", () => {
+  it("names a ref without expanding it, stripping a view qualifier; unsupported prints never", () => {
     expect(t.ref("Ticket", () => t.object({ id: t.string() })).toTypeText()).toBe("Ticket");
     expect(t.ref("src/types#Ticket", () => t.string()).toTypeText()).toBe("Ticket");
     expect(t.object({ owner: t.ref("User", () => t.string()) }).toTypeText()).toBe("{ owner: User }");

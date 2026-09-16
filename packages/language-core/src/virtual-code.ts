@@ -1,5 +1,5 @@
 import type { Diagnostic } from "@nola-lang/ast";
-import { compileNola } from "@nola-lang/compiler";
+import { compileNola, type DerivationRequest } from "@nola-lang/compiler";
 import type { CodeMapping, IScriptSnapshot, VirtualCode } from "@volar/language-core";
 import type { EditorCompilerConfig } from "./compiler-config.js";
 import { spansToMappings } from "./mappings.js";
@@ -25,6 +25,13 @@ export class NolaVirtualCode implements VirtualCode {
   embeddedCodes: [VirtualCode];
   /** nola-native (parse + lower) diagnostics for the current snapshot */
   diagnostics: Diagnostic[] = [];
+  /**
+   * The phase-1 derivation requests of the embedded code (emit 15): the
+   * accessors the checker would fill in. The editor serves phase-1 output as
+   * is and derives lazily on the diagnostics pass — see derivationDiagnostics
+   * in @nola-lang/derive, used by the language server and the tsserver plugin.
+   */
+  derivations: DerivationRequest[] = [];
   /** true when the embedded code is last-good output for an unparsable snapshot */
   stale = false;
 
@@ -74,6 +81,7 @@ export class NolaVirtualCode implements VirtualCode {
       underivableContextType,
     });
     this.diagnostics = result.diagnostics;
+    this.derivations = result.meta.mode === "lowered" ? result.meta.derivations : [];
     if (result.meta.mode === "lowered") {
       const mappings = spansToMappings(result.meta.spans, result.meta.anchors, result.code);
       this.lastGood = { text: result.code, mappings };

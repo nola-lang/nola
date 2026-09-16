@@ -1,37 +1,51 @@
-import { collectCompanionEntries } from "./companions.js";
-import { createLoweredProgram, type LoweredEntry } from "./tshost.js";
+import { createLoweredProgram, type LoweredEntry, type LoweredProgramHooks } from "./tshost.js";
+
+export interface DeclarationTexts {
+  /** .tsi source path -> its declaration text */
+  tsi: Map<string, string>;
+  /** viewed plain-module source path (x.ts / x.d.ts) -> the view's declaration text */
+  views: Map<string, string>;
+}
 
 /**
- * Declaration text per lowered .tsi, from one shared lowered program —
- * extracted from cmdBuild so `nola build` (--out pair) and
- * `nola declarations` (adjacent d.tsi.ts) cannot drift.
+ * Declaration text per lowered .tsi — and per VIEW the program reached —
+ * from one shared lowered program, extracted from cmdBuild so `nola build`
+ * (--out pairs) and `nola declarations` (adjacent d.tsi.ts) cannot drift.
  */
 export async function emitDeclarationTexts(
   lowered: LoweredEntry[],
-  metas: string[][],
   sourceRoot: string,
   projectDir: string,
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (lowered.length === 0) return out;
-  const companionEntries = await collectCompanionEntries(
-    lowered.map((entry, i) => ({ file: entry.file, companions: metas[i] ?? [] })),
-    sourceRoot,
-  );
-  const { program, virtualName } = createLoweredProgram(lowered, projectDir, "declarations", companionEntries.virtual);
-  for (const entry of lowered) {
-    const sourceFile = program.getSourceFile(virtualName(entry.file));
-    if (!sourceFile) continue;
+  hooks: LoweredProgramHooks = {},
+): Promise<DeclarationTexts> {
+  const tsi = new Map<string, string>();
+  const viewTexts = new Map<string, string>();
+  // No early return on an empty `lowered`: a project with no .tsi at all can
+  // still reach views from its plain .ts roots (`import { User } from
+  // "./models.tsi"` — the types-only use of Nola), and those need their
+  // declaration and built pair exactly like views reached from a .tsi.
+  const { program, virtualName, views } = createLoweredProgram(lowered, projectDir, "declarations", sourceRoot, hooks);
+  const emitOne = (fileName: string): string => {
+    const sourceFile = program.getSourceFile(fileName);
+    if (!sourceFile) return "";
     let declarationText = "";
     program.emit(
       sourceFile,
-      (fileName, text) => {
-        if (fileName.endsWith(".d.ts")) declarationText = text;
+      (name, text) => {
+        if (name.endsWith(".d.ts")) declarationText = text;
       },
       undefined,
       true,
     );
-    if (declarationText) out.set(entry.file, declarationText);
+    return declarationText;
+  };
+  for (const entry of lowered) {
+    const text = emitOne(virtualName(entry.file));
+    if (text) tsi.set(entry.file, text);
   }
-  return out;
+  for (const [virt, src] of views) {
+    const text = emitOne(virt);
+    if (text) viewTexts.set(src, text);
+  }
+  return { tsi, views: viewTexts };
 }

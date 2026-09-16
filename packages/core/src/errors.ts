@@ -1,4 +1,5 @@
 import type { InvocationTrace, Site } from "./index.js";
+import type { ValidationIssue } from "./validation.js";
 
 export class NolaConfigError extends Error {
   override name = "NolaConfigError";
@@ -41,12 +42,24 @@ export class NolaIntentError extends Error {
   }
 }
 
-/** A type that could not be derived reached an ask (companion `unsupported`). Definitive. */
+/** A type that could not be derived reached an ask (view `unsupported`). Definitive. */
 export class NolaSchemaError extends Error {
   override name = "NolaSchemaError";
   constructor(
     message: string,
     readonly code: string,
+  ) {
+    super(message);
+  }
+}
+
+/** `InferType.parse` rejected a value (NOLA3016). The message is already redacted by the thrower. */
+export class NolaValidationError extends Error {
+  override name = "NolaValidationError";
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly issues: readonly ValidationIssue[],
   ) {
     super(message);
   }

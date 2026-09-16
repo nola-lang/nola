@@ -1,53 +1,25 @@
 import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
 
-describe("cross-file type lowering", () => {
-  it("an imported type emits a qualified ref + companion import + meta.companions", () => {
+// Cross-file derivation (view imports, qualified refs, meta.views) is decided by
+// the checker in finalizeDerivations — see packages/derive/test/service.test.ts
+// and packages/compiler/test/finalize.test.ts. Phase 1 only records the site.
+describe("cross-file type lowering (phase 1)", () => {
+  it("an imported type is a site request; no import, ref or view is emitted by phase 1", () => {
     const src = 'import type { Person } from "./models.js";\nconst i = ..`who`<Person>;\n';
     const { code, diagnostics, meta } = compileNola(src, "/proj/src/x.tsi", { sourceRoot: "/proj" });
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('type: __nola.types.ref("src/models#Person", __nola_type_Person), loc:');
-    expect(code).toContain('import { Person as __nola_type_Person } from "./models.nola.js";');
-    expect(meta.companions).toEqual(["./models.nola.js"]);
+    expect(code).toContain("type: __nola_type_$1(), loc:");
+    expect(code).not.toContain("./models.tsi");
+    expect(meta.views).toEqual([]);
+    expect(meta.derivations).toEqual([
+      expect.objectContaining({ accessor: "__nola_type_$1", kind: "extract" }),
+    ]);
+    expect(code.slice(meta.derivations[0]?.lowered.start, meta.derivations[0]?.lowered.end)).toBe("Person");
   });
 
-  it("an aliased import binds by local name but refs by source name", () => {
-    const src = 'import { Person as P } from "./models.js";\nconst i = ..`who`<P>;\n';
-    const { code, diagnostics } = compileNola(src, "/proj/src/x.tsi", { sourceRoot: "/proj" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('__nola.types.ref("src/models#Person", __nola_type_P)');
-    expect(code).toContain('import { Person as __nola_type_P } from "./models.nola.js";');
-  });
-
-  it("a LOCAL type referencing an IMPORTED one pulls the companion transitively", () => {
-    const src = [
-      'import type { Address } from "./geo.js";',
-      "type User = { name: string; home: Address };",
-      "const i = ..`who`<User>;",
-      "",
-    ].join("\n");
-    const { code, diagnostics, meta } = compileNola(src, "/proj/src/x.tsi", { sourceRoot: "/proj" });
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('function __nola_type_User(): import("@nola-lang/runtime").InferType<unknown>');
-    expect(code).toContain('__nola.types.ref("src/geo#Address", __nola_type_Address)');
-    expect(meta.companions).toEqual(["./geo.nola.js"]);
-  });
-
-  it("bare-specifier (package) type imports are NOLA2002 at the ask site", () => {
-    const src = 'import type { Thing } from "somepkg";\nconst i = ..`x`<Thing>;\n';
-    const { diagnostics } = compileNola(src, "/proj/src/x.tsi", { sourceRoot: "/proj" });
-    expect(diagnostics.map((d) => d.code)).toContain("NOLA2002");
-    expect(diagnostics[0]?.message).toContain("somepkg");
-  });
-
-  it("default imports are not supported for schema types", () => {
-    const src = 'import Person from "./models.js";\nconst i = ..`x`<Person>;\n';
-    const { diagnostics } = compileNola(src, "/proj/src/x.tsi", { sourceRoot: "/proj" });
-    expect(diagnostics.map((d) => d.code)).toContain("NOLA2002");
-  });
-
-  it("meta.companions is [] on plain files and on the strict bail path", () => {
-    expect(compileNola("const x = 1;\n", "x.tsi").meta.companions).toEqual([]);
-    expect(compileNola("const p = ..5;\n", "x.tsi").meta.companions).toEqual([]);
+  it("meta.views is [] on plain files and on the strict bail path", () => {
+    expect(compileNola("const x = 1;\n", "x.tsi").meta.views).toEqual([]);
+    expect(compileNola("const p = ..5;\n", "x.tsi").meta.views).toEqual([]);
   });
 });

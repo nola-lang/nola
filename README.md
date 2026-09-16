@@ -125,18 +125,17 @@ Nola ships a skill that teaches coding agents to write it — syntax, configurat
 patterns and pitfalls, versioned with the release you installed.
 
 ```bash
-nola skill install --agents claude,cursor,copilot,agents-md
+nola skill install --agents claude,universal,agents-md
 ```
 
-| Agent | What it writes |
+| Target | What it writes |
 |---|---|
-| Claude Code | `.claude/skills/nola/` — the full skill directory + references |
-| Cursor | `.cursor/rules/nola.mdc` |
-| GitHub Copilot | `.github/instructions/nola.instructions.md` |
-| Other agents (Codex, Gemini CLI, …) | `AGENTS.md` |
+| `claude` | `.claude/skills/nola/` — the full skill directory + references (Claude Code) |
+| `universal` | `.agents/skills/nola/` — the same, at the open Agent Skills location (Cursor, Copilot, Codex, Gemini CLI, …) |
+| `agents-md` | `AGENTS.md` — the skill body inline, for agents that read only that file |
 
-A bare `nola skill install` detects which agents the project already uses. Each
-file carries a version stamp, so a later run reports what has gone stale and
+The same layout comes out of the community CLI: `npx skills add nola-lang/nola`.
+Each copy carries a version stamp, so a later run reports what has gone stale and
 `--force` refreshes it. The source is
 [`packages/create-nola-lang/skills/nola/`](packages/create-nola-lang/skills/nola/);
 the scaffolder offers the same step as `--agents`.
@@ -186,7 +185,7 @@ nola build [dir]       # .tsi → .js + .map + .d.ts into --out
 nola run <entry>       # run a .tsi/.ts entry with the loader + nola.config.ts
 nola check [dir]       # type-check lowered .tsi and your .ts, mapped back to source
 nola declarations      # adjacent <name>.d.tsi.ts so plain tsc resolves .tsi imports
-nola skill install     # write agent skill files
+nola skill install     # write the agent skill (.claude/skills, .agents/skills) and/or AGENTS.md
 ```
 
 The loader is `--import`-able (the tsx model), so any entry runs — and debugs —

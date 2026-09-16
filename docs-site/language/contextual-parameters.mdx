@@ -40,9 +40,9 @@ export infer function nextQuery(.question: string, .notes: string[]) {
 
 ## Derivable types
 
-Because a contextual value is serialized into the prompt, its type must be *derivable* to an inference schema — the same rule extractors follow: strings, numbers, booleans, `Date`, arrays, plain object / interface / type-alias shapes, string-literal unions, string enums, and same-file or imported references to those. The full table lives on [Extractors](/docs/language/extractors/#derivable-types).
+Because a contextual value is serialized into the prompt, its type must be *derivable* to an inference schema — the same rule extractors follow: whatever the TypeScript checker resolves to a JSON-shaped structure, including unions, `Partial<T>`, `interface … extends`, `Record<string, T>` and types from packages. The full table lives on [Schema derivation](/docs/reference/schema-derivation/).
 
-`Map`, `Set`, `RegExp`, functions, generics and other ambient library types are not derivable. Under the default policy a contextual parameter with such a type is a compile error, [`NOLA2008`](/docs/reference/error-codes/#nola2008).
+`Map`, `Set`, `Promise`, `RegExp`, functions and a generic type used without arguments are not derivable. Under the default policy a contextual parameter with such a type is a compile error, [`NOLA2008`](/docs/reference/error-codes/#nola2008).
 
 ## When a type is not derivable
 

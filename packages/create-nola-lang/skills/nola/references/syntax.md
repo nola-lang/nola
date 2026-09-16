@@ -97,10 +97,11 @@ export infer function classifyIssue(.issue: Issue, fallback: string) {
 - `.` is legal ONLY on infer-function parameters. On any other function it is
   NOLA1010.
 - A contextual parameter's TYPE must be derivable to an inference schema:
-  strings, numbers, booleans, `Date`, arrays, plain object/interface/type-alias
-  shapes, string-literal unions, string enums, and same-file or imported
-  references to those. `Map`, `Set` and other ambient lib types are NOT
-  derivable and raise NOLA2008 under the default policy.
+  whatever the TypeScript checker resolves to a JSON shape — scalars, `Date`,
+  arrays, objects, unions, `Partial`/`Pick`/`Omit`, `extends`, `Record`,
+  tuples, generics applied with arguments, types from other files or
+  packages. `Map`, `Set`, `Promise`, functions and a bare generic
+  declaration are NOT derivable and raise NOLA2008 under the default policy.
 - Several contextual parameters are fine; they compose into one context block:
 
 ```tsi
@@ -145,9 +146,12 @@ export infer function lookup(text: string) {
 - With no `<T>`, the extractor asks for free text: the wire schema is a plain
   string and the static TS type is `any`. Give every extractor an explicit
   `<T>` unless you deliberately want unconstrained prose.
-- `<T>` accepts scalars, `Date`, arrays, inline object literals, same-file
-  and imported non-generic aliases/interfaces, string-literal unions and
-  string enums. JSDoc comments on members become schema descriptions:
+- `<T>` accepts whatever resolves to a JSON shape: scalars, `Date`, arrays,
+  tuples, object literals, aliases/interfaces (same file, another file, a
+  package; `extends`, intersections, `Partial`/`Pick`/`Omit`, instantiated
+  generics), string-literal unions and string enums, object and nullable
+  unions, `Record<string, T>`. JSDoc comments on members become schema
+  descriptions:
 
 ```tsi
 export interface Conclusion {
@@ -377,3 +381,72 @@ const loose = await extractPerson(text).detached();   // do not inherit the call
 
 All of these CLONE the intent — the original stays unstarted, and an intent
 resolves at most once.
+
+## Types as values
+
+Every `export type` and `export interface` in a `.tsi` is ALSO exported as a
+runtime value of type `InferType<T>` under the same name. No syntax, no
+opt-in; `import { type User }` keeps only the type. Enums are already values
+and are left alone; non-exported types get no value.
+
+```tsi
+// user.tsi
+export interface User {
+  name: string;
+  email?: string;
+  role: "admin" | "member";
+}
+```
+
+```ts
+// api.ts — plain TypeScript
+import { User } from "./user.tsi";
+
+User.toJsonSchema();          // JSON Schema (draft 2020-12 shape: properties/required/additionalProperties)
+User.validate(input);         // { ok: true, value } | { ok: false, issues: { path, message }[] }
+User.parse(input);            // the value, or throws NolaValidationError (NOLA3016)
+User["~standard"];            // Standard Schema v1 (vendor "nola") for form/router/agent libraries
+User["~standard"].jsonSchema.input({ target: "openapi-3.0" }); // Standard JSON Schema: draft-2020-12 | draft-07 | openapi-3.0 (else NOLA3017)
+```
+
+Rules:
+
+- Those four members ARE `InferType<T>` — there is no `describe`, `revive`
+  or schema-node access on a type value; the extractor machinery behind it is
+  not API.
+- A `const`/`let`/`var`/`function`/`class`/`enum` named like an exported
+  type is NOLA2011 — rename one of them.
+- `validate` reports EVERY issue (not just the first) and revives `Date`
+  fields to real `Date`s, exactly like an extractor result. Derivation covers
+  what extractors cover (the resolved type, unions and utility types
+  included); an underivable exported type is an `UnsupportedType<reason>`
+  value — calling a method on it is a compile-time error carrying the reason.
+- CONSTRAINTS: a JSDoc tag on a property or a type alias, named like the
+  JSON Schema keyword, becomes that keyword in the schema AND is enforced by
+  validation (the correction turn quotes the exact message). Strings:
+  `@minLength n` `@maxLength n` `@pattern re` `@format name` (date-time,
+  date, time, email, uri, uuid, ipv4, ipv6, hostname); numbers: `@minimum n`
+  `@maximum n` `@exclusiveMinimum n` `@exclusiveMaximum n` `@multipleOf n`
+  `@integer`; arrays/tuples: `@minItems n` `@maxItems n` `@uniqueItems`.
+  Several tags share one comment with the description
+  (`/** the handle @minLength 3 @pattern ^[a-z]+$ */`). The tag applies to
+  the non-null part (`string | null` is fine); a tag on an alias travels with
+  the alias. Wrong kind, unknown format, bad value or a repeated tag is
+  NOLA2012 at the type — never put `@minLength` on a number or `@minItems`
+  on an object.
+- VIEWS: `./x.tsi` means the Nola file `x.tsi` when it exists, otherwise the
+  view of `x.ts` (then `x.d.ts`) — the same module re-exported plus a value
+  per exported alias/interface. That is how a type declared in ordinary
+  TypeScript gets the same API (`import { Person } from "./models.tsi"`
+  with only `models.ts` on disk). Neither file present is NOLA2007.
+- TYPES ONLY: a plain-TS project with NO `.tsi` file and NO `nola.config.ts`
+  can use Nola just for these values — `nola-lang` as a devDependency,
+  `@nola-lang/runtime` as the runtime dep, `./x.tsi` view imports, run under
+  `node --import nola-lang/register`, type-check with `nola check` (or
+  `nola declarations` + `allowArbitraryExtensions` for plain tsc), bundle
+  with a bundler plugin for production. No provider, no key.
+- Keep one basename per module: `x.ts` next to `x.tsi` is allowed but
+  `./x.tsi` always means the Nola file, and `nola build`/`nola check` warn.
+- Turbopack: real `.tsi` files work and generated view imports are inlined,
+  but a hand-written `./x.tsi` import of a plain module in `.ts` is not
+  supported there — use webpack mode.

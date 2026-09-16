@@ -90,11 +90,13 @@ export const nameIntent = ..`the user's full name`<string>;   // legal, inert
 
 > unsupported type for intent schema: …
 
-An extractor's `<T>` must describe a JSON-shaped value: strings, numbers,
-booleans, `Date`, arrays, plain object/interface/type-alias shapes,
-string-literal unions, string enums, and references to those (same-file or
-imported). Ambient lib types like `Map`, `Set`, `RegExp`, functions and
-generics are not derivable.
+An extractor's `<T>` must RESOLVE to a JSON-shaped value — the TypeScript
+checker decides, so unions (`Refund | Chargeback`, `string | null`),
+`Partial<T>` / `Pick` / `Omit`, `interface … extends`, intersections,
+`Record<string, T>`, tuples, generics applied with arguments and types from
+other files or packages all derive. `Map`, `Set`, `Promise`, `RegExp`,
+functions and a generic declaration used without arguments (`Box<T>` — write
+`Box<number>`) are not derivable; the error names the member at fault.
 
 ```tsi
 export infer function tally(.doc: string) {
@@ -223,13 +225,13 @@ import { createTicket } from "./tickets.ts";      // WRONG — TS5097
 import { createTicket } from "./tickets";         // WRONG — TS2835
 ```
 
-- Never import a `*.nola.*` module. Those are internal companion modules the
-  compiler generates for cross-file types; only generated code imports them,
-  and a hand-written file with such a name is NOLA2006.
+- A `.tsi` specifier is either a Nola file or the view of a plain module:
+  `./models.tsi` works when only `models.ts` exists (NOLA2007 when neither
+  does). Do not keep `models.ts` AND `models.tsi` side by side.
 
 ```ts
-import { Person } from "./models.nola.js";        // WRONG — internal
-import type { Person } from "./models.js";        // RIGHT
+import { Person } from "./models.tsi";        // RIGHT — the interface and its InferType value
+import type { Person } from "./models.js";    // RIGHT — type only, for a schema in a .tsi
 ```
 
 ## Never write generated-code names

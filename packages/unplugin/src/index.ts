@@ -1,8 +1,8 @@
 import { Codes } from "@nola-lang/ast";
 import { createUnplugin, type SourceMapCompact, type UnpluginFactory, type UnpluginInstance } from "unplugin";
-import { COMPANION_PREFIX, guardConfigGraphTsi, loadCompanionCode, resolveCompanionId } from "./companions.js";
 import { configPathFromWiringId, RESOLVED_WIRING_ID, transformTsi, WIRING_ID, wiringSource } from "./core.js";
-import { type NolaPluginOptions, projectFor, projectForDir } from "./project.js";
+import { invalidateProjects, type NolaPluginOptions, projectFor, projectForDir } from "./project.js";
+import { guardConfigGraphTsi, loadViewCode, resolveViewId, VIEW_PREFIX } from "./views.js";
 
 export type { NolaPluginOptions } from "./project.js";
 
@@ -54,6 +54,8 @@ export const unpluginFactory: UnpluginFactory<NolaPluginOptions | undefined> = (
     },
 
     watchChange(id) {
+      // any file may hold a type a .tsi derives from (emit 15): forget it in every service
+      void invalidateProjects(id);
       if (!id.endsWith(".tsi")) return;
       clearTimeout(declTimer);
       declTimer = setTimeout(() => {
@@ -64,7 +66,9 @@ export const unpluginFactory: UnpluginFactory<NolaPluginOptions | undefined> = (
 
     async transform(source, id) {
       if (clientBuild) this.error(CLIENT_ERROR);
-      const { code, map } = await doTransform(source, id);
+      const { code, map, deps } = await doTransform(source, id);
+      // type-only dependencies: the declaration files the checker read
+      for (const dep of deps) this.addWatchFile(dep);
       return { code, map: JSON.parse(map) as SourceMapCompact };
     },
 
@@ -72,9 +76,9 @@ export const unpluginFactory: UnpluginFactory<NolaPluginOptions | undefined> = (
       guardConfigGraphTsi(id, importer);
       if (id.startsWith(WIRING_ID)) return `\0${id}`;
       if (importer === undefined) return null;
-      // A companion importing a companion arrives with the prefixed id as importer.
-      const importerFile = importer.startsWith(COMPANION_PREFIX) ? importer.slice(COMPANION_PREFIX.length) : importer;
-      return resolveCompanionId(id, importerFile);
+      // A view importing a view arrives with the prefixed id as importer.
+      const importerFile = importer.startsWith(VIEW_PREFIX) ? importer.slice(VIEW_PREFIX.length) : importer;
+      return resolveViewId(id, importerFile);
     },
 
     async load(id) {
@@ -83,11 +87,11 @@ export const unpluginFactory: UnpluginFactory<NolaPluginOptions | undefined> = (
         this.addWatchFile(configPath);
         return wiringSource(configPath);
       }
-      if (id.startsWith(COMPANION_PREFIX)) {
-        const file = id.slice(COMPANION_PREFIX.length);
+      if (id.startsWith(VIEW_PREFIX)) {
+        const file = id.slice(VIEW_PREFIX.length);
         const ctx = await projectFor(file, options);
-        const { code, watchFile } = await loadCompanionCode(id, ctx.sourceRoot);
-        this.addWatchFile(watchFile);
+        const { code, watchFiles } = await loadViewCode(id, ctx.service);
+        for (const w of watchFiles) this.addWatchFile(w);
         return code;
       }
       return null;
@@ -99,8 +103,10 @@ export const unpluginFactory: UnpluginFactory<NolaPluginOptions | undefined> = (
         async handler(source, id, viteOpts) {
           if (!id.endsWith(".tsi")) return null;
           if (viteOpts?.ssr !== true) this.error(CLIENT_ERROR);
+          const { code, map, deps } = await doTransform(source, id);
+          for (const dep of deps) this.addWatchFile(dep);
           // Rollup's SourceMapInput accepts the raw JSON string.
-          return doTransform(source, id);
+          return { code, map };
         },
       },
     },

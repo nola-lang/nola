@@ -17,18 +17,11 @@ import {
   type TemplateLiteralNode,
   walk,
 } from "@nola-lang/ast";
-import { companionSpecifierFor } from "../companion-name.js";
-import { collectTypeRegistry } from "../schema.js";
-import {
-  type AccessorPlan,
-  buildAccessorPlan,
-  type CompanionImport,
-  collectTypeImports,
-  type DeriveContext,
-  deriveTypeExpr,
-} from "../schema-expr.js";
-import { anchorInsertedLines, type EditAnchor, SpanRecorder } from "../spans.js";
-import type { CompileResult } from "../types.js";
+import type { UnderivableContextTypeMode } from "@nola-lang/core";
+import { collectExportedTypeNames, collectTopLevelValueNames, type ExportedTypeDecl } from "../schema.js";
+import { accessorNameFor } from "../schema-expr.js";
+import { anchorInsertedLines, type EditAnchor, type Span, SpanRecorder } from "../spans.js";
+import type { CompileResult, DerivationRequest, ViewInlineOptions } from "../types.js";
 import {
   ASK_OPEN,
   askClose,
@@ -37,7 +30,6 @@ import {
   callIntentArgsHead,
   callIntentOpen,
   callIntentTypeText,
-  companionImportDecl,
   defHash,
   EXTRACT_DEFAULT_TYPE_EXPR,
   EXTRACT_DEFAULT_TYPE_TEXT,
@@ -46,20 +38,34 @@ import {
   extractOpenTemplate,
   FMT_CLOSE,
   FMT_OPEN,
+  inertAccessorDecl,
   invocationArgEntry,
   invocationClose,
   invocationOpen,
   rawTemplateText,
   runtimeImport,
   SCOPE_PARAM,
+  siteAccessorName,
   TEMPLATE_OPEN,
   templateCopy,
-  typeAccessorDecl,
   typeArgsText,
+  typeValueDecl,
+  typeValueText,
 } from "./templates.js";
 
+/** A request whose lowered range is resolved once the span tiling exists (end of run()). */
+interface PendingRequest extends Omit<DerivationRequest, "lowered"> {
+  lowered?: DerivationRequest["lowered"];
+}
 
-
+/**
+ * Phase 1 of the two-phase compile (checker-backed derivation, emit 15): every
+ * derivation site — exported type, extractor `<T>`, parameter annotation —
+ * becomes a call to an appendix accessor whose body is INERT here; the
+ * checker fills the bodies in through finalizeDerivations. This class never
+ * derives a schema itself: it records where each type node sits in the source
+ * and in the lowered text, and nothing else about the type.
+ */
 export class Lowerer {
   private readonly s: SpanRecorder;
   private readonly source: string;
@@ -85,21 +91,20 @@ export class Lowerer {
    * is re-emitted from source bytes — so they are NOLA2010.
    */
   private inCopiedHole = false;
-  /** named types needing a __nola_type_<Name> accessor in the appendix, in first-use order */
-  private readonly typeAccessors = new Map<string, string>();
-  /** local binding name -> companion import emitted in the appendix */
-  private readonly companionImports = new Map<string, CompanionImport>();
-  /** shared derivation context (registry, imports, display file, bare ref names) */
-  private readonly deriveCtx: DeriveContext;
+  /** derivation requests in declaration order: site accessors as met, exported types last */
+  private readonly requests: PendingRequest[] = [];
+  private siteCounter = 0;
+  /** exported alias/interface/enum declarations (spec §1: every alias/interface also becomes a value) */
+  private readonly exportedTypes: ExportedTypeDecl[];
   /** policy for underivable `.`-contextual param types (compiler.underivableContextType) */
-  private readonly underivableContextType: "error" | "prune" | "omit";
+  private readonly underivableContextType: UnderivableContextTypeMode;
 
   constructor(
     source: string,
     file: string,
     ast: BaseNode,
     displayFile: string,
-    options: { underivableContextType?: "error" | "prune" | "omit" } = {},
+    options: { underivableContextType?: UnderivableContextTypeMode; views?: ViewInlineOptions } = {},
   ) {
     this.s = new SpanRecorder(source);
     this.source = source;
@@ -107,103 +112,93 @@ export class Lowerer {
     this.displayFile = displayFile;
     this.ast = ast;
     this.underivableContextType = options.underivableContextType ?? "error";
-    this.deriveCtx = {
-      source,
-      registry: collectTypeRegistry(ast),
-      imports: collectTypeImports(ast),
-      importerDisplayFile: displayFile,
-      refQualifier: "",
-    };
+    this.exportedTypes = collectExportedTypeNames(ast);
   }
 
   run(): CompileResult {
     this.visit(this.ast, false, true);
+    this.emitTypeValues();
 
+    let accessorsStart = -1;
     if (this.usedRuntime) {
       let appendix = runtimeImport(this.displayFile);
-      for (const [name, expr] of this.typeAccessors) appendix += typeAccessorDecl(name, expr);
-      for (const [local, imp] of this.companionImports) appendix += companionImportDecl(local, imp);
+      accessorsStart = appendix.length;
+      for (const r of this.requests) appendix += inertAccessorDecl(r.accessor, r.kind === "context");
       this.s.appendix(appendix);
     }
 
     const map = this.s.generateMap({ source: this.file, hires: true, includeContent: true });
     const { spans, anchors } = this.s.finalize(this.source.length);
-    anchorInsertedLines(map, spans, this.s.toString(), this.source);
-    const companions = [
-      ...new Set([...this.companionImports.values()].map((i) => companionSpecifierFor(i.specifier))),
-    ].sort();
+    const code = this.s.toString();
+    anchorInsertedLines(map, spans, code, this.source);
+
+    const appendixSpan = spans[spans.length - 1];
+    const appendixStart =
+      accessorsStart >= 0 && appendixSpan?.kind === "appendix" ? appendixSpan.generatedStart + accessorsStart : -1;
+    const derivations = this.requests.map((r) => ({ ...r, lowered: r.lowered ?? this.loweredRange(r, spans, anchors) }));
 
     return {
-      code: this.s.toString(),
+      code,
       map,
       diagnostics: this.diagnostics,
-      meta: { ...this.meta, spans, anchors, companions, mode: "lowered" },
+      meta: { ...this.meta, spans, anchors, views: [], mode: "lowered", derivations, appendixStart },
     };
+  }
+
+  /**
+   * Where a request's type node sits in the lowered text. An extractor's `<T>`
+   * is copied into the opener as an ANCHOR (the generated copy of the source
+   * range); a declaration name or a parameter annotation is untouched source,
+   * so it lies inside a verbatim span at a fixed offset from the span start.
+   */
+  private loweredRange(
+    r: PendingRequest,
+    spans: Span[],
+    anchors: Array<{ sourceStart: number; sourceEnd: number; generatedStart: number; generatedEnd: number }>,
+  ): DerivationRequest["lowered"] {
+    const { start, end } = r.source;
+    if (r.kind === "extract") {
+      const a = anchors.find((x) => x.sourceStart === start && x.sourceEnd === end);
+      if (a) return { start: a.generatedStart, end: a.generatedEnd };
+    }
+    const sp = spans.find((x) => x.kind === "verbatim" && x.sourceStart <= start && end <= x.sourceEnd);
+    if (!sp) throw new Error(`lowerer: no verbatim span for ${r.kind} request ${r.accessor} at ${start}-${end}`);
+    const delta = sp.generatedStart - sp.sourceStart;
+    return { start: start + delta, end: end + delta };
+  }
+
+  private request(kind: DerivationRequest["kind"], node: BaseNode, extra: Partial<PendingRequest> = {}): string {
+    const accessor = extra.accessor ?? siteAccessorName(++this.siteCounter);
+    this.requests.push({ accessor, kind, source: { start: node.start, end: node.end, loc: node.loc }, ...extra });
+    this.usedRuntime = true;
+    return accessor;
+  }
+
+  /**
+   * Spec §1: every exported type alias / interface also exports a value under
+   * its own name. Enums are already values. The accessor is the same one an
+   * extractor referencing the type would call (one definition per name).
+   */
+  private emitTypeValues(): void {
+    const values = collectTopLevelValueNames(this.ast);
+    for (const decl of this.exportedTypes) {
+      if (decl.kind === "enum") continue;
+      if (values.has(decl.name)) {
+        this.diag(
+          Codes.TypeValueNameConflict,
+          `exported type '${decl.name}' would also become a value, but a value named '${decl.name}' is already declared in this file — rename one of them.`,
+          decl.node,
+        );
+        continue;
+      }
+      const id = (decl.node as { id?: BaseNode }).id ?? decl.node;
+      this.request("exported", id, { accessor: accessorNameFor(decl.name), name: decl.name });
+      this.s.appendLeft(decl.statement.end, typeValueDecl(decl.name, typeValueText(decl.name)));
+    }
   }
 
   private diag(code: string, message: string, node: BaseNode): void {
     this.diagnostics.push({ code, message, file: this.file, start: node.start, end: node.end, loc: node.loc });
-  }
-
-  /** Fold a derivation's transitive needs (accessors, companion imports) into the state. */
-  private absorbPlan(companions: Map<string, CompanionImport>, plan: AccessorPlan): void {
-    for (const [local, imp] of companions) this.companionImports.set(local, imp);
-    for (const [name, expr] of plan.accessors) {
-      if (!this.typeAccessors.has(name)) this.typeAccessors.set(name, expr);
-    }
-    for (const [local, imp] of plan.companions) this.companionImports.set(local, imp);
-  }
-
-  private absorbTypeNeeds(refs: Set<string>, companions: Map<string, CompanionImport>): void {
-    const plan = buildAccessorPlan(refs, this.deriveCtx);
-    this.absorbPlan(companions, plan);
-    for (const e of plan.errors) this.diag(Codes.UnsupportedIntentType, e.message, e.node);
-  }
-
-  /**
-   * A `.`-contextual param's type failed to derive (shallowly or in its
-   * accessor plan). Resolve it per the configured policy; the returned expr
-   * (if any) replaces the failed one.
-   */
-  private applyContextTypePolicy(tsAnn: BaseNode, paramName: string, reason: string): string | undefined {
-    switch (this.underivableContextType) {
-      case "omit":
-        return undefined;
-      case "prune":
-        return this.pruneDerive(tsAnn);
-      case "error":
-        this.diag(
-          Codes.UnderivableContextType,
-          `contextual parameter '${paramName}' has a type that cannot be derived for inference: ${reason}. ` +
-          `Set compiler.underivableContextType to "prune" or "omit" in nola.config.ts to allow it.`,
-          tsAnn,
-        );
-        return undefined;
-    }
-  }
-
-  /**
-   * Lossy derivation for the prune policy: underivable object members drop out
-   * instead of failing the type. Named refs derive lazily, so "underivable" is
-   * discovered through the accessor plan — every plan failure marks its type
-   * dead and the derivation reruns with refs to dead names failing (and thus
-   * pruning) at their use sites. deadRefs grows monotonically and is bounded
-   * by the registry, so the loop terminates. Returns undefined (-> omit) when
-   * the top-level type itself prunes away.
-   */
-  private pruneDerive(tsAnn: BaseNode): string | undefined {
-    const deadRefs = new Set<string>();
-    const ctx: DeriveContext = { ...this.deriveCtx, lossy: true, deadRefs };
-    for (; ;) {
-      const derived = deriveTypeExpr(tsAnn, ctx);
-      if (!derived.ok) return undefined;
-      const plan = buildAccessorPlan(derived.refs, ctx);
-      if (plan.errors.length === 0) {
-        this.absorbPlan(derived.companions, plan);
-        return derived.expr;
-      }
-      for (const e of plan.errors) deadRefs.add(e.name);
-    }
   }
 
   // inNolaFnBody: directly inside a nola function body.
@@ -343,12 +338,12 @@ export class Lowerer {
   }
 
   /**
- * Sigil-less call-intent detection (2026-08-14 spec): a well-formed extractor
- * in a slot position — a direct argument, or nested at any depth inside plain
- * object/array literals (the same walk checkCallIntentArg performs). Tolerant
- * placeholders (nolaError) do NOT count: a half-typed `f(..` stays a plain
- * call, so the editor never lowers a call intent around a broken slot.
- */
+   * Sigil-less call-intent detection (2026-08-14 spec): a well-formed extractor
+   * in a slot position — a direct argument, or nested at any depth inside plain
+   * object/array literals (the same walk checkCallIntentArg performs). Tolerant
+   * placeholders (nolaError) do NOT count: a half-typed `f(..` stays a plain
+   * call, so the editor never lowers a call intent around a broken slot.
+   */
   private hasExtractorSlot(node: BaseNode): boolean {
     if (node.type === "NolaExtractExpression") {
       return !(node as NolaExtractExpression).nolaError;
@@ -363,7 +358,7 @@ export class Lowerer {
     if (node.type === "ArrayExpression") {
       return (node as ArrayExpressionNode).elements.some((el) => el != null && this.hasExtractorSlot(el));
     }
-    
+
     return false;
   }
 
@@ -426,12 +421,12 @@ export class Lowerer {
     if (!body) return;
 
     // Harvest params into FunctionScopeInit args: every named param contributes
-    // name (+ InferType when derivable); only `.`-prefixed params contribute
-    // the live value. Plain params with underivable/unannotated types are
-    // silently omitted in every mode — their type never describes a live value.
-    // Contextual params follow the underivableContextType policy: a value the
-    // model receives without a schema is the silent failure the policy exists
-    // to surface.
+    // its name and, when annotated, a site accessor the checker fills in. Only
+    // `.`-prefixed params contribute the live value. Plain params derive under
+    // "omit" — an underivable plain type just yields no schema, silently, as
+    // before; contextual params follow the configured policy: a value the model
+    // receives without a schema is the silent failure the policy exists to
+    // surface.
     const argEntries: string[] = [];
     const paramNames: string[] = [];
     for (const p of (fn.params ?? []) as NolaParamNode[]) {
@@ -455,22 +450,10 @@ export class Lowerer {
       let typeExpr: string | undefined;
       const tsAnn = target.typeAnnotation?.typeAnnotation;
       if (tsAnn) {
-        // ref() derivation is lazy — a named type's body only derives inside
-        // the accessor plan, so "derivable" is only known once the plan builds
-        // cleanly. Absorb nothing on failure: no dangling __nola_type_* ref.
-        const derived = deriveTypeExpr(tsAnn, this.deriveCtx);
-        const failure = derived.ok
-          ? (() => {
-            const plan = buildAccessorPlan(derived.refs, this.deriveCtx);
-            if (plan.errors.length > 0) return plan.errors[0] as { message: string };
-            typeExpr = derived.expr;
-            this.absorbPlan(derived.companions, plan);
-            return undefined;
-          })()
-          : derived;
-        if (failure && p.nolaContextual) {
-          typeExpr = this.applyContextTypePolicy(tsAnn, paramName, failure.message);
-        }
+        const accessor = this.request("context", tsAnn, {
+          policy: p.nolaContextual ? this.underivableContextType : "omit",
+        });
+        typeExpr = `${accessor}()`;
       }
       argEntries.push(invocationArgEntry(paramName, typeExpr, Boolean(p.nolaContextual)));
     }
@@ -561,18 +544,12 @@ export class Lowerer {
     if (!quasi) return;
     let typeExpr = EXTRACT_DEFAULT_TYPE_EXPR;
     let typeText = EXTRACT_DEFAULT_TYPE_TEXT;
-    if (node.typeArgs) {
-      const t = node.typeArgs.params[0];
-      if (t) {
-        typeText = typeArgsText(this.source.slice(t.start, t.end));
-        const derived = deriveTypeExpr(t, this.deriveCtx);
-        if (derived.ok) {
-          typeExpr = derived.expr;
-          this.absorbTypeNeeds(derived.refs, derived.companions);
-        } else {
-          this.diag(Codes.UnsupportedIntentType, derived.message, derived.node);
-        }
-      }
+    const typeNode = node.typeArgs?.params[0];
+    if (typeNode) {
+      typeText = typeArgsText(this.source.slice(typeNode.start, typeNode.end));
+      // The authored <T> is a site accessor the checker fills in; the anchor
+      // below is where the checker reads the type (its lowered range).
+      typeExpr = `${this.request("extract", typeNode)}()`;
     }
     // Prefix up to (but not including) the template preserves the template's
     // original bytes; each ${expr} gets __nola.fmt(...) wrapped around it.
@@ -585,7 +562,6 @@ export class Lowerer {
     // visit). Lexical holes inside a template are not fmt-wrapped: tpl formats.
     const isTemplate = (quasi as { nolaHasScopeAccess?: boolean }).nolaHasScopeAccess === true;
     const open = isTemplate ? extractOpenTemplate(typeText, rawTemplateText(this.source, quasi)) : extractOpen(typeText);
-    const typeNode = node.typeArgs?.params[0];
     const anchors = typeNode
       ? [{ sourceStart: typeNode.start, sourceEnd: typeNode.end, textOffset: open.indexOf(typeText) + 1 }]
       : undefined;

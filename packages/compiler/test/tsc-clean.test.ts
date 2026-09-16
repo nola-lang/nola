@@ -1,5 +1,5 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: .tsi fixtures contain literal ${} interpolation
-import { compileCompanion, compileNola } from "@nola-lang/compiler";
+import { compileNola, compileView } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
 import { typecheckLowered } from "./helpers/typecheck.js";
 
@@ -112,6 +112,19 @@ const FIXTURES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "type-values.ts": [
+    "export type User = { id: string; tags?: string[] };",
+    "export interface Box { w: number }",
+    "export infer function load() {",
+    "  const u = ask ..`user`<User>;",
+    "  return u;",
+    "}",
+    "export const schema = User.toJsonSchema();",
+    'export const parsed: User = User.parse({ id: "x" });',
+    'export const std = Box["~standard"].vendor;',
+    'export const doc: Record<string, unknown> = Box["~standard"].jsonSchema.input({ target: "openapi-3.0" });',
+    "",
+  ].join("\n"),
 };
 
 describe("lowered output is tsc-clean under strict", () => {
@@ -146,7 +159,7 @@ describe("lowered output is tsc-clean under strict", () => {
     ].join("\n");
     const { code, diagnostics } = compileNola(source, "pruned.tsi", { underivableContextType: "prune" });
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("__nola_type_User");
+    expect(code).toContain("__nola_type_$1");
     expect(typecheckLowered({ "pruned.ts": code })).toEqual([]);
   });
 
@@ -179,40 +192,34 @@ describe("lowered output is tsc-clean under strict", () => {
 });
 
 describe("cross-file lowering is tsc-clean", () => {
-  it("a .tsi importing a companion-served type type-checks", () => {
-    const models = "export interface Person { name: string; manager?: Person }\n";
-    const report = [
-      'import type { Person } from "./models.js";',
-      "export infer function extract(text: string) {",
-      "  const p = ask ..`person in ${text}`<Person>;",
-      "  return p;",
-      "}",
-      "",
-    ].join("\n");
+  const models = "export interface Person { name: string; manager?: Person }\nexport function helper() { return 1; }\n";
+  const report = [
+    'import type { Person } from "./models.js";',
+    "export infer function extract(text: string) {",
+    "  const p = ask ..`person in ${text}`<Person>;",
+    "  return p;",
+    "}",
+    "",
+  ].join("\n");
+
+  it("a .tsi importing a view-served type type-checks", () => {
     const lowered = compileNola(report, "/proj/report.tsi", { sourceRoot: "/proj" });
-    const companion = compileCompanion(models, "/proj/models.ts", { sourceRoot: "/proj" });
+    const view = compileView(models, "/proj/models.ts", { sourceRoot: "/proj" });
     expect(lowered.diagnostics).toEqual([]);
-    expect(companion.diagnostics).toEqual([]);
-    const errors = typecheckLowered({
-      "report.ts": lowered.code,
-      "models.ts": models,
-      "models.nola.ts": companion.code,
-    });
-    expect(errors).toEqual([]);
+    expect(view.diagnostics).toEqual([]);
+    expect(typecheckLowered({ "report.ts": lowered.code, "models.ts": models, "models.tsi.ts": view.code })).toEqual([]);
   });
 
-  it("using an UnsupportedType at an ask site is a TS error carrying the reason", () => {
-    const models = "export type Weird = Map<string, number>;\n";
-    const use = ['import type { Weird } from "./models.js";', "export const i = ..`x`<Weird>;", ""].join("\n");
-    const lowered = compileNola(use, "/proj/use.tsi", { sourceRoot: "/proj" });
-    const companion = compileCompanion(models, "/proj/models.ts", { sourceRoot: "/proj" });
-    expect(lowered.diagnostics).toEqual([]);
-    const errors = typecheckLowered({
-      "use.ts": lowered.code,
-      "models.ts": models,
-      "models.nola.ts": companion.code,
-    });
-    expect(errors.length).toBeGreaterThan(0);
-    expect(errors.join("\n")).toContain("unsupported type for intent schema");
+  it("plain TS importing a view gets the type AND the value under one name", () => {
+    const view = compileView(models, "/proj/models.ts", { sourceRoot: "/proj" });
+    const consumer = [
+      'import { Person, helper, type Person as OnlyType } from "./models.tsi";',
+      "export const s = Person.toJsonSchema();",
+      "export const p: Person = Person.parse({ name: helper().toString() });",
+      "export const q: OnlyType = p;",
+      "",
+    ].join("\n");
+    expect(typecheckLowered({ "consumer.ts": consumer, "models.ts": models, "models.tsi.ts": view.code })).toEqual([]);
   });
+
 });

@@ -1,0 +1,123 @@
+{
+  "examples/_playground/src/test_2/analyze.tsi": [
+    "__nola.types.boolean()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/_playground/src/test_3/classify.tsi": [
+    "__nola.types.number()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/_playground/src/test_4/person.tsi": [
+    "__nola.types.ref(\"src/person-types#Person\", () => __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "examples/_playground/src/test_5/simple.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/_playground/src/test_6/simple.tsi": [
+    "__nola.types.ref(\"src/person-types#Person\", () => __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "examples/_playground/src/test_7/triage.tsi": [
+    "__nola.types.enum([\"quote\",\"order\"])",
+    "__nola.types.ref(\"src/test_7/handlers#Order\", () => __nola_type_Order)",
+    "__nola.types.string()"
+  ],
+  "examples/chain-of-thought/src/solve.tsi": [
+    "__nola.types.number()",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/classify-message/src/classify.tsi": [
+    "__nola.types.enum([\"billing\",\"refund\",\"fraud\",\"other\"])",
+    "__nola.types.enum([\"positive\",\"neutral\",\"negative\"])",
+    "__nola.types.enum([\"yes\",\"no\"])",
+    "__nola.types.ref(\"Category\", __nola_type_Category)",
+    "__nola.types.ref(\"Sentiment\", __nola_type_Sentiment)",
+    "__nola.types.string()"
+  ],
+  "examples/contextual-args/src/issue.tsi": [
+    "__nola.types.object({ id: __nola.types.string(), description: __nola.types.string() })",
+    "__nola.types.ref(\"Issue\", __nola_type_Issue)",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/cross-file-types/src/report.tsi": [
+    "__nola.types.ref(\"src/models#Person\", () => __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "examples/extract-invoice/src/invoice.tsi": [
+    "__nola.types.object({ description: __nola.types.string(), quantity: __nola.types.number(), unitPrice: __nola.types.number().describe(\"price per unit in USD\") })",
+    "__nola.types.object({ invoiceNumber: __nola.types.string(), issuedTo: __nola.types.string(), lineItems: __nola.types.array(__nola.types.ref(\"LineItem\", __nola_type_LineItem)), total: __nola.types.number().describe(\"grand total in USD\"), dueDate: __nola.types.optional(__nola.types.string()).describe(\"ISO date; omit when the document has none\") })",
+    "__nola.types.ref(\"Invoice\", __nola_type_Invoice)",
+    "__nola.types.string()"
+  ],
+  "examples/extract-person/src/person.tsi": [
+    "__nola.types.object({ name: __nola.types.string(), age: __nola.types.number(), employer: __nola.types.string(), job: __nola.types.string() })",
+    "__nola.types.ref(\"Person\", __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "examples/extract-resume/src/resume.tsi": [
+    "__nola.types.object({ name: __nola.types.string(), email: __nola.types.string(), experience: __nola.types.array(__nola.types.string()).describe(\"one entry per position, most recent first\"), skills: __nola.types.array(__nola.types.string()), education: __nola.types.array(__nola.types.ref(\"Education\", __nola_type_Education)) })",
+    "__nola.types.object({ school: __nola.types.string(), degree: __nola.types.string(), year: __nola.types.number().describe(\"graduation year\") })",
+    "__nola.types.ref(\"Resume\", __nola_type_Resume)",
+    "__nola.types.string()"
+  ],
+  "examples/file-ticket/src/tickets.tsi": [
+    "__nola.types.number()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/prompt-template/src/triage.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "examples/recursive-tree/src/tree.tsi": [
+    "__nola.types.object({ label: __nola.types.string(), children: __nola.types.optional(__nola.types.array(__nola.types.ref(\"TreeNode\", __nola_type_TreeNode))) })",
+    "__nola.types.ref(\"TreeNode\", __nola_type_TreeNode)",
+    "__nola.types.string()"
+  ],
+  "examples/research-notes/src/research.tsi": [
+    "__nola.types.array(__nola.types.string())",
+    "__nola.types.array(__nola.types.string())",
+    "__nola.types.object({ answer: __nola.types.string(), evidence: __nola.types.array(__nola.types.string()).describe(\"the collected notes that directly support the answer\") })",
+    "__nola.types.ref(\"Conclusion\", __nola_type_Conclusion)",
+    "__nola.types.string()",
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/next-app/src/greet.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/no-install/src/person.tsi": [
+    "__nola.types.object({ name: __nola.types.string(), age: __nola.types.number(), employer: __nola.types.string(), job: __nola.types.string() })",
+    "__nola.types.ref(\"Person\", __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/tier2-app/src/greet.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/ts6-companions/src/extract.tsi": [
+    "__nola.types.ref(\"person-types#Person\", () => __nola_type_Person)",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/vite-app/src/greet.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ],
+  "test/e2e/fixtures/webpack-app/src/greet.tsi": [
+    "__nola.types.string()",
+    "__nola.types.string()"
+  ]
+}

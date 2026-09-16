@@ -12,7 +12,7 @@ import {
 } from "@nola-lang/core";
 import type { InferContext } from "../infer-context/infer-context.js";
 import type { Frame } from "../runtime/frame.js";
-import { InferType } from "../types/infer-type.js";
+import { asCarrier, type InferType, TypeCarrier } from "../types/infer-type.js";
 import type { InferenceComposer, IntentComposer, IntentInput, ScopeComposer, ScopeDescription } from "./composer.js";
 import { type ExtractPromptScope, type FunctionPromptScope, renderTemplate } from "./prompt-render.js";
 import { wireSchema } from "./wire-schema.js";
@@ -99,7 +99,7 @@ export class ModelBuilder extends LevelComposer {
         const json = a.value === undefined ? undefined : JSON.stringify(a.value);
         return {
           name: a.name,
-          ...(a.type ? { type: a.type.toNativeType() } : {}),
+          ...(a.type ? { type: asCarrier(a.type).toNativeType() } : {}),
           contextual: a.contextual,
           ...(json !== undefined ? { value: JSON.parse(json) } : {}),
         };
@@ -183,7 +183,7 @@ export class ModelBuilder extends LevelComposer {
       if (!input.template) return;
       const hasContext = chain.length > 0;
       const schema = outputSchema(model.output);
-      const typeText = InferType.isInferType(outputType) ? outputType.toNativeType() : JSON.stringify(schema);
+      const typeText = TypeCarrier.is(outputType) ? outputType.toNativeType() : JSON.stringify(schema);
       let formatRead = false;
       const scope: ExtractPromptScope = Object.freeze({
         type: typeText,
