@@ -29,7 +29,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
   { name: "research-notes", label: "TS control flow orchestrating nola functions", source: "example" },
   {
     name: "triage-ticket",
-    label: "ticket triage: literal unions and booleans as typed questions; no provider question",
+    label: "ticket triage: literal unions and booleans as typed questions",
     source: "example",
     provider: { label: "typesafe.ai", envVar: "TYPESAFE_API_KEY" },
   },

@@ -78,7 +78,9 @@ describe("InferType as a value", () => {
   });
 
   it("parse redacts secrets that leak into the message", () => {
-    const key = "sk-live-0123456789abcdef0123456789abcdef";
+    // Built at run time, like every other FAKE_KEY fixture: a key-shaped literal
+    // trips the public-sync secret scan (scripts/sync.mjs).
+    const key = `sk-proj-${"A".repeat(24)}`;
     let message = "";
     try {
       t.enum(["a"]).parse(key);

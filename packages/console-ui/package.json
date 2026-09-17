@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/console-ui",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "Nola Console web UI — the SPA `nola console` serves; builds into @nola-lang/console/dist/ui",
   "type": "module",

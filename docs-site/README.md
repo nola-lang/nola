@@ -47,7 +47,7 @@ builds. That is the property to protect, so the contract is thin but firm:
 - **No version numbers in prose.** Write "not raised — reserved", not "not
   raised in 0.1.3"; link the Marketplace instead of quoting the extension
   version. The one place a version may appear is a dependency entry for a Nola
-  package inside a `package.json` sample (`"@nola-lang/runtime": "^0.1.9"`),
+  package inside a `package.json` sample (`"@nola-lang/runtime": "^0.1.10"`),
   and those are owned by `scripts/release.mjs`: every bump rewrites them to
   `^<version>` (the caret range is what the scaffold stamps), and
   `test/docs-site.test.ts` fails on any entry that disagrees with the lockstep

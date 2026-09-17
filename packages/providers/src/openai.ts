@@ -30,9 +30,12 @@ function toStrict(schema: JsonSchema): StrictSchema {
 
 function toStrictNode(schema: JsonSchema): StrictSchema {
   if ("$ref" in schema) return { $ref: schema.$ref };
-  // emit 15 shapes: choice and literals pass through; strict mode accepts anyOf/const
+  // emit 15 shapes: choice passes through; strict mode accepts anyOf.
+  // A literal keeps its `const` but gains the `type` it implies: OpenAI-compatible
+  // backends (Cerebras) reject a bare `{ const }` node as an unsupported field,
+  // and every backend accepts the typed form (it is a strict subset).
   if ("anyOf" in schema) return { anyOf: schema.anyOf.map(toStrictNode) };
-  if ("const" in schema) return { const: schema.const };
+  if ("const" in schema) return { type: typeof schema.const, const: schema.const };
   switch (schema.type) {
     case "object": {
       if (!("properties" in schema)) {

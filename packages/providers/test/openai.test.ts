@@ -96,6 +96,35 @@ describe("openai provider", () => {
     expect(sent.properties.value).toEqual({ type: "string", enum: ["billing", "refund"] });
   });
 
+  it("types every const node in the strict transport (a bare {const} is rejected by OpenAI-compatible backends such as Cerebras)", async () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        priority: { anyOf: [{ const: 1 }, { const: 2 }, { const: 3 }] },
+        kind: { const: "ticket" },
+        flag: { const: true },
+      },
+      required: ["priority", "kind", "flag"],
+      additionalProperties: false,
+    };
+    const { fn, calls } = fakeFetch(() => chatReply({ priority: 2, kind: "ticket", flag: true }));
+    const p = openai({ apiKey: "k", fetch: fn, model: "m" });
+    const { text } = await p.complete(requestOf({ system: "s", schema }));
+    expect(JSON.parse(text)).toEqual({ priority: 2, kind: "ticket", flag: true });
+    const sent = JSON.parse(String(calls[0]?.init.body)).response_format.json_schema.schema as {
+      properties: Record<string, unknown>;
+    };
+    expect(sent.properties.priority).toEqual({
+      anyOf: [
+        { type: "number", const: 1 },
+        { type: "number", const: 2 },
+        { type: "number", const: 3 },
+      ],
+    });
+    expect(sent.properties.kind).toEqual({ type: "string", const: "ticket" });
+    expect(sent.properties.flag).toEqual({ type: "boolean", const: true });
+  });
+
   it("passes object replies through when schema root is an object", async () => {
     const schema: JsonSchema = {
       type: "object",
