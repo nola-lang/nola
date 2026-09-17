@@ -13,6 +13,7 @@ import type {
 } from "@nola-lang/core";
 import { isPlatformModel, NolaConfigError } from "@nola-lang/core";
 import { memoryCacheStore } from "./cache.js";
+import { platformModel } from "./platform-model.js";
 import { terminalTrace } from "./terminal-trace.js";
 import { TRACER_HOOK, tracer } from "./tracer.js";
 
@@ -110,7 +111,18 @@ function validateProject(source: string | undefined, raw: unknown): string | und
 }
 
 const TELEMETRY_SHAPE =
-  "`telemetry` must be { level } (the terminal), an observer, or an array of observers — e.g. { level: \"info\" } or [nola.tracer(), terminalTrace()].";
+  "`telemetry` must be { level } (the terminal), a tracer URL, an observer, or an array of them — e.g. { level: \"info\" }, \"http://127.0.0.1:4141\" or [\"http://127.0.0.1:4141\", terminalTrace()].";
+
+/** A string in `telemetry` is the alias of `nola.tracer(url)` — it must be an http(s) URL, since a typo would otherwise post nowhere. */
+function tracerFromUrl(source: string | undefined, url: string, label: string): NolaTelemetry {
+  if (!/^https?:\/\/\S+$/i.test(url)) {
+    fail(
+      source,
+      `${label}: ${JSON.stringify(url)} is not an http(s) URL — a string here is short for nola.tracer(url), e.g. "http://127.0.0.1:4141".`,
+    );
+  }
+  return tracer(url);
+}
 
 function hasObserverMethod(source: string | undefined, entry: Record<string, unknown>, label: string): boolean {
   let any = false;
@@ -134,6 +146,7 @@ function validateTelemetry(source: string | undefined, raw: unknown): readonly N
   if (Array.isArray(raw)) {
     const out = raw.map((entry, i): NolaTelemetry => {
       const label = `telemetry[${i}]`;
+      if (typeof entry === "string") return tracerFromUrl(source, entry, label);
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
         fail(source, `${label} is not an observer (need an object with at least one on* method; the terminal is terminalTrace({ level })).`);
       }
@@ -144,6 +157,7 @@ function validateTelemetry(source: string | undefined, raw: unknown): readonly N
     });
     return Object.freeze(out);
   }
+  if (typeof raw === "string") return Object.freeze([tracerFromUrl(source, raw, "telemetry")]);
   if (raw === null || typeof raw !== "object") fail(source, TELEMETRY_SHAPE);
   const obj = raw as Record<string, unknown>;
   if (hasObserverMethod(source, obj, "telemetry")) return Object.freeze([obj as NolaTelemetry]);
@@ -271,12 +285,16 @@ function isModelShaped(value: unknown): value is LanguageModel {
   return !!m && typeof m === "object" && typeof m.name === "string" && typeof m.complete === "function";
 }
 
-/** Rejects a string in the slot with its fix; returns the value otherwise. */
+/** The one string the slot takes: the alias of `nola.infer()`. */
+const PLATFORM_ALIAS = "nola";
+
+/** `"nola"` is `nola.infer()`; any other string is rejected with its fix; everything else passes through. */
 function admitModelValue(source: string | undefined, value: unknown, label: string): unknown {
+  if (value === PLATFORM_ALIAS) return platformModel({});
   if (typeof value === "string") {
     fail(
       source,
-      `${label}: a string is not a model — import a provider factory from @nola-lang/providers (e.g. openai("gpt-5-mini")), or use nola.infer("<provider>/<model>") for a platform-served upstream.`,
+      `${label}: ${JSON.stringify(value)} is not a model — the only string the slot takes is "nola" (short for nola.infer()). Import a provider factory from @nola-lang/providers (e.g. openai("gpt-5-mini")), or use nola.infer("<provider>/<model>") for a platform-served upstream.`,
     );
   }
   return value;
@@ -295,7 +313,7 @@ function normalizeModelMap(source: string | undefined, raw: unknown): Record<str
   if (bare === null || typeof bare !== "object" || Array.isArray(bare)) {
     fail(
       source,
-      "`model` must be a model (need { name: string, complete(req) } — a provider factory result, or nola.infer()), or a map with at least a `default` entry.",
+      "`model` must be a model (need { name: string, complete(req) } — a provider factory result, nola.infer() or its alias \"nola\"), or a map with at least a `default` entry.",
     );
   }
   const map = bare as Record<string, unknown>;
@@ -307,7 +325,7 @@ function normalizeModelMap(source: string | undefined, raw: unknown): Record<str
       if (name !== "default") {
         fail(
           source,
-          `model.${name}: the platform model can only be the root \`default\` — route locally with provider-factory models, or put \`nola.infer()\` in \`default\`.`,
+          `model.${name}: the platform model can only be the root \`default\` — route locally with provider-factory models, or put "nola" in \`default\`.`,
         );
       }
       out[name] = entry;
@@ -326,7 +344,7 @@ let tracingEnvIgnoredNoticed = false;
 function noticeTracingEnvIgnored(): void {
   if (tracingEnvIgnoredNoticed) return;
   tracingEnvIgnoredNoticed = true;
-  console.warn("[nola] NOLA_TRACING_URL ignored — nola.config.ts lists a nola.tracer() entry.");
+  console.warn("[nola] NOLA_TRACING_URL ignored — nola.config.ts lists its own tracer.");
 }
 
 /** Validate a raw config value and freeze it. Idempotent on already-resolved configs. */

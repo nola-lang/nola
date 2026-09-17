@@ -566,7 +566,7 @@ function trialFailureNote(err: unknown): string {
     const wait = err.retryAfterMs !== undefined && err.retryAfterMs > 0 ? ` — try again in ${formatWait(err.retryAfterMs)}` : "";
     reason = `too many trials from this network${wait} (${err.message})`;
   }
-  return `Could not get a Nola API key: ${reason}\nThe project uses its default provider instead. Retry later with \`npx nola-lang key\`, then set \`model: nola.infer()\` in nola.config.ts.`;
+  return `Could not get a Nola API key: ${reason}\nThe project uses its default provider instead. Retry later with \`npx nola-lang key\`, then set \`model: "nola"\` in nola.config.ts.`;
 }
 
 /**

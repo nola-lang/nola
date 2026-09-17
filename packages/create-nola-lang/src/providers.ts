@@ -20,7 +20,7 @@ export interface ProviderDef {
 }
 
 export const PROVIDERS: readonly ProviderDef[] = [
-  { id: "nola", label: "Nola", hint: "25 free runs, no account or provider key needed", model: "nola.infer()" },
+  { id: "nola", label: "Nola", hint: "25 free runs, no account or provider key needed", model: '"nola"' },
   { id: "openai", label: "OpenAI", hint: 'openai("gpt-5-mini"), reads OPENAI_API_KEY', envVar: "OPENAI_API_KEY", model: 'openai("gpt-5-mini")' },
   {
     id: "anthropic",

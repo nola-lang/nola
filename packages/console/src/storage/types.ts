@@ -156,10 +156,33 @@ export interface DefinitionSummary {
   providers: string[];
 }
 
-/** The definition drill-down: the stats plus recent executions (newest first). */
+/**
+ * The definition drill-down: the stats (always definition-wide) plus the executions the
+ * query selected, newest first.
+ */
 export interface DefinitionDetail extends DefinitionSummary {
   asks: AskSummary[];
+  /** how many executions passed the query's filter — `asks` is its newest `limit` of them */
+  matched: number;
 }
+
+/**
+ * Narrows a definition's executions IN STORAGE, so the limit applies to what matched and an old
+ * window stays reachable however many newer executions exist.
+ */
+export interface DefinitionAsksQuery {
+  /** epoch ms, inclusive */
+  from?: number;
+  to?: number;
+  /** ms, inclusive; a bound never matches an execution with no duration yet */
+  dmin?: number;
+  dmax?: number;
+  pid?: number;
+  /** newest first; default {@link DEFAULT_DEFINITION_ASKS_LIMIT} */
+  limit?: number;
+}
+
+export const DEFAULT_DEFINITION_ASKS_LIMIT = 500;
 
 export interface RecordsQuery {
   project?: string;
@@ -178,7 +201,7 @@ export interface ConsoleStorage {
   getTrace(invocationId: string): Promise<TraceDetail | undefined>;
   getAsk(askId: string): Promise<AskDetail | undefined>;
   listDefinitions(query?: { project?: string; noProject?: boolean }): Promise<DefinitionSummary[]>;
-  getDefinition(def: string): Promise<DefinitionDetail | undefined>;
+  getDefinition(def: string, query?: DefinitionAsksQuery): Promise<DefinitionDetail | undefined>;
   /** Delete everything — every project, invocation, ask, definition, attempt and event. */
   clear(): Promise<void>;
   close(): Promise<void>;

@@ -52,7 +52,7 @@ export function TracesView() {
         >
         {records?.length === 0 && (
           <li className={EMPTY}>
-            Waiting for traces. Add <code>telemetry: nola.tracer("{location.origin}")</code> to your app's{" "}
+            Waiting for traces. Add <code>telemetry: "{location.origin}"</code> to your app's{" "}
             <code>nola.config.ts</code> and every invocation will appear here.
           </li>
         )}

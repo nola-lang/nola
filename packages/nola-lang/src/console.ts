@@ -36,7 +36,7 @@ export function formatConsoleBanner(info: { url: string; home: string }, p: Pale
     `${p.dim("Local:")}    ${p.command(info.url)}`,
     `${p.dim("Home:")}     ${p.path(info.home)}`,
     "",
-    p.dim(`Enable tracing with \`telemetry: nola.tracer("${info.url}")\` in nola.config.ts`),
+    p.dim(`Enable tracing with \`telemetry: "${info.url}"\` in nola.config.ts`),
     "",
     p.dim("Press Ctrl+C to stop"),
   ].join("\n");

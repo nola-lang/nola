@@ -150,6 +150,36 @@ describe("api routes", () => {
     expect((await app.request("/api/definitions?project=x&noProject=1")).status).toBe(400);
   });
 
+  it("narrows a definition's executions by the query string", async () => {
+    const { app, service } = setup();
+    const start = (askId: string, seq: number, at: number): NolaIngestEnvelope => ({
+      ...envelope,
+      seq,
+      at,
+      event: { ...(envelope.event as object), askId, invocationId: `inv-${askId}`, spanPath: [`inv-${askId}`] },
+    });
+    await service.ingest(start("a1", 0, 1000));
+    await service.ingest(start("a2", 1, 2000));
+    await service.ingest(start("a3", 2, 3000));
+    const url = `/api/definitions/${"d1".repeat(32)}`;
+    type Detail = { asks: Array<{ askId: string }>; matched: number; executions: number };
+    const get = async (qs: string) => (await (await app.request(`${url}${qs}`)).json()) as Detail;
+
+    const windowed = await get("?from=1500&to=3000&limit=1");
+    expect(windowed.asks.map((a) => a.askId)).toEqual(["a3"]);
+    expect(windowed).toMatchObject({ matched: 2, executions: 3 });
+    expect((await get("?pid=1")).matched).toBe(3);
+    expect((await get("?pid=2")).matched).toBe(0);
+    expect((await get("?dmin=1")).matched).toBe(0); // all three are still running
+
+    // a malformed bound is refused — ignoring it would silently answer a different question
+    for (const qs of ["?from=abc", "?to=-1", "?dmin=", "?limit=0", "?limit=1.5"]) {
+      const res = await app.request(`${url}${qs}`);
+      expect(res.status, qs).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_query");
+    }
+  });
+
   it("rejects project= together with noProject=1", async () => {
     const { app } = setup();
     const res = await app.request("/api/records?project=x&noProject=1");

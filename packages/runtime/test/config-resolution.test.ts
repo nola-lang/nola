@@ -1,7 +1,8 @@
 import { Codes } from "@nola-lang/ast";
+import { isPlatformModel } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
-import { memoryCacheStore, NolaConfigError, nola, resolveBuildConfig, resolveNolaConfig, TERMINAL_TRACE, terminalTrace } from "@nola-lang/runtime";
-import { describe, expect, it } from "vitest";
+import { memoryCacheStore, NolaConfigError, nola, resolveBuildConfig, resolveNolaConfig, TERMINAL_TRACE, TRACER_HOOK, terminalTrace } from "@nola-lang/runtime";
+import { describe, expect, it, vi } from "vitest";
 
 const provider = () => mockProvider(["x"]);
 
@@ -131,8 +132,8 @@ describe("resolveNolaConfig", () => {
   });
 
   it("rejects a non-object telemetry and bad entries; the console global is not an observer", () => {
-    expect(() => resolveNolaConfig({ model: provider(), telemetry: "info" as never })).toThrow(
-      /`telemetry` must be \{ level \} \(the terminal\), an observer, or an array of observers/,
+    expect(() => resolveNolaConfig({ model: provider(), telemetry: 7 as never })).toThrow(
+      /`telemetry` must be \{ level \} \(the terminal\), a tracer URL, an observer, or an array of them/,
     );
     expect(() => resolveNolaConfig({ model: provider(), telemetry: [null] as never })).toThrow(
       /telemetry\[0\] is not an observer \(need an object with at least one on\* method; the terminal is terminalTrace\(\{ level \}\)\)/,
@@ -200,9 +201,9 @@ describe("platform-config surface (design 2026-09-03)", () => {
     expect(() => resolveNolaConfig({ model: provider(), forceModel: "x" })).toThrow(/forceModel/);
   });
 
-  it("a string in the model slot is not a model under defineConfig", () => {
-    expect(() => resolveNolaConfig({ model: "openai/gpt-5-mini" })).toThrow(/a string is not a model/);
-    expect(() => resolveNolaConfig({ model: { default: "openai/gpt-5-mini" } })).toThrow(/a string is not a model/);
+  it("any string but \"nola\" in the model slot is not a model", () => {
+    expect(() => resolveNolaConfig({ model: "openai/gpt-5-mini" })).toThrow(/"openai\/gpt-5-mini" is not a model.*"nola"/);
+    expect(() => resolveNolaConfig({ model: { default: "openai/gpt-5-mini" } })).toThrow(/model\.default: "openai\/gpt-5-mini" is not a model/);
   });
 
   it("the platform model is root-only: never a non-default map entry", () => {
@@ -316,3 +317,59 @@ describe("build section", () => {
   });
 });
 
+describe("string aliases (2026-09-16)", () => {
+  it("model: \"nola\" is nola.infer() — the platform model as the default", () => {
+    const resolved = resolveNolaConfig({ model: "nola" });
+    expect(Object.keys(resolved.model)).toEqual(["default"]);
+    expect(isPlatformModel(resolved.model.default)).toBe(true);
+    expect(resolved.model.default?.name).toBe(nola.infer().name);
+  });
+
+  it("\"nola\" is the alias inside the map too, under the same root-only rule", () => {
+    const resolved = resolveNolaConfig({ model: { default: "nola", local: provider() } });
+    expect(isPlatformModel(resolved.model.default)).toBe(true);
+    expect(() => resolveNolaConfig({ model: { default: provider(), fast: "nola" } })).toThrow(/can only be the root/);
+  });
+
+  it("telemetry: \"<url>\" is nola.tracer(url) alone — it replaces the terminal like any single observer", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", (async (url: unknown) => {
+      calls.push(String(url));
+      return new Response(null, { status: 204 });
+    }) as typeof fetch);
+    try {
+      const resolved = resolveNolaConfig({ model: provider(), telemetry: "http://127.0.0.1:4141" });
+      expect(resolved.telemetry.map((o) => o.name)).toEqual([TRACER_HOOK]);
+      resolved.telemetry[0]?.onAskStart?.({ askId: "a1", site: { file: "f.tsi", loc: "1:1" }, provider: "mock" } as never);
+      await vi.waitFor(() => expect(calls).toEqual(["http://127.0.0.1:4141/v1/ingest"]));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a URL is an entry of the telemetry list as well", () => {
+    const resolved = resolveNolaConfig({ model: provider(), telemetry: ["https://traces.example.com", terminalTrace()] });
+    expect(resolved.telemetry.map((o) => o.name)).toEqual([TRACER_HOOK, TERMINAL_TRACE]);
+  });
+
+  it("a telemetry string that is not an http(s) URL is rejected with the fix", () => {
+    expect(() => resolveNolaConfig({ model: provider(), telemetry: "127.0.0.1:4141" })).toThrow(
+      /telemetry: "127\.0\.0\.1:4141" is not an http\(s\) URL/,
+    );
+    expect(() => resolveNolaConfig({ model: provider(), telemetry: ["ftp://x"] })).toThrow(/telemetry\[0\]: "ftp:\/\/x" is not an http\(s\) URL/);
+  });
+
+  it("a listed URL counts as the config's own tracer — NOLA_TRACING_URL yields to it", () => {
+    const prev = process.env.NOLA_TRACING_URL;
+    process.env.NOLA_TRACING_URL = "http://127.0.0.1:9999";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const resolved = resolveNolaConfig({ model: provider(), telemetry: "http://127.0.0.1:4141" });
+      expect(resolved.telemetry.map((o) => o.name)).toEqual([TRACER_HOOK]);
+    } finally {
+      warn.mockRestore();
+      if (prev === undefined) delete process.env.NOLA_TRACING_URL;
+      else process.env.NOLA_TRACING_URL = prev;
+    }
+  });
+});

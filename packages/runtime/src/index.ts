@@ -18,6 +18,7 @@ export type {
   JsonSchema,
   LanguageModel,
   ModelConfigEntry,
+  ModelConfigInput,
   ModelRef,
   NolaConfig,
   NolaLogLevel,

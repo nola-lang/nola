@@ -98,7 +98,7 @@ ast, core                    # leaf types + shared utilities (errors, redact, fi
   → compiler                 # compileNola(): AST → { code, map, meta, diagnostics } — PHASE 1 (inert accessors + meta.derivations) + finalizeDerivations; no TypeScript, no node:path
   → derive                   # deps compiler + typescript (>=5.6 <7): the checker walk (deriveType), answerRequests, DerivationService (one ts.LanguageService per process), derivationDiagnostics
   → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
-  → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (original amber/panel/mono tokens mapped onto shadcn names — keep the look)
+  → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (original amber/panel/mono tokens mapped onto shadcn names — keep the look); LIVE UPDATES (2026-09-16) are patch-then-refetch: `/api/events` carries every ingest envelope, `live-sync.ts` applies each one to the cached definitions at once (`applyNotice`, live-definition.ts — a re-implementation of storage's askStart/askEnd row mapping, held to it by `test/live-definition-parity.test.ts`; change the ingest mapping in sqlite.ts and you change it there too) and then refetches only the queries that notice can have changed (`live-keys.ts`) through the self-pacing `refresh-queue.ts` (first at once, one round at a time, never a trailing debounce — that starved under a steady run of asks); notices that arrive mid-round are re-applied when it settles so an older read cannot blink a bar out; the duration chart draws a running execution at its elapsed time, pads to `MIN_SLOTS` so a new bar takes an empty slot, and holds its Y ceiling (`chart-scale.ts`)
   → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); the runtime renders for classic providers (they receive a ClassicPrompt), only the platform model gets the InferenceModel — its `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
   → node-loader, typescript-plugin  # typescript-plugin: language-core + @volar/typescript
   → nola-lang                # the dev tool users install: nola bin (build/run/check/declarations) + ./register
@@ -133,6 +133,26 @@ chooses, a string ⇒ the upstream selector, an object ⇒ `PlatformOptions` +
 only as the bare `model` or the map's `default`), and `nola.tracer(target?)`
 is the ungated tracer (absent target ⇒ `NOLA_API_URL` → api.nola.sh). There
 is no `nola()` call: the callable preset is reserved for a later design.
+Both factories have a STRING ALIAS (2026-09-16, amending config v2 §1's "a
+string in the `model` slot stays NOLA3003"): `model: "nola"` IS
+`nola.infer()` and an http(s) URL in `telemetry` — bare or as a list entry —
+IS `nola.tracer(url)`. They are resolved in `resolveNolaConfig`
+(`admitModelValue` / `tracerFromUrl`, config.ts) into the very same values,
+so nothing downstream knows a string was written: the root-only rule, the
+`nola:tracer` name `NOLA_TRACING_URL` yields to, and "a single observer
+replaces the terminal" all apply unchanged. `"nola"` is the ONLY model
+string (any other is NOLA3003; the selector and connection options exist
+only on the call), a non-URL telemetry string is NOLA3003, and the
+combinators in `@nola-lang/providers` do NOT take strings. The input type is
+core's `ModelConfigInput`; `ModelConfigEntry` stays the resolved type. The
+scaffolder's trial config and the console banner write the string forms.
+The strings are what every user-facing surface TEACHES FIRST — templates
+(the Nola config, the offline starter's "switch to a real model" comment),
+the `nola console` banner and the console UI's empty state, `nola key`'s
+closing line, runtime error copy, docs-site samples and the agent skill;
+the calls appear only where an argument is needed (upstream selector,
+`baseUrl`, key source, `retry`, the default-target `nola.tracer()`). Keep new
+copy on that rule.
 `defineConfig` is the only root and `model` is always required. `nola-lang` never ships to production — the
 built output imports only `@nola-lang/runtime` (running `.tsi` directly in prod
 via `node --import nola-lang/register` is the documented tsx-style exception).
@@ -278,7 +298,12 @@ path and non-interactive runs never install, so they never relink (the e2e's
 `linkDeps` covers that case by hand); a
 later `npm install` in the scaffold restores the registry copies. The curated examples are
 scaffold-ready: start/build/check scripts, mock-only configs (the OpenAI smoke
-e2e swaps in its own config override in a tmp copy). The published manifest
+e2e swaps in its own config override in a tmp copy). The recommended
+`.gitignore` is ONE file, `templates/_gitignore` (underscored — npm pack
+strips nested `.gitignore`s): `scaffold` writes it for EVERY template, builtin
+or example (examples carry none in-repo, the root ignore file covers them; one
+an example does carry wins — `withRecommendedGitignore`). No template keeps
+its own copy; `scaffold.test.ts` holds every menu entry to it. The published manifest
 keeps ZERO runtime deps — `@clack/prompts` is a devDep inlined by
 `scripts/bundle.mjs` (root `npm run build` runs it; the dist is an esbuild ESM
 bundle). The starter's `nola.replay.jsonl` makes the first run keyless; it is

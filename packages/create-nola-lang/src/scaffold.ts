@@ -46,6 +46,19 @@ export function providerConfigUrl(provider: Exclude<ProviderId, "none">): URL {
 /** _gitignore ships underscored (npm pack strips nested .gitignore files). */
 const RENAMES: Record<string, string> = { _gitignore: ".gitignore" };
 
+/** The ONE recommended .gitignore — every scaffold gets it; no template keeps a copy of its own. */
+const GITIGNORE_URL = new URL("../templates/_gitignore", import.meta.url);
+
+/**
+ * Add the recommended `.gitignore` to an example's files. Examples are copied
+ * verbatim from `examples/`, where the monorepo's root ignore file covers them,
+ * so they carry none — one an example does carry wins.
+ */
+export async function withRecommendedGitignore(files: Map<string, string>): Promise<Map<string, string>> {
+  if (!files.has(".gitignore")) files.set(".gitignore", await readFile(GITIGNORE_URL, "utf8"));
+  return files;
+}
+
 /** Files whose __NAME__/__VERSION__, README-note and __NEXT_STEPS__ placeholders are substituted. */
 const SUBSTITUTED = new Set(["package.json", "README.md", "main.ts"]);
 
@@ -83,12 +96,13 @@ const README_NOTES = {
       "The starter runs offline: `nola.config.ts` replays answers from the committed\n" +
       "`nola.replay.jsonl` ledger. The ledger is keyed by the exact prompt, so once\n" +
       "you edit `src/person.tsi` or add your own asks, switch the config to a real\n" +
-      "model (see the comment in `nola.config.ts`) and set `OPENAI_API_KEY`.",
+      "model (see the comment in `nola.config.ts`): `model: \"nola\"` with a key from\n" +
+      "`npx nola-lang key` (25 free runs), or your own provider and its key.",
   },
   nola: {
     START_NOTE: "uses your 25 free Nola runs (key in .env)",
     PROVIDER_NOTE:
-      "`nola.config.ts` sets `model: nola.infer()` — platform-served inference with the trial key the\n" +
+      "`nola.config.ts` sets `model: \"nola\"` — platform-served inference with the trial key the\n" +
       "scaffold wrote to `.env` (git-ignored). Out of runs? `npx nola-lang account` opens\n" +
       "your Nola account, where prepaid balance is added, or bring your\n" +
       "own model (see the comment in `nola.config.ts`).",
@@ -142,7 +156,9 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
 
   if (def.source === "example") {
     const dev = await devExamplesDir();
-    const exampleFiles = dev ? await collectExampleFromDisk(dev, template) : await fetchExampleFromGitHub(template, version);
+    const exampleFiles = await withRecommendedGitignore(
+      dev ? await collectExampleFromDisk(dev, template) : await fetchExampleFromGitHub(template, version),
+    );
     const manifest = exampleFiles.get("package.json");
     if (manifest) exampleFiles.set("package.json", rewriteExamplePackageJson(manifest, { name, version }));
     for (const [relPath, content] of exampleFiles) {
@@ -189,5 +205,9 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
     }
   };
   await copyDir(".", ".");
+  if (!files.includes(".gitignore")) {
+    await writeFile(join(absRoot, ".gitignore"), await readFile(GITIGNORE_URL, "utf8"));
+    files.push(".gitignore");
+  }
   return { root, files: files.sort() };
 }

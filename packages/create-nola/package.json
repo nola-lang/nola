@@ -1,6 +1,6 @@
 {
   "name": "create-nola",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Scaffold a new Nola project (npm create nola) — short alias of create-nola-lang",
   "keywords": [
     "nola",
@@ -35,6 +35,6 @@
     "node": ">=22.18"
   },
   "dependencies": {
-    "create-nola-lang": "0.1.10"
+    "create-nola-lang": "0.1.11"
   }
 }

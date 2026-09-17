@@ -145,7 +145,7 @@ describe("nola key", () => {
     expect(await cmdKey({ ...opts, cwd, home, fetch: fn, interactive: true, confirm: a.confirm })).toBe(0);
     expect(calls).toEqual(["/v1/trial"]);
     expect(a.asked).toEqual([`${ADD_TO_ENV_QUESTION}|true`]);
-    expect(out).toEqual(["New Nola account — 25 free runs.", `NOLA_API_KEY=${KEY}`, "Added to .env."]);
+    expect(out).toEqual(["New Nola account — 25 free runs.", `NOLA_API_KEY=${KEY}`, 'Added to .env. Use it with `model: "nola"` in nola.config.ts.']);
     expect(err).toEqual([]);
     expect(await readFile(join(cwd, ".env"), "utf8")).toBe(`NOLA_API_KEY=${KEY}\n`);
     expect(existsSync(join(cwd, ".gitignore"))).toBe(false);
@@ -188,7 +188,7 @@ describe("nola key", () => {
       expect(await cmdKey({ ...opts, cwd, home, fetch: stub().fn, interactive: true, confirm: a.confirm })).toBe(0);
       expect(a.asked).toEqual([`${ADD_TO_ENV_QUESTION}|true`, `${REPLACE_ENV_QUESTION}|false`]);
       expect(await readFile(join(cwd, ".env"), "utf8")).toBe(expected);
-      expect(out.at(-1)).toBe(second === true ? "Replaced in .env." : NOT_WRITTEN);
+      expect(out.at(-1)).toBe(second === true ? 'Replaced in .env. Use it with `model: "nola"` in nola.config.ts.' : NOT_WRITTEN);
     }
   });
 

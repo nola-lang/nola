@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/webpack",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "webpack plugin for Nola (.tsi)",
   "keywords": [
     "nola",
@@ -36,7 +36,7 @@
     "!dist/**/*.map"
   ],
   "dependencies": {
-    "@nola-lang/unplugin": "0.1.10"
+    "@nola-lang/unplugin": "0.1.11"
   },
   "engines": {
     "node": ">=22"

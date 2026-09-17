@@ -401,6 +401,64 @@ describe("SqliteConsoleStorage — records", () => {
   });
 });
 
+describe("definition executions query", () => {
+  /** a1 1000/120ms/pid 7 · a2 2000/80ms/pid 7 · a3 3000/500ms/pid 8 · a4 4000/running/pid 7 */
+  const seeded = async () => {
+    const s = new SqliteConsoleStorage(dbFile());
+    const run = async (askId: string, at: number, durationMs: number | undefined, over: Partial<NolaIngestEnvelope> = {}) => {
+      const invocationId = `inv-${askId}`;
+      await s.ingest(env("askStart", { ...(askStart().event as object), askId, invocationId, spanPath: [invocationId] }, { at, ...over }));
+      if (durationMs !== undefined)
+        await s.ingest(
+          env("askEnd", { askId, receipt: receipt({ askId, durationMs, invocationId, spanPath: [invocationId] }) }, { at, ...over }),
+        );
+    };
+    await run("a1", 1000, 120);
+    await run("a2", 2000, 80);
+    await run("a3", 3000, 500, { pid: 8, runId: "run-2" });
+    await run("a4", 4000, undefined);
+    return s;
+  };
+  const ids = (d: { asks: Array<{ askId: string }> } | undefined) => d?.asks.map((a) => a.askId);
+
+  it("narrows by time, duration and pid over ALL executions, and reports the matched total", async () => {
+    const s = await seeded();
+    const all = await s.getDefinition(DEF);
+    expect(ids(all)).toEqual(["a4", "a3", "a2", "a1"]);
+    expect(all).toMatchObject({ executions: 4, matched: 4 });
+
+    const timed = await s.getDefinition(DEF, { from: 2000, to: 3000 }); // inclusive on both sides
+    expect(ids(timed)).toEqual(["a3", "a2"]);
+    // the stats stay definition-wide; `matched` is what the filter selected
+    expect(timed).toMatchObject({ executions: 4, matched: 2 });
+
+    // a duration bound needs a value: the running execution never matches one
+    expect(ids(await s.getDefinition(DEF, { dmin: 100 }))).toEqual(["a3", "a1"]);
+    expect(ids(await s.getDefinition(DEF, { dmax: 100 }))).toEqual(["a2"]);
+    expect(ids(await s.getDefinition(DEF, { pid: 8 }))).toEqual(["a3"]);
+    expect(ids(await s.getDefinition(DEF, { from: 1000, dmax: 200, pid: 7 }))).toEqual(["a2", "a1"]);
+    await s.close();
+  });
+
+  it("applies the limit AFTER the filter, newest first", async () => {
+    const s = await seeded();
+    const limited = await s.getDefinition(DEF, { limit: 2 });
+    expect(ids(limited)).toEqual(["a4", "a3"]);
+    expect(limited?.matched).toBe(4);
+    // an old window is reachable no matter how many newer executions exist
+    expect(ids(await s.getDefinition(DEF, { to: 2000, limit: 1 }))).toEqual(["a2"]);
+    await s.close();
+  });
+
+  it("returns more than 50 executions by default", async () => {
+    const s = new SqliteConsoleStorage(dbFile());
+    for (let i = 0; i < 60; i++)
+      await s.ingest(askStart({ askId: `b${i}`, invocationId: `inv-b${i}`, spanPath: [`inv-b${i}`] }));
+    expect((await s.getDefinition(DEF))?.asks).toHaveLength(60);
+    await s.close();
+  });
+});
+
 describe("definitions", () => {
   it("upserts a definition from askStart and aggregates stats over asks", async () => {
     const s = new SqliteConsoleStorage(dbFile());

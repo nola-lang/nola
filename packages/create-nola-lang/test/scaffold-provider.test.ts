@@ -13,7 +13,7 @@ describe("scaffold and the inference provider", () => {
     const result = await scaffold(root, { provider: "nola" });
     expect(existsSync(join(root, "nola.replay.jsonl"))).toBe(false);
     expect(result.files).not.toContain("nola.replay.jsonl");
-    expect(await readFile(join(root, "nola.config.ts"), "utf8")).toContain("model: nola.infer()");
+    expect(await readFile(join(root, "nola.config.ts"), "utf8")).toContain('model: "nola"');
     const readme = await readFile(join(root, "README.md"), "utf8");
     expect(readme).toContain("uses your 25 free Nola runs (key in .env)");
     expect(readme).toContain("npx nola-lang account");

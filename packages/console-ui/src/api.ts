@@ -169,7 +169,19 @@ export interface DefinitionSummary {
 }
 
 export interface DefinitionDetail extends DefinitionSummary {
+  /** the executions the query selected, newest first — capped server-side */
   asks: AskSummary[];
+  /** how many executions passed the query's filter, before the cap */
+  matched: number;
+}
+
+/** The executions filter of `GET /api/definitions/:def` — applied in storage, before the cap. */
+export interface DefinitionAsksQuery {
+  from?: number;
+  to?: number;
+  dmin?: number;
+  dmax?: number;
+  pid?: number;
 }
 
 /** `project: null` selects the `(no project)` bucket; undefined = all projects. */
@@ -181,15 +193,34 @@ export async function fetchDefinitions(q: { project?: string | null } = {}): Pro
   return ((await (await fetch(`/api/definitions${qs}`)).json()) as { definitions: DefinitionSummary[] }).definitions;
 }
 
-export async function fetchDefinition(def: string): Promise<DefinitionDetail | undefined> {
-  const res = await fetch(`/api/definitions/${encodeURIComponent(def)}`);
+export async function fetchDefinition(def: string, query: DefinitionAsksQuery = {}): Promise<DefinitionDetail | undefined> {
+  const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
+  const qs = params.size > 0 ? `?${params}` : "";
+  const res = await fetch(`/api/definitions/${encodeURIComponent(def)}${qs}`);
   return res.ok ? ((await res.json()) as DefinitionDetail) : undefined;
 }
 
-/** Live updates: any ingested envelope means "something changed" — the app refetches (debounced). */
-export function subscribe(onChange: () => void): () => void {
+/**
+ * Live updates: every ingested envelope arrives as one notice (the envelope
+ * itself, or `{ kind: "cleared" }`). A RE-opened stream means events were
+ * missed while it was down, so it reports `null` — "anything may have changed".
+ */
+export function subscribe(onNotice: (notice: unknown) => void): () => void {
   const source = new EventSource("/api/events");
-  source.onmessage = onChange;
+  let opened = false;
+  source.onopen = () => {
+    if (opened) onNotice(null);
+    opened = true;
+  };
+  source.onmessage = (message) => {
+    let notice: unknown = null;
+    try {
+      notice = JSON.parse(String(message.data));
+    } catch {
+      // an unreadable notice still means something changed
+    }
+    onNotice(notice);
+  };
   return () => source.close();
 }
 

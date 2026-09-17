@@ -7,7 +7,7 @@ sidebar:
 
 Resilience is composition over the same `LanguageModel` interface: every combinator wraps a provider and returns a provider, so they nest.
 
-One model stands apart: the platform model `nola.infer()` manages its own resilience. The resilience combinators on this page reject it, and it retries the wire itself — see [nola's built-in retry](#nolas-built-in-retry) below.
+One model stands apart: the platform model (`model: "nola"`, or the `nola.infer()` call behind it) manages its own resilience. The resilience combinators on this page reject it, and it retries the wire itself — see [nola's built-in retry](#nolas-built-in-retry) below.
 
 ```ts
 // nola.config.ts

@@ -1003,7 +1003,7 @@ describe("runFlow with a vendor provider", () => {
 });
 
 describe("runFlow with the nola provider", () => {
-  it('sends an EMPTY trial body, records the account in ~/.nola/config.json (and nothing else), scaffolds without the ledger, writes .env and the nola.infer() config', async () => {
+  it('sends an EMPTY trial body, records the account in ~/.nola/config.json (and nothing else), scaffolds without the ledger, writes .env and the model: "nola" config', async () => {
     const dir = join(await tmp(), "app");
     const home = await tmp();
     const { fn, calls } = trialFetch();
@@ -1021,7 +1021,7 @@ describe("runFlow with the nola provider", () => {
     });
     expect(existsSync(join(home, ".nola", CREDENTIALS_FILE))).toBe(false);
     expect(await readFile(join(dir, ".env"), "utf8")).toBe(`NOLA_API_KEY=${KEY}\n`);
-    expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain("model: nola.infer()");
+    expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain('model: "nola"');
     expect(existsSync(join(dir, "nola.replay.jsonl"))).toBe(false);
     expect((await readFile(join(dir, ".gitignore"), "utf8")).split("\n")).toEqual(expect.arrayContaining([".env", ".env.*"]));
     expect(p.notes.at(-1)).toContain("# 25 free Nola runs — key in .env");
@@ -1216,7 +1216,7 @@ describe("runFlow with the nola provider", () => {
     const p = scripted({});
     expect(await runFlow({ dir, add: true, provider: "nola" }, { interactive: false, prompter: p, fetch: fn, home: await tmp() })).toBe(0);
     expect(await readFile(join(dir, ".env"), "utf8")).toBe(`NOLA_API_KEY=${KEY}\n`);
-    expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain("model: nola.infer()");
+    expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain('model: "nola"');
     expect(p.notes.at(-1)).toMatch(/Added Nola: nola\.config\.ts, package\.json, .*\.env/);
 
     // second project with its own config: the key is written, the config is left alone and named
@@ -1226,7 +1226,7 @@ describe("runFlow with the nola provider", () => {
     const p2 = scripted({});
     expect(await runFlow({ dir: dir2, add: true, provider: "nola" }, { interactive: false, prompter: p2, fetch: fn, home: await tmp() })).toBe(0);
     expect(await readFile(join(dir2, "nola.config.ts"), "utf8")).toBe("export default {};\n");
-    expect(p2.notes.some((n) => n.includes("model: nola.infer()"))).toBe(true);
+    expect(p2.notes.some((n) => n.includes('model: "nola"'))).toBe(true);
     expect(await readFile(join(dir2, ".env"), "utf8")).toBe(`NOLA_API_KEY=${KEY}\n`);
   });
 

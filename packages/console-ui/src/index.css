@@ -34,6 +34,18 @@
   --chart-3: #59b9bd;
   --chart-4: #8a8f98;
   --chart-5: #d4645c;
+  /*
+   * Provider identity on the duration chart (src/provider-colors.ts rotates them). Computed, not
+   * eyeballed: with the status hues (ok/err/live) off limits, these five are the most that stay
+   * pairwise distinct on --background under protan/deutan simulation (worst pair ΔE 7.6) and in
+   * full colour (worst 16.4), each ≥ 3:1 against the surface. A sixth colour fails those floors —
+   * change the count in provider-colors.ts only together with a re-validated set.
+   */
+  --provider-1: #2da1c2;
+  --provider-2: #a473ee;
+  --provider-3: #b0378b;
+  --provider-4: #1b6ad4;
+  --provider-5: #bdc72a;
   --radius: 0.375rem;
   --font-sans: system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;

@@ -7,8 +7,9 @@ import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 ```
 
-`defineConfig`, the `nola` namespace (`nola.infer()`, `nola.tracer()`),
-`terminalTrace()` and everything app-facing come from `@nola-lang/runtime`.
+`defineConfig`, the `nola` namespace (`nola.infer()`, `nola.tracer()` —
+import it ONLY when you need their options; the plain cases are the strings
+`model: "nola"` and `telemetry: "<url>"`), `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`.
 Everything bring-your-own — vendor factories (`openai`, `anthropic`,
 `google`, `typesafe`, `mockProvider`), resilience combinators (`withRetry`, `fallback`,
 `roundRobin`, `constant`, `exponential`) and record/replay (`record`,
@@ -48,14 +49,21 @@ fails definitively before the network on anything else. Use it behind
 escalate to a general model. Never scaffold it as the only model.
 
 `nola` is a NAMESPACE, not a function (`nola({})` is a type error).
-`nola.infer()` is the platform model — the Nola platform (api.nola.sh, or a
-self-hosted console at `baseUrl`) serves inference and reads `NOLA_API_KEY`;
-with no argument the platform picks the model:
+The platform model is written as the STRING `"nola"` — the Nola platform
+(api.nola.sh) serves inference, reads `NOLA_API_KEY`, and picks the model.
+PREFER this form; it is what the scaffolder writes and it needs no `nola`
+import:
 
 ```ts
-import { defineConfig, nola } from "@nola-lang/runtime";
-export default defineConfig({ model: nola.infer() });
+import { defineConfig } from "@nola-lang/runtime";
+export default defineConfig({ model: "nola" });
 ```
+
+`"nola"` is short for `nola.infer()`. It is the ONLY string the `model` slot
+takes (any other string is NOLA3003 — `model: "gpt-5"` is not a thing) and
+it works as the map's `default` too. Write the `nola.infer(...)` call only
+when you need an argument — the upstream selector or the connection options
+(a self-hosted console at `baseUrl`, a key source, `retry`).
 
 When the platform serves, `ask with <name>` accepts ANY name — a configured
 map key pins that model as usual, and any other name (`fast`, `careful`, …)
@@ -65,9 +73,9 @@ temperature/topK tuning). A local model map keeps strict name validation
 (unknown names are NOLA3004). `nola.infer("<provider>/<model>")` names the
 upstream explicitly; `nola.infer({ baseUrl, apiKey, apiKeyEnv, retry, model })`
 carries the connection. Beside your own models it is the map's `default`:
-`model: { default: nola.infer(), fast: openai("gpt-5-nano") }`. Nothing else
-is implied — traces go to the platform only when `telemetry` lists
-`nola.tracer()`.
+`model: { default: "nola", fast: openai("gpt-5-nano") }`. Nothing else
+is implied — traces go to a Nola console only when `telemetry` lists its
+URL (or `nola.tracer()`).
 
 `npm create nola` asks *Select an inference provider:* right after the
 template — Nola (25 free runs) first, then OpenAI / Anthropic / Gemini, then
@@ -114,7 +122,7 @@ export infer function summarize(.text: string) {
 
 An `ask with` name that is not a key of the map fails at run time with
 NOLA3004, listing the configured names — EXCEPT when `default` is
-`nola.infer()`, where the unmatched name becomes an inference profile for
+the platform model (`"nola"`), where the unmatched name becomes an inference profile for
 the platform instead of an error.
 
 ### Other config sections
@@ -146,14 +154,19 @@ event at `debug`, coloured on a TTY, written to STDERR — stdout stays the
 program's), ONE observer, or an ARRAY of
 observers. An observer or an array REPLACES the terminal — nothing is
 implied, so list `terminalTrace()` to keep it; `[]` is silent. Observers:
-`nola.tracer()` / `nola.tracer("http://localhost:4141")` /
-`nola.tracer({ baseUrl, apiKey? })` (posts to a Nola-Protocol server;
-keyless on loopback; never gated — listed means sends), `terminalTrace({
+an `http(s)` URL STRING — the tracer, PREFER this form (`telemetry:
+"http://127.0.0.1:4141"`, or as an array entry; posts to a Nola-Protocol
+server such as `npx nola-lang console`; keyless on loopback; never gated —
+listed means sends; a single URL replaces the terminal like any single
+observer, so write `["http://127.0.0.1:4141", terminalTrace()]` to keep
+both; a non-URL string is NOLA3003), the call behind it for its options —
+`nola.tracer()` (default target) / `nola.tracer({ baseUrl, apiKey? })` —
+`terminalTrace({
 level })`, or any object with on* methods (`onAskStart`,
 `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`,
 `onAskEnd`, `onInvocationStart`, `onInvocationEnd`; that shape is
-`NolaTelemetry`). The global `console` is NOT an entry. `nola.infer()` does
-NOT imply a tracer. `NOLA_TRACING_URL` appends `nola.tracer(url)`; a config
+`NolaTelemetry`). The global `console` is NOT an entry. `model: "nola"` does
+NOT imply a tracer. `NOLA_TRACING_URL` appends that URL's tracer; a config
 that lists a tracer itself wins, with a notice. Sending is fire-and-forget
 and never affects inference. The platform model is root-only: it cannot
 appear inside combinators or non-default map entries. Start the local
@@ -210,11 +223,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.10",
-    "@nola-lang/runtime": "^0.1.10"
+    "@nola-lang/providers": "^0.1.11",
+    "@nola-lang/runtime": "^0.1.11"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.10",
+    "nola-lang": "^0.1.11",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

@@ -96,7 +96,7 @@ export default defineConfig({
 ```
 
 - `<name>` must be a **static identifier**. A string literal, a number or a parenthesized expression after `with` is [`NOLA1009`](/docs/reference/error-codes/#nola1009); a dotted name (`provider.fast`) is read as the identifier `provider` plus a stray `.fast` and fails as a plain syntax error instead.
-- The name is matched against the config at ask time, not compile time. A name that matches a key of the `model` map pins that model. When the platform serves inference — `model: nola.infer()` — an unmatched name is **not** an error: the ask goes to the platform and the name travels with the request as a free-form *inference profile* (`fast`, `careful`, whatever you choose), which Nola's smart routing turns into a model and parameters server-side, so you never hand-tune temperature or reasoning effort per ask. With any other default an unmatched name fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
+- The name is matched against the config at ask time, not compile time. A name that matches a key of the `model` map pins that model. When the platform serves inference — `model: "nola"` — an unmatched name is **not** an error: the ask goes to the platform and the name travels with the request as a free-form *inference profile* (`fast`, `careful`, whatever you choose), which Nola's smart routing turns into a model and parameters server-side, so you never hand-tune temperature or reasoning effort per ask. With any other default an unmatched name fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
 - For a *dynamic* choice use the intent method instead: `` ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful") `` — see [Intent methods](/docs/language/intent-methods/).
 - `ask without` is a plain ask of an identifier named `without`, not a pin.
 
@@ -104,9 +104,9 @@ With the platform serving, the whole example above needs no model map at all:
 
 ```ts
 // nola.config.ts
-import { defineConfig, nola } from "@nola-lang/runtime";
+import { defineConfig } from "@nola-lang/runtime";
 
-export default defineConfig({ model: nola.infer() });   // `ask with fast` / `ask with careful` become inference profiles
+export default defineConfig({ model: "nola" });   // `ask with fast` / `ask with careful` become inference profiles
 ```
 
 Routing precedence, highest first: `forceModel` in the config → the ask-site pin (`ask with` / `.withModel`) → `model.default` (the bare `model` when no map was written). See [Providers](/docs/config/providers/).

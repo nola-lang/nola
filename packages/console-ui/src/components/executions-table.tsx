@@ -8,7 +8,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,9 +36,9 @@ const columns: ColumnDef<AskSummary>[] = [
     header: "site",
     accessorFn: (ask) => ask.site ?? ask.askId,
     cell: ({ row, getValue }) => (
-      <span className="flex items-center gap-1.5 font-mono text-xs">
+      <span className="flex min-w-0 items-center gap-1.5 font-mono text-xs" title={getValue<string>()}>
         <KindIcon kind={row.original.kind ?? "extract"} />
-        {getValue<string>()}
+        <span className="truncate">{getValue<string>()}</span>
       </span>
     ),
   },
@@ -47,23 +47,27 @@ const columns: ColumnDef<AskSummary>[] = [
     header: "at",
     accessorKey: "startedAt",
     cell: ({ getValue }) => formatClock(getValue<number>()),
+    size: 96,
   },
   {
     id: "duration",
     header: "duration",
     accessorKey: "durationMs",
     cell: ({ getValue }) => formatDuration(getValue<number | undefined>()),
+    size: 96,
   },
   {
     id: "provider",
     header: "provider",
     accessorFn: (ask) => [ask.provider, ask.profile].filter(Boolean).join(" · ") || "—",
+    size: 200,
   },
   {
     id: "attempts",
     header: "attempts",
     accessorKey: "attempts",
     cell: ({ getValue }) => getValue<number | undefined>() ?? "—",
+    size: 96,
   },
 ];
 
@@ -71,6 +75,12 @@ const columns: ColumnDef<AskSummary>[] = [
  * A definition's executions as a sortable, paginated grid. A row click opens
  * that ask (`?ask=`); clicking the open row closes it. Sort and page are
  * view state — the URL carries only the selection.
+ *
+ * The data is LIVE — it changes when an execution starts and again when it
+ * ends — so nothing here may react to "the data changed": rows are keyed by
+ * ask (not by index), the page stays where the reader put it, and the
+ * columns have fixed widths (`site` takes the rest) so a cell going from
+ * `—` to `420ms` cannot re-lay the grid.
  */
 export function ExecutionsTable({ asks, selectedAskId }: { asks: AskSummary[]; selectedAskId?: string }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "at", desc: true }]);
@@ -84,14 +94,20 @@ export function ExecutionsTable({ asks, selectedAskId }: { asks: AskSummary[]; s
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getRowId: (ask) => ask.askId,
+    autoResetPageIndex: false,
     initialState: { pagination: { pageSize: PAGE_SIZES[0] } },
   });
   const { pageIndex, pageSize } = table.getState().pagination;
   const pageCount = table.getPageCount();
+  // the page no longer resets with the data, so a list that shrank under it (a narrower filter) pulls it back
+  useEffect(() => {
+    if (pageCount > 0 && pageIndex >= pageCount) table.setPageIndex(pageCount - 1);
+  }, [pageCount, pageIndex, table]);
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table className="font-mono text-xs">
+      <Table className="table-fixed font-mono text-xs">
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id} className="hover:bg-transparent">
@@ -133,7 +149,7 @@ export function ExecutionsTable({ asks, selectedAskId }: { asks: AskSummary[]; s
                 onClick={() => navigate(withSearch(search, { ask: selected ? undefined : row.original.askId }))}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="py-2">
+                  <TableCell key={cell.id} className="overflow-hidden text-ellipsis py-2">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}

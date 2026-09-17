@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { AskRecord, AskSummary, DefinitionSummary, InvocationRecord, TraceRecord } from "../src/api";
+import type { AskRecord, DefinitionSummary, InvocationRecord, TraceRecord } from "../src/api";
 import {
   activeParams,
   addProject,
   clearParam,
+  definitionAsksQuery,
+  executionsCaption,
   type Filter,
   isEmptyFilter,
-  matchesAsk,
   matchesDefinition,
   minuteRange,
   parseFilter,
@@ -151,10 +152,19 @@ describe("matchers", () => {
     expect(matchesDefinition(parseFilter(sp("file=A.TSI&pid=99")), d)).toBe(true);
   });
 
-  it("ask: time, duration and pid", () => {
-    const a: AskSummary = { askId: "a", traceId: "t", status: "ok", startedAt: 100, durationMs: 40, pid: 7 };
-    expect(matchesAsk(parseFilter(sp("pid=7&dmax=40&from=100")), a)).toBe(true);
-    expect(matchesAsk(parseFilter(sp("pid=8")), a)).toBe(false);
-    expect(matchesAsk(parseFilter(sp("file=whatever")), a)).toBe(true);
+  it("executions: time, duration and pid travel to the server; project and file do not", () => {
+    expect(definitionAsksQuery(parseFilter(sp("pid=7&dmax=40&from=100&project=crm&file=whatever")))).toEqual({
+      from: 100,
+      dmax: 40,
+      pid: 7,
+    });
+    expect(definitionAsksQuery(parseFilter(sp("")))).toEqual({});
+  });
+
+  it("executions caption says what is shown out of what exists", () => {
+    expect(executionsCaption({ shown: 12, matched: 12, executions: 12 })).toBe("");
+    expect(executionsCaption({ shown: 4, matched: 4, executions: 12 })).toBe("4 of 12");
+    expect(executionsCaption({ shown: 500, matched: 3120, executions: 3120 })).toBe("latest 500 of 3120");
+    expect(executionsCaption({ shown: 500, matched: 900, executions: 3120 })).toBe("latest 500 of 900 matching, 3120 total");
   });
 });

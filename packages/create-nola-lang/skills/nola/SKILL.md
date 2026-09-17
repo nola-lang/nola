@@ -43,7 +43,7 @@ infer function extractPerson(.text: string) {
   instruction text.
 - `ask with <modelName> <intent>` — routes one ask through a named model
   from `nola.config.ts`. The name must be a static identifier. When the
-  platform serves inference (`model: nola.infer()`) any unconfigured
+  platform serves inference (`model: "nola"`) any unconfigured
   name is legal — it is sent to the platform as a free-form inference profile.
 - Prompt templates: inside ANY instruction backticks (marker, extractor,
   call hint) a hole that starts with a single dot — `${.member}` — reads

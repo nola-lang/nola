@@ -3,6 +3,7 @@ import { NOLA_INGEST_KINDS, NOLA_INGEST_VERSION, NOLA_PROTOCOL } from "@nola-lan
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ConsoleService } from "../core/service.js";
+import type { DefinitionAsksQuery } from "../storage/types.js";
 import { loadUiAssets } from "./static.js";
 
 const isClientRoute = (pathname: string): boolean =>
@@ -22,6 +23,23 @@ function isIngestEnvelope(body: unknown): body is NolaIngestEnvelope {
     typeof e.at === "number" &&
     (NOLA_INGEST_KINDS as readonly string[]).includes(e.kind as string)
   );
+}
+
+/**
+ * The executions filter of `GET /api/definitions/:def`. A malformed bound is refused (the message
+ * is returned) — ignoring it would silently answer a different question than the one asked.
+ */
+function parseDefinitionAsksQuery(param: (name: string) => string | undefined): DefinitionAsksQuery | string {
+  const query: DefinitionAsksQuery = {};
+  for (const key of ["from", "to", "dmin", "dmax", "pid", "limit"] as const) {
+    const raw = param(key);
+    if (raw === undefined) continue;
+    const n = raw.trim() === "" ? Number.NaN : Number(raw);
+    const valid = key === "limit" ? Number.isInteger(n) && n > 0 : Number.isFinite(n) && n >= 0;
+    if (!valid) return `${key} must be a ${key === "limit" ? "positive integer" : "non-negative number"}`;
+    query[key] = n;
+  }
+  return query;
 }
 
 /** Thin HTTP adapter over ConsoleService — no domain logic in handlers (console design §13). */
@@ -98,7 +116,9 @@ export function createApp(service: ConsoleService, opts: { uiDir?: string } = {}
   });
 
   app.get("/api/definitions/:def", async (c) => {
-    const definition = await service.getDefinition(c.req.param("def"));
+    const query = parseDefinitionAsksQuery((name) => c.req.query(name));
+    if (typeof query === "string") return c.json({ error: { code: "invalid_query", message: query } }, 400);
+    const definition = await service.getDefinition(c.req.param("def"), query);
     if (!definition) return c.json({ error: { code: "not_found", message: "unknown definition" } }, 404);
     return c.json(definition);
   });

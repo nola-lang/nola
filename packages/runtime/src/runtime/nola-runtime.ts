@@ -70,7 +70,7 @@ export class NolaRuntime {
 
   /**
    * The routing ladder, plus managed-mode inference profiles: under a managed
-   * default (what `model: nola.infer()` supplies) an ask-site name that names no
+   * default (what `model: "nola"` / `nola.infer()` supplies) an ask-site name that names no
    * configured provider is NOT an error — the ask resolves to the serving
    * model (default, or forceModel) and the name rides the request as
    * `profile` for the hosted service's smart routing. The profile is computed
@@ -102,7 +102,7 @@ export class NolaRuntime {
     if (!provider) {
       throw new NolaConfigError(
         `${what} "${name}" does not name a configured model — configured: ${Object.keys(config.model).join(", ")}. ` +
-          '(With the platform serving inference — model: nola.infer() — an unconfigured name is legal: it is sent as an inference profile.)',
+          '(With the platform serving inference — model: "nola" — an unconfigured name is legal: it is sent as an inference profile.)',
         Codes.ConfigUnknownModel,
       );
     }

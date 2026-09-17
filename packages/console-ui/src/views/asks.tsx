@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router";
 import { cn } from "@/lib/utils";
-import { type DefinitionDetail, type DefinitionSummary, fetchAsk, fetchDefinition, fetchDefinitionsAcross } from "../api";
+import { type DefinitionDetail, fetchAsk, fetchDefinition, fetchDefinitionsAcross } from "../api";
 
 import { AskPanel, LABEL, META, ROW, ROW_SELECTED } from "../components/ask-panel";
 import { CallPanel } from "../components/call-panel";
@@ -11,16 +11,18 @@ import { KindIcon } from "../components/kind-icon";
 import { ListPane } from "../components/list-pane";
 import { SplitPane } from "../components/split-pane";
 import { errorTone, StatusDot } from "../components/status-dot";
-import { type Filter, matchesAsk, matchesDefinition } from "../filter";
-import { formatClock, formatDuration } from "../format";
+import { definitionAsksQuery, executionsCaption, matchesDefinition } from "../filter";
+import { formatClock } from "../format";
 import { withSearch } from "../search";
+import { defStatLine } from "../stat-line";
 import { useFilter, useProjectQueries } from "../use-filter";
 import { DETAIL, EMPTY } from "./traces";
 
 /**
  * `/asks` and `/asks/:def` — one row per AskDefinition; `?ask=` opens one execution.
  * The URL filter narrows the definitions by project, file and life span, and a
- * definition's executions by time, duration and pid.
+ * definition's executions by time, duration and pid — that part runs on the server, which caps
+ * the list, so an old window is reachable however many newer executions exist.
  */
 export function AsksView() {
   const filter = useFilter();
@@ -31,10 +33,13 @@ export function AsksView() {
 
   const definitions = useQuery({ queryKey: ["definitions", queries], queryFn: () => fetchDefinitionsAcross(queries) }).data;
   const visible = definitions?.filter((d) => matchesDefinition(filter, d));
+  const asksQuery = definitionAsksQuery(filter);
   const definition = useQuery({
-    queryKey: ["definition", def],
-    queryFn: () => fetchDefinition(def as string),
+    queryKey: ["definition", def, asksQuery],
+    queryFn: () => fetchDefinition(def as string, asksQuery),
     enabled: def !== undefined,
+    // a filter edit re-queries: keep the panel up meanwhile (never another definition's)
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[1] === def ? previous : undefined),
   }).data;
   const askDetail = useQuery({
     queryKey: ["ask", askId],
@@ -74,7 +79,7 @@ export function AsksView() {
     >
       <section className={DETAIL}>
         {!definition && <div className={EMPTY}>Select an ask definition to see how it behaves over time.</div>}
-        {definition && <DefinitionPanel definition={definition} selectedAskId={askId} filter={filter} />}
+        {definition && <DefinitionPanel definition={definition} selectedAskId={askId} scaleKey={`${definition.def}|${JSON.stringify(asksQuery)}`} />}
         {definition && askDetail && (
           <div className="mt-7 border-t pt-4">
             {askDetail.kind === "call" ? (
@@ -89,22 +94,10 @@ export function AsksView() {
   );
 }
 
-function defStatLine(d: DefinitionSummary): string {
-  const okPct = d.executions > 0 ? Math.round((d.okCount / d.executions) * 100) : 0;
-  return `${d.executions} run${d.executions === 1 ? "" : "s"} · ${okPct}% ok · avg ${formatDuration(d.avgDurationMs)} · p95 ${formatDuration(d.p95DurationMs)}`;
-}
-
-function DefinitionPanel({
-  definition,
-  selectedAskId,
-  filter,
-}: {
-  definition: DefinitionDetail;
-  selectedAskId?: string;
-  filter: Filter;
-}) {
-  const asks = definition.asks.filter((a) => matchesAsk(filter, a));
-  const narrowed = asks.length !== definition.asks.length;
+function DefinitionPanel({ definition, selectedAskId, scaleKey }: { definition: DefinitionDetail; selectedAskId?: string; scaleKey: string }) {
+  const { asks, matched, executions } = definition;
+  const caption = executionsCaption({ shown: asks.length, matched, executions });
+  const suffix = caption === "" ? "" : ` (${caption})`;
   return (
     <>
       <div className="grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2.5">
@@ -122,9 +115,9 @@ function DefinitionPanel({
         {definition.providers.length > 0 ? ` · ${definition.providers.join(" · ")}` : ""}
         {definition.errorCount > 0 ? ` · ${definition.errorCount} error${definition.errorCount === 1 ? "" : "s"}` : ""}
       </p>
-      <h2 className={LABEL}>duration per execution{narrowed ? " (filtered)" : ""}</h2>
-      <DurationChart asks={asks} />
-      <h2 className={LABEL}>executions{narrowed ? ` (${asks.length} of ${definition.asks.length})` : ""}</h2>
+      <h2 className={LABEL}>duration per execution{suffix}</h2>
+      <DurationChart asks={asks} providers={definition.providers} scaleKey={scaleKey} />
+      <h2 className={LABEL}>executions{suffix}</h2>
       <ExecutionsTable asks={asks} selectedAskId={selectedAskId} />
     </>
   );

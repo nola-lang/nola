@@ -119,7 +119,7 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
     const apiKey = options.apiKey ?? process.env[envName];
     if (!apiKey) {
       throw new NolaProviderError(
-        `Nola API key not found: environment variable ${envName} is not set (checked process.env, including the project .env applied by the Nola loader) and no \`apiKey\` was passed to nola.infer(). Fix: set ${envName}, or pass nola.infer({ apiKeyEnv: "MY_VAR" }) or nola.infer({ apiKey }) in nola.config.ts. Get a free key with \`npx nola-lang key\` (or \`npm create nola\` for a new project), or bring your own model in nola.config.ts (https://nola.sh/docs/reference/providers-api/).`,
+        `Nola API key not found: environment variable ${envName} is not set (checked process.env, including the project .env applied by the Nola loader) and the config passes no \`apiKey\`. Fix: set ${envName} — \`model: "nola"\` reads NOLA_API_KEY; nola.infer({ apiKeyEnv: "MY_VAR" }) or nola.infer({ apiKey }) in nola.config.ts name another source. Get a free key with \`npx nola-lang key\` (or \`npm create nola\` for a new project), or bring your own model in nola.config.ts (https://nola.sh/docs/reference/providers-api/).`,
         { definitive: true },
       );
     }

@@ -77,6 +77,7 @@ describe("platform model", () => {
       expect(err).toBeInstanceOf(NolaProviderError);
       expect((err as NolaProviderError).definitive).toBe(true);
       expect((err as Error).message).toContain("NOLA_API_KEY");
+      expect((err as Error).message).toContain('`model: "nola"` reads NOLA_API_KEY');
       process.env.MY_NOLA_KEY = "from-env";
       await expect(platformModel({ fetch: fn, apiKeyEnv: "MY_NOLA_KEY" }).infer(inferReq())).resolves.toEqual(expect.objectContaining({ text: "1" }));
     } finally {

@@ -12,6 +12,7 @@ export type {
   AskSummary,
   AttemptSummary,
   ConsoleStorage,
+  DefinitionAsksQuery,
   DefinitionDetail,
   DefinitionSummary,
   InvocationLink,
@@ -23,3 +24,4 @@ export type {
   TraceDetail,
   TraceRecord,
 } from "./storage/types.js";
+export { DEFAULT_DEFINITION_ASKS_LIMIT } from "./storage/types.js";

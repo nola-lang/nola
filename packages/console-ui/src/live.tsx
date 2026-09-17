@@ -1,23 +1,21 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
 import { subscribe } from "./api";
+import { createLiveSync } from "./live-sync";
 
 /**
- * Live updates: every ingested envelope means "something changed", so the
- * whole query cache is invalidated (debounced) and mounted queries refetch.
- * Nothing else in the app needs to know about the event stream.
+ * Live updates: the event stream feeds `createLiveSync`, which patches the
+ * cached views at once and refetches behind the patch. Nothing else in the
+ * app needs to know about the event stream.
  */
 export function LiveProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = subscribe(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void queryClient.invalidateQueries(), 250);
-    });
+    const sync = createLiveSync(queryClient);
+    const unsubscribe = subscribe(sync.onNotice);
     return () => {
-      clearTimeout(timer);
       unsubscribe();
+      sync.dispose();
     };
   }, [queryClient]);
   return children;

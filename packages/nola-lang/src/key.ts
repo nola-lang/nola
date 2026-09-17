@@ -106,6 +106,6 @@ export async function cmdKey(opts: KeyOptions = {}): Promise<number> {
     out(NOT_WRITTEN);
     return 0;
   }
-  out(`${replace ? "Replaced in" : "Added to"} .env.`);
+  out(`${replace ? "Replaced in" : "Added to"} .env. Use it with \`model: "nola"\` in nola.config.ts.`);
   return 0;
 }

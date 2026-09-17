@@ -5,7 +5,7 @@ sidebar:
   order: 50
 ---
 
-Bring-your-own providers live in `@nola-lang/providers`: vendor factories, `mockProvider`, the resilience combinators, `record`/`replay`. The package does not depend on the runtime; the types it implements (`LanguageModel`, `ProviderRequest`, …) are exported from `@nola-lang/runtime`. The Nola platform enters through the [`nola`](#nola) namespace exported by `@nola-lang/runtime` itself: `nola.infer()` in the model slot, [`nola.tracer()`](#tracer) in the telemetry list.
+Bring-your-own providers live in `@nola-lang/providers`: vendor factories, `mockProvider`, the resilience combinators, `record`/`replay`. The package does not depend on the runtime; the types it implements (`LanguageModel`, `ProviderRequest`, …) are exported from `@nola-lang/runtime`. The Nola platform needs no factory in the plain case — `model: "nola"` and a URL in `telemetry` — and its options live on the [`nola`](#nola) namespace exported by `@nola-lang/runtime` itself: `nola.infer(...)` for the model slot, [`nola.tracer(...)`](#tracer) for the telemetry list.
 
 ```ts
 // nola.config.ts
@@ -66,16 +66,17 @@ The system text and the rendered request travel as the state; the output type be
 
 `nola` — exported from `@nola-lang/runtime` — is a namespace with two factories, one per config slot a Nola-Protocol server (api.nola.sh by default, or a self-hosted console) can serve. It is an object, not a function.
 
-`nola.infer(model?)` returns the platform model:
+The platform model is written as the string `"nola"`; `nola.infer(model?)` is the call behind it, for when you need an argument:
 
 ```ts
 // nola.config.ts
-import { defineConfig, nola } from "@nola-lang/runtime";
+import { defineConfig } from "@nola-lang/runtime";
 
-export default defineConfig({ model: nola.infer() });   // the platform serves inference — reads NOLA_API_KEY
+export default defineConfig({ model: "nola" });   // the platform serves inference — reads NOLA_API_KEY
 ```
 
-- `nola.infer()` — the platform chooses the model (trial keys are restricted to a server-side set). The ask travels as the structured inference model (every classic model receives a rendered chat prompt instead), and an `ask with <name>` that matches no configured map key rides the request as a free-form `profile` for the platform's routing.
+- `"nola"` — short for `nola.infer()`. It is the only string the `model` slot accepts (any other is [`NOLA3003`](/docs/reference/error-codes/#nola3003)), and it follows the same root-only rule as the call.
+- `nola.infer()` — what `"nola"` resolves to: the platform chooses the model (trial keys are restricted to a server-side set). The ask travels as the structured inference model (every classic model receives a rendered chat prompt instead), and an `ask with <name>` that matches no configured map key rides the request as a free-form `profile` for the platform's routing.
 - `nola.infer("<provider>/<model>")` — names the upstream explicitly.
 - `nola.infer({ baseUrl?, apiKey?, apiKeyEnv?, fetch?, retry?, model? })` — the connection: `baseUrl` (default `https://api.nola.sh`, or `NOLA_API_URL`), `apiKey` / `apiKeyEnv` (default `NOLA_API_KEY`, read lazily at the first request), `retry` (the wire retry — on by default, 2 retries with 500 ms exponential backoff capped at 10 s, honouring `Retry-After`; `false` disables), `model` as above.
 
@@ -90,13 +91,13 @@ import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 
 export default defineConfig({
   model: { default: nola.infer({ baseUrl: "http://localhost:8787" }), fast: openai("gpt-5-nano") },
-  telemetry: [nola.tracer("http://localhost:8787"), terminalTrace()],
+  telemetry: ["http://localhost:8787", terminalTrace()],
 });
 ```
 
 ## tracer
 
-`nola.tracer(target?)` returns a `NolaTelemetry` that posts every event to a Nola-Protocol server's `/v1/ingest`. `target` is absent (`NOLA_API_URL`, then `https://api.nola.sh`), a URL string, or `{ baseUrl?, apiKey?, apiKeyEnv?, fetch? }`. Fire-and-forget, redacted, never gated: list it under `telemetry`. Details on [Telemetry](/docs/config/observability/#tracers).
+A tracer is written as its URL: `telemetry: "http://127.0.0.1:4141"`, or the same string as a list entry. That is short for `nola.tracer(url)`. `nola.tracer(target?)` returns a `NolaTelemetry` that posts every event to a Nola-Protocol server's `/v1/ingest`; call it yourself when `target` is absent (`NOLA_API_URL`, then `https://api.nola.sh`) or an options object, `{ baseUrl?, apiKey?, apiKeyEnv?, fetch? }`. Fire-and-forget, redacted, never gated: list it under `telemetry`. Details on [Telemetry](/docs/config/observability/#tracers).
 
 ## mockProvider
 
@@ -126,7 +127,7 @@ See [Record and replay](/docs/config/record-and-replay/).
 
 ## Custom providers
 
-A provider is any object satisfying `LanguageModel`. The runtime renders the ask into a chat prompt before it reaches you — system text, the conversation, and the output contract — and you answer with the model's reply text. The built-in `openai`, `anthropic` and `google` factories are exactly this; only the platform model `nola.infer()` receives the structured inference model instead, and nothing in a config needs to render anything.
+A provider is any object satisfying `LanguageModel`. The runtime renders the ask into a chat prompt before it reaches you — system text, the conversation, and the output contract — and you answer with the model's reply text. The built-in `openai`, `anthropic` and `google` factories are exactly this; only the platform model (`"nola"`) receives the structured inference model instead, and nothing in a config needs to render anything.
 
 ```ts
 // not-checked — shapes as exported from @nola-lang/runtime

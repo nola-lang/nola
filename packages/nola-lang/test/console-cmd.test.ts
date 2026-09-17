@@ -23,7 +23,7 @@ describe("nola console helpers", () => {
     expect(banner).toContain(`Home:     ${home}`); // the root folder, not the database file inside it
     expect(banner).not.toContain("console.db");
     expect(banner).not.toContain("Storage:");
-    expect(banner).toContain('Enable tracing with `telemetry: nola.tracer("http://127.0.0.1:4141")` in nola.config.ts');
+    expect(banner).toContain('Enable tracing with `telemetry: "http://127.0.0.1:4141"` in nola.config.ts');
     expect(banner).not.toContain("NOLA_TRACING_URL"); // the env var and terminalTrace are noise here — one line, one thing
     expect(banner).not.toContain("terminalTrace");
     expect(banner).not.toContain("nola.infer(");

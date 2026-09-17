@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { scaffold } from "../src/index.js";
+import { templateNames } from "../src/registry.js";
+import { withRecommendedGitignore } from "../src/scaffold.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-scaffold-"));
 
@@ -105,6 +107,25 @@ describe("scaffold", () => {
     const own = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
     expect(pkg.dependencies["@nola-lang/runtime"]).toBe(`^${own.version}`);
     expect(pkg.devDependencies["nola-lang"]).toBe(`^${own.version}`);
+  });
+
+  it("writes the recommended .gitignore for EVERY template in the menu", async () => {
+    for (const template of templateNames()) {
+      const root = join(await tmp(), template);
+      const result = await scaffold(root, { template });
+      expect(result.files, template).toContain(".gitignore");
+      const lines = (await readFile(join(root, ".gitignore"), "utf8")).split("\n");
+      expect(lines, template).toEqual(
+        expect.arrayContaining(["node_modules/", "dist/", "*.tsbuildinfo", "*.d.tsi.ts", ".env", ".env.*", "!.env.example"]),
+      );
+      expect(existsSync(join(root, "_gitignore")), template).toBe(false);
+    }
+  });
+
+  it("keeps a .gitignore the template carries itself", async () => {
+    const own = new Map([[".gitignore", "custom/\n"]]);
+    expect(await withRecommendedGitignore(own)).toBe(own);
+    expect(own.get(".gitignore")).toBe("custom/\n");
   });
 
   it("lists valid names in the unknown-template error", async () => {

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# `nola declarations` / bundler-plugin output — generated next to sources
+*.d.tsi.ts
+
+.env
+.env.*
+!.env.example

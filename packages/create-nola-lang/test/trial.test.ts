@@ -26,7 +26,7 @@ describe("applyTrial", () => {
     expect(result.wrote).toEqual([".env", ".gitignore"]);
     expect(await readFile(join(dir, ".env"), "utf8")).toBe(`OPENAI_API_KEY=sk-x\nNOLA_API_KEY=${KEY}\n`);
     expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe("node_modules/\ndist/\n\n.env\n\n.env.*\n");
-    expect(result.skipped).toEqual(['nola.config.ts already exists — set `model: nola.infer()` (nola from @nola-lang/runtime) to use the trial key']);
+    expect(result.skipped).toEqual(['nola.config.ts already exists — set `model: "nola"` to use the trial key']);
     expect(existsSync(join(dir, "nola.config.ts"))).toBe(false); // hasConfig means: not ours to write
   });
 

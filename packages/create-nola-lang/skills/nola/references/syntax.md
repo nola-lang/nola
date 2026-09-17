@@ -201,7 +201,7 @@ export infer function summarize(.text: string) {
   use `.withModel(...)` for a dynamic model.
 - The name is matched against the config at ask time, not compile time. A
   name that matches a `model` map key pins that model. When the platform
-  serves inference (`model: nola.infer()`) an unmatched name is a
+  serves inference (`model: "nola"`) an unmatched name is a
   free-form inference profile sent to the platform — not an error; under a
   local default an unknown name is a runtime `NolaConfigError` (NOLA3004).
 - `ask without` is a plain ask of the identifier `without`, not a pin.

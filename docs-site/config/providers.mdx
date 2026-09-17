@@ -11,12 +11,12 @@ The simplest config lets the Nola platform serve inference:
 
 ```ts
 // nola.config.ts
-import { defineConfig, nola } from "@nola-lang/runtime";
+import { defineConfig } from "@nola-lang/runtime";
 
-export default defineConfig({ model: nola.infer() });   // reads NOLA_API_KEY; the platform picks the model
+export default defineConfig({ model: "nola" });   // reads NOLA_API_KEY; the platform picks the model
 ```
 
-[`nola.infer()`](/docs/reference/providers-api/#nola) is the platform model. With it as `default`, `ask with <name>` accepts *any* name — one that matches a configured map key pins that model as usual, and any other name (`fast`, `careful`, `cheap`, …) travels with the request as a free-form **inference profile** that the platform's routing resolves to a model and parameters server-side. No temperature, topK or reasoning-effort tuning in your code. A local model map keeps strict name validation — unknown names are [`NOLA3004`](/docs/reference/error-codes/#nola3004). `nola.infer("<provider>/<model>")` names the upstream explicitly.
+The string `"nola"` is short for [`nola.infer()`](/docs/reference/providers-api/#nola), the platform model — it is the only string the `model` slot takes. With it as `default`, `ask with <name>` accepts *any* name — one that matches a configured map key pins that model as usual, and any other name (`fast`, `careful`, `cheap`, …) travels with the request as a free-form **inference profile** that the platform's routing resolves to a model and parameters server-side. No temperature, topK or reasoning-effort tuning in your code. A local model map keeps strict name validation — unknown names are [`NOLA3004`](/docs/reference/error-codes/#nola3004). `nola.infer("<provider>/<model>")` names the upstream explicitly.
 
 ```ts
 // nola.config.ts
@@ -55,7 +55,7 @@ An `ask with` name that is not a key of the map fails at run time with [`NOLA300
 | `fetch` | an injectable `fetch` implementation | same | same |
 | `maxOutputTokens` | — | provider-level default cap | — |
 
-Every factory reads its API key **lazily, at the first request** — the config loads without the key present, and a missing key surfaces as a provider error at the first ask. `nola.infer()` reads `NOLA_API_KEY` the same way; with no argument the hosted service chooses the model (trial keys are restricted to a server-side set), and `NOLA_API_URL` overrides its endpoint for development.
+Every factory reads its API key **lazily, at the first request** — the config loads without the key present, and a missing key surfaces as a provider error at the first ask. `model: "nola"` reads `NOLA_API_KEY` the same way, and the hosted service chooses the model (trial keys are restricted to a server-side set), and `NOLA_API_URL` overrides its endpoint for development.
 
 ## OpenAI-compatible endpoints
 
@@ -108,7 +108,7 @@ See [Testing](/docs/guides/testing/) for the patterns around it.
 Highest first:
 
 1. **`forceModel`** — a hermetic override: when set, EVERY ask resolves through this provider, including intents pinned with `ask with` or `.withModel()`. It must name a key of the `model` map ([`NOLA3004`](/docs/reference/error-codes/#nola3004) otherwise).
-2. **The ask-site pin** — `ask with <name>` or `.withModel(…)`. When the platform serves inference (`model: nola.infer()`) a name that matches no map key is an inference profile rather than a pin: the ask resolves one step further down and the name rides the request.
+2. **The ask-site pin** — `ask with <name>` or `.withModel(…)`. When the platform serves inference (`model: "nola"`) a name that matches no map key is an inference profile rather than a pin: the ask resolves one step further down and the name rides the request.
 3. **`model.default`** — the bare `model` when no map was written.
 
 A profile survives `forceModel` (it still rides the request the forced provider serves — a mock ignores it) and joins the ask fingerprint, so `ask with fast` and a plain `ask` record and replay as distinct ledger entries.

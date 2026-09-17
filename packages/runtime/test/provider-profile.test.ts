@@ -72,7 +72,7 @@ describe("resolveModelProfile — free-form ask-site names when the platform ser
     expect(caught).toBeInstanceOf(NolaConfigError);
     expect((caught as NolaConfigError).code).toBe(Codes.ConfigUnknownModel);
     expect((caught as NolaConfigError).message).toMatch(/"fast" does not name a configured model/);
-    expect((caught as NolaConfigError).message).toMatch(/model: nola\.infer\(\)/);
+    expect((caught as NolaConfigError).message).toMatch(/model: "nola"/);
   });
 
   it("forceModel still wins, and a platform default keeps the profile for record/replay parity", () => {

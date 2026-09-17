@@ -290,8 +290,8 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 > forceModel "x" does not name a configured model — configured: … · .withModel() "x" does not name a configured model — configured: …
 
-**Cause:** `forceModel`, `ask with <name>` or `.withModel("name")` names a key that is not in the `model` map. When the platform serves inference — `model: nola.infer()` — an ask-site name that matches no key is not an error: it is sent to the platform as an inference profile instead, so this code then fires only for `forceModel`.
-**Fix:** add the model to the map, fix the name, or let the platform serve (`model: nola.infer()`) so free-form names route through it.
+**Cause:** `forceModel`, `ask with <name>` or `.withModel("name")` names a key that is not in the `model` map. When the platform serves inference — `model: "nola"` — an ask-site name that matches no key is not an error: it is sent to the platform as an inference profile instead, so this code then fires only for `forceModel`.
+**Fix:** add the model to the map, fix the name, or let the platform serve (`model: "nola"`) so free-form names route through it.
 
 ## NOLA3005
 

@@ -3,6 +3,7 @@ import type { NolaIngestEnvelope } from "@nola-lang/core";
 import type {
   AskDetail,
   ConsoleStorage,
+  DefinitionAsksQuery,
   DefinitionDetail,
   DefinitionSummary,
   ProjectSummary,
@@ -61,7 +62,7 @@ export class ConsoleService {
     return this.#storage.listDefinitions(query);
   }
 
-  getDefinition(def: string): Promise<DefinitionDetail | undefined> {
-    return this.#storage.getDefinition(def);
+  getDefinition(def: string, query?: DefinitionAsksQuery): Promise<DefinitionDetail | undefined> {
+    return this.#storage.getDefinition(def, query);
   }
 }

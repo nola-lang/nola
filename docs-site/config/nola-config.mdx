@@ -5,10 +5,20 @@ sidebar:
   order: 10
 ---
 
-`nola.config.ts` lives at the project root and default-exports one `defineConfig({...})` call. `model` is required — one model, or a named map whose `default` entry is required (see [Models and providers](/docs/config/providers/)); everything else is optional. The Nola platform (api.nola.sh, or a self-hosted console) enters the same way as any vendor: `model: nola.infer()` serves inference, `telemetry: [nola.tracer()]` receives traces.
+`nola.config.ts` lives at the project root and default-exports one `defineConfig({...})` call. `model` is required — one model, or a named map whose `default` entry is required (see [Models and providers](/docs/config/providers/)); everything else is optional. The Nola platform needs no import at all: `model: "nola"` lets it serve inference, and a URL in `telemetry` — `telemetry: "http://127.0.0.1:4141"` — sends traces to a Nola console. Both strings are short for the [`nola`](/docs/reference/providers-api/#nola) factories, `nola.infer()` and `nola.tracer(url)`, which you call yourself only to pass options.
 
 ```ts
-// nola.config.ts
+// nola.config.ts — Nola serves inference
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  // Reads NOLA_API_KEY from the environment at the first ask.
+  model: "nola",
+});
+```
+
+```ts
+// nola.config.ts — bring your own model
 import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
@@ -27,7 +37,7 @@ import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 ```
 
-`defineConfig`, the [`nola`](/docs/reference/providers-api/#nola) namespace (`nola.infer()`, [`nola.tracer()`](/docs/reference/providers-api/#tracer)), `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`. Everything bring-your-own — vendor factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
+`defineConfig`, the [`nola`](/docs/reference/providers-api/#nola) namespace (`nola.infer()`, [`nola.tracer()`](/docs/reference/providers-api/#tracer) — needed only for their options; the plain cases are the strings `"nola"` and a URL), `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`. Everything bring-your-own — vendor factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
 
 Never import `nola` from the providers package or a vendor factory from the runtime, never import `defineConfig` from the providers package, and never reach for a subpath (`@nola-lang/runtime/config`, `@nola-lang/runtime/providers`, `nola-lang/runtime`) — those do not exist. `@nola-lang/providers` deliberately does not depend on the runtime, which is what keeps a second copy of the runtime out of the install tree.
 
@@ -52,7 +62,7 @@ The config is loaded once, validated, and frozen. An unknown top-level key or a 
 
 | Key | What it does | Page |
 | --- | --- | --- |
-| `model` | one model, or a named map with a required `default`; `nola.infer()` is the platform | [Models and providers](/docs/config/providers/) |
+| `model` | one model, or a named map with a required `default`; `"nola"` is the platform | [Models and providers](/docs/config/providers/) |
 | `project` | names this app in traces and platform requests; defaults to the `package.json` name | [Config schema](/docs/reference/config-schema/) |
 | `forceModel` | hermetic override — every ask goes here | [Models and providers](/docs/config/providers/) |
 | `telemetry` | the observer list — terminal, tracers, your observers, receipts | [Telemetry](/docs/config/observability/) |

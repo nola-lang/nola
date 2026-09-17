@@ -1,11 +1,13 @@
 /**
  * The unified filter: one value object parsed from the window's search
  * params, so a filter is attached to the URL and travels between views.
- * Project narrows the server query; everything else narrows the loaded
- * rows client-side (a local console holds little enough for that).
+ * Project narrows the server query, and so does a definition's executions
+ * filter (`definitionAsksQuery` — the server caps that list, so the filter
+ * has to run before the cap); everything else narrows the loaded rows
+ * client-side (a local console holds little enough for that).
  * Pure functions; the bar and the views are the only callers.
  */
-import { type AskSummary, type DefinitionSummary, groupByTrace, type InvocationRecord, type TraceRecord } from "./api";
+import { type DefinitionAsksQuery, type DefinitionSummary, groupByTrace, type InvocationRecord, type TraceRecord } from "./api";
 
 export type ProjectName = string | null;
 
@@ -174,5 +176,25 @@ export const matchesDefinition = (f: Filter, d: DefinitionSummary): boolean =>
   inDuration(f, d.avgDurationMs) &&
   inFile(f, d.file);
 
-export const matchesAsk = (f: Filter, a: AskSummary): boolean =>
-  inTime(f, a.startedAt) && inDuration(f, a.durationMs) && inPid(f, a.pid);
+/**
+ * The part of the filter an execution answers to — time, duration, pid — as the server query of
+ * `GET /api/definitions/:def`. Project and file belong to the definition, not to its executions.
+ */
+export function definitionAsksQuery(f: Filter): DefinitionAsksQuery {
+  const query: DefinitionAsksQuery = {};
+  for (const key of ["from", "to", "dmin", "dmax", "pid"] as const) {
+    const v = f[key];
+    if (v !== undefined) query[key] = v;
+  }
+  return query;
+}
+
+/** What the executions list holds out of what exists: `""` when it is everything. */
+export function executionsCaption(n: { shown: number; matched: number; executions: number }): string {
+  const truncated = n.shown < n.matched;
+  const narrowed = n.matched < n.executions;
+  if (truncated && narrowed) return `latest ${n.shown} of ${n.matched} matching, ${n.executions} total`;
+  if (truncated) return `latest ${n.shown} of ${n.executions}`;
+  if (narrowed) return `${n.matched} of ${n.executions}`;
+  return "";
+}

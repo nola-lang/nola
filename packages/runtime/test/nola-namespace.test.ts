@@ -40,7 +40,7 @@ describe("nola.infer()", () => {
 
   it("is legal only as the bare model or the map's default; the position error names the fix", () => {
     expect(() => resolveNolaConfig({ model: { default: mockProvider(["x"]), fast: nola.infer() } })).toThrow(
-      /model\.fast: the platform model can only be the root `default` — route locally with provider-factory models, or put `nola\.infer\(\)` in `default`/,
+      /model\.fast: the platform model can only be the root `default` — route locally with provider-factory models, or put "nola" in `default`/,
     );
     expect(Object.keys(resolveNolaConfig({ model: { default: nola.infer(), fast: mockProvider(["x"]) } }).model)).toEqual([
       "default",

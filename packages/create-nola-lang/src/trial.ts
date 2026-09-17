@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-/** The canonical `model: nola.infer()` config every template gets when Nola is the chosen provider. */
+/** The canonical `model: "nola"` config every template gets when Nola is the chosen provider. */
 export const TRIAL_CONFIG_URL = new URL("../templates/_providers/nola.config.ts", import.meta.url);
 export const ENV_KEY = "NOLA_API_KEY";
 const IGNORE_LINES = [".env", ".env.*"] as const;
@@ -93,7 +93,7 @@ export async function applyTrial(dir: string, init: { apiKey: string; hasConfig:
   wrote.push(...(await ensureEnvIgnored(root)));
 
   if (init.hasConfig) {
-    skipped.push('nola.config.ts already exists — set `model: nola.infer()` (nola from @nola-lang/runtime) to use the trial key');
+    skipped.push('nola.config.ts already exists — set `model: "nola"` to use the trial key');
   } else {
     await writeFile(join(root, "nola.config.ts"), await readFile(TRIAL_CONFIG_URL, "utf8"));
     wrote.push("nola.config.ts");

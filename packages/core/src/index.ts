@@ -498,15 +498,19 @@ export interface NolaBuildConfig {
 /** A `model` slot entry: a configured instance, or the platform model (root-only — validation enforces the position). */
 export type ModelConfigEntry = LanguageModel | PlatformModel;
 
+/** What the `model` slot accepts as written: an entry, or the string `"nola"` — the alias of `nola.infer()`, resolved to the platform model at validation. */
+export type ModelConfigInput = ModelConfigEntry | "nola";
+
 export interface NolaConfig {
   /**
    * The model every ask resolves through, or a named map of them. A bare
    * model is `{ default: model }`; in the map form `default` is required and
    * every other key is a name `ask with <name>` / `.withModel()` /
-   * `forceModel` can target. The platform model (`nola.infer()`) is legal
-   * only as the bare value or the map's `default`.
+   * `forceModel` can target. The platform model (`nola.infer()`, or its
+   * alias the string `"nola"`) is legal only as the bare value or the map's
+   * `default`. No other string is a model.
    */
-  model: ModelConfigEntry | ({ default: ModelConfigEntry } & Record<string, ModelConfigEntry>);
+  model: ModelConfigInput | ({ default: ModelConfigInput } & Record<string, ModelConfigInput>);
   /**
    * The app's project name — rides trace envelopes and managed infer
    * requests so a console/platform can group everything per project. When
@@ -526,9 +530,10 @@ export interface NolaConfig {
    * ordered array of observers replaces it — nothing is implied then, list
    * `terminalTrace()` to keep the terminal. Absent = `{}`; `[]` is silent.
    * `nola.tracer()` posts to a Nola-Protocol server; any object with on*
-   * methods is an observer.
+   * methods is an observer. An http(s) URL string is the alias of
+   * `nola.tracer(url)`, alone or as a list entry.
    */
-  telemetry?: { level?: NolaLogLevel } | NolaTelemetry | ReadonlyArray<NolaTelemetry>;
+  telemetry?: { level?: NolaLogLevel } | NolaTelemetry | string | ReadonlyArray<NolaTelemetry | string>;
   /** Ordered pipeline around every resolution; the first entry is outermost. */
   middleware?: NolaMiddleware[];
   /** Opt-in ask cache keyed by canonical fingerprint. Omit `store` for in-memory. */

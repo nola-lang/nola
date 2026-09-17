@@ -2,20 +2,22 @@ import { rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { AskKind, NolaIngestEnvelope, NolaIngestKind } from "@nola-lang/core";
 import { askLabel, invocationLabel } from "../core/labels.js";
-import type {
-  AskDetail,
-  AskRecord,
-  AskSummary,
-  AttemptSummary,
-  ConsoleStorage,
-  DefinitionDetail,
-  DefinitionSummary,
-  InvocationLink,
-  InvocationRecord,
-  ProjectSummary,
-  RecordsQuery,
-  TraceDetail,
-  TraceRecord,
+import {
+  type AskDetail,
+  type AskRecord,
+  type AskSummary,
+  type AttemptSummary,
+  type ConsoleStorage,
+  DEFAULT_DEFINITION_ASKS_LIMIT,
+  type DefinitionAsksQuery,
+  type DefinitionDetail,
+  type DefinitionSummary,
+  type InvocationLink,
+  type InvocationRecord,
+  type ProjectSummary,
+  type RecordsQuery,
+  type TraceDetail,
+  type TraceRecord,
 } from "./types.js";
 
 /**
@@ -669,15 +671,32 @@ export class SqliteConsoleStorage implements ConsoleStorage {
     return rows.map((row) => ({ ...toDefinitionBase(row), ...this.#definitionStats(row.def) }));
   }
 
-  async getDefinition(def: string): Promise<DefinitionDetail | undefined> {
+  async getDefinition(def: string, query: DefinitionAsksQuery = {}): Promise<DefinitionDetail | undefined> {
     const row = this.#db.prepare("SELECT * FROM definitions WHERE def = ?").get(def) as DefinitionRow | undefined;
     if (!row) return undefined;
+    const clauses = ["a.def = ?"];
+    const params: Array<string | number> = [def];
+    const bound = (sql: string, value: number | undefined): void => {
+      if (value === undefined) return;
+      clauses.push(sql);
+      params.push(value);
+    };
+    bound("a.started_at >= ?", query.from);
+    bound("a.started_at <= ?", query.to);
+    // NULL fails every comparison, so a duration bound skips executions that have none yet
+    bound("a.duration_ms >= ?", query.dmin);
+    bound("a.duration_ms <= ?", query.dmax);
+    bound("t.pid = ?", query.pid);
+    const where = clauses.join(" AND ");
+    const { matched } = this.#db.prepare(`SELECT COUNT(*) AS matched ${ASK_FROM} WHERE ${where}`).get(...params) as {
+      matched: number;
+    };
     const asks = (
       this.#db
-        .prepare(`${ASK_SELECT} WHERE a.def = ? ORDER BY a.started_at DESC, a.ask_id DESC LIMIT 50`)
-        .all(def) as AskRow[]
+        .prepare(`${ASK_SELECT} WHERE ${where} ORDER BY a.started_at DESC, a.ask_id DESC LIMIT ?`)
+        .all(...params, query.limit ?? DEFAULT_DEFINITION_ASKS_LIMIT) as AskRow[]
     ).map(toAskSummary);
-    return { ...toDefinitionBase(row), ...this.#definitionStats(row.def), asks };
+    return { ...toDefinitionBase(row), ...this.#definitionStats(row.def), asks, matched };
   }
 
   async clear(): Promise<void> {
@@ -763,7 +782,8 @@ type AskRow = {
 const rowId = (row: InvocationRow | AskRow): string => ("ask_id" in row ? row.ask_id : row.invocation_id);
 
 /** Every ask row carries its trace's pid — the process is a filter attribute of the execution. */
-const ASK_SELECT = "SELECT a.*, t.pid AS pid FROM asks a LEFT JOIN invocations t ON t.invocation_id = a.trace_id";
+const ASK_FROM = "FROM asks a LEFT JOIN invocations t ON t.invocation_id = a.trace_id";
+const ASK_SELECT = `SELECT a.*, t.pid AS pid ${ASK_FROM}`;
 
 /** The ask fields shared by AskSummary and AskRecord; `kind` is always resolved (legacy NULL reads as extract). */
 type AskFields = {

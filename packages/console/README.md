@@ -11,8 +11,9 @@ The console binds `http://localhost:4141` (loopback only; the first free port
 upward, `--port` overrides), stores traces in one per-machine database at
 `~/.nola/console/data/console.db` (built-in Node SQLite — Node ≥ 22.13),
 and receives events from any Nola app that has
-`NOLA_TRACING_URL` set or a connection in its `nola.config.ts` —
-`hooks: [tracer("<url>")]`, or `export default nola({ baseUrl: "<url>", model: … })` when the console serves the whole stack.
+`NOLA_TRACING_URL` set or the console's URL in its `nola.config.ts` —
+`telemetry: "<url>"` (write `["<url>", terminalTrace()]` to keep the terminal
+output as well).
 
 Endpoints: `POST /v1/ingest` and `GET /v1/capabilities` (the Nola wire
 protocol), `GET /api/projects`, `GET /api/records`, `GET /api/traces/:id`,
