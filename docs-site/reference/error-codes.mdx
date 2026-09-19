@@ -286,7 +286,7 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 ## NOLA2014
 
-> a typed template literal is an extractor only directly after `ask`; write ..`…`<T> here.
+> a typed template literal is an extractor only directly after `ask`; write `` ..`…`<T> `` here.
 
 **Cause:** a template literal with type arguments — `` f(`x`<string>) `` — somewhere other than directly after `ask`. The two dots are implied only at the ask site; elsewhere a bare template is an ordinary string, so an extractor there needs its sigil ([Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct)).
 **Fix:** write `` ..`x`<T> `` — in a call-intent argument, a stored intent, or an object/array literal.
