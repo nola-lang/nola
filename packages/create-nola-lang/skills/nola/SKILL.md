@@ -22,7 +22,7 @@ import type { Person } from "./types.js";
 // thenable Intent<T>. `await`ing it (or `ask`) runs the inference.
 infer function extractPerson(.text: string) {
   // `ask` resolves an intent the way `await` resolves a promise.
-  const person = ask ..`Extract the person described in the text`<Person>;
+  const person = ask `Extract the person described in the text`<Person>;
   return person;
 }
 ```
@@ -33,10 +33,13 @@ infer function extractPerson(.text: string) {
 - `.name: T` parameters are CONTEXT parameters: their values are shown to
   the LLM. Plain (no dot) parameters are ordinary values the LLM never
   sees. `.` is only legal on infer-function parameters. Rule of thumb:
-  ONE dot in (`.name` — the value flows into the model), TWO dots out
-  (`` ..`prompt` `` — a value comes out of it).
-- `` ask ..`prompt`<T> `` — an extractor: asks the LLM for a `T`.
-  `${...}` interpolation works inside the backticks.
+  one dot marks a value flowing INTO the model (`.name`); a template after
+  `ask` is a value coming OUT.
+- `` ask `prompt`<T> `` — an extractor: asks the LLM for a `T`.
+  `${...}` interpolation works inside the backticks. Anywhere that is NOT
+  directly after `ask` — a stored intent, a call-intent argument, an
+  object/array literal — spell it `` ..`prompt`<T> `` (a typed template
+  there without the dots is NOLA2014); `` ask ..`prompt` `` is still legal.
 - `` ask fn`hint`(...) `` — or a plain call whose arguments contain an
   extractor — is a call intent (the LLM fills the extractor-shaped
   arguments, then the function runs). Only `` fn`hint`(...) `` carries

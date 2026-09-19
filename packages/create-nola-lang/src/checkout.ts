@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,4 +65,51 @@ export async function linkCheckoutPackages(dir: string, root: string): Promise<s
     linked.push(name);
   }
   return linked;
+}
+
+/**
+ * The skipFiles glob the in-repo dogfood launch configs carry. Node resolves
+ * a junction to its real path, so a linked scaffold runs the runtime from
+ * <checkout>/packages/\*\/dist — outside node_modules, which is all the
+ * scaffolded launch.json skips. Left unskipped, js-debug loses F10 over the
+ * process's first network ask: V8's step-over of the top-level await stays a
+ * plain step, lands on js-debug's injected WebAssembly pause (undici compiling
+ * its HTTP parser for the first fetch), and js-debug resumes that pause
+ * without re-stepping, so the program runs to the end (VS Code trace,
+ * 2026-09-18). Blackboxing the dist restores the step.
+ */
+export const CHECKOUT_DIST_SKIP_GLOB = "**/packages/*/dist/**";
+
+interface LaunchConfigLike {
+  skipFiles?: unknown;
+}
+
+/**
+ * Dev mode only, after linkCheckoutPackages: add CHECKOUT_DIST_SKIP_GLOB to
+ * every configuration's skipFiles in the scaffold's .vscode/launch.json.
+ * Returns true when the file changed; false when there is no launch.json, it
+ * is not plain JSON (a hand-edited one with comments is the user's), or every
+ * configuration already carries the glob.
+ */
+export async function skipCheckoutDistInLaunch(dir: string): Promise<boolean> {
+  const path = join(dir, ".vscode", "launch.json");
+  if (!existsSync(path)) return false;
+  let launch: { configurations?: unknown };
+  try {
+    launch = JSON.parse(await readFile(path, "utf8")) as { configurations?: unknown };
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(launch.configurations)) return false;
+  let changed = false;
+  for (const config of launch.configurations as LaunchConfigLike[]) {
+    if (typeof config !== "object" || config === null) continue;
+    const skipFiles = Array.isArray(config.skipFiles) ? (config.skipFiles as unknown[]) : [];
+    if (skipFiles.includes(CHECKOUT_DIST_SKIP_GLOB)) continue;
+    config.skipFiles = [...skipFiles, CHECKOUT_DIST_SKIP_GLOB];
+    changed = true;
+  }
+  if (!changed) return false;
+  await writeFile(path, `${JSON.stringify(launch, null, 2)}\n`);
+  return true;
 }

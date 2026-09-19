@@ -115,6 +115,19 @@ describe("spansToMappings", () => {
     expect(src.slice(s, s + l)).toBe("U");
     expect(code.slice(g, g + l)).toBe("U");
   });
+
+  it("the implied form anchors its <T> text the same way", () => {
+    const src = "type U = { n: string };\ninfer function f() {\n  return ask `x`<U>;\n}\n";
+    const { code, meta } = compileNola(src, "x.tsi");
+    const mappings = spansToMappings(meta.spans, meta.anchors);
+    const anchored = mappings.find((m) => m.data.completion && !m.data.structure);
+    expect(anchored).toBeDefined();
+    const s = anchored?.sourceOffsets[0] as number;
+    const g = anchored?.generatedOffsets[0] as number;
+    const l = anchored?.lengths?.[0] as number;
+    expect(src.slice(s, s + l)).toBe("U");
+    expect(code.slice(g, g + l)).toBe("U");
+  });
 });
 
 describe("marker template anchors", () => {

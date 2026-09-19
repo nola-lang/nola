@@ -63,9 +63,16 @@ describe("`..` extractor", () => {
   });
 
   it("rejects `..` not followed by a template with NOLA1005", () => {
-    const src = "const n = ..name;\n";
+    const src = "const n = ..5;\n";
     const { ast, diagnostics } = parseNola(src, "x.tsi");
     expect(ast).toBeNull();
     expect(diagnostics[0]?.code).toBe("NOLA1005");
+  });
+
+  it("an identifier after `..` is the sugar slot: an unknown word is NOLA1016 (decision types spec §5)", () => {
+    const src = "const n = ..name;\n";
+    const { ast, diagnostics } = parseNola(src, "x.tsi");
+    expect(ast).toBeNull();
+    expect(diagnostics[0]?.code).toBe("NOLA1016");
   });
 });

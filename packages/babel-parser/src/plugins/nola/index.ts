@@ -40,7 +40,13 @@ export const NolaErrors = ParseErrorEnum`nola`({
   NolaContextualParamDoubleDot:
     "NOLA1013: contextual parameters take one dot — write `.name` (`..` is the extractor sigil).",
   NolaContextualBindingReserved:
-    "NOLA1014: `.name` contextual bindings (`const .x = …`) are reserved for a future Nola version.",
+    "NOLA1014: `var .x` is reserved — a contextual binding is `const .x` or `let .x`.",
+  NolaUnknownExtractorKind: "NOLA1016: `..x` — expected `choice`, `scale` or `prob` before the prompt template.",
+  NolaAskTemplateNeedsSpace:
+    "NOLA1017: the implied extractor needs whitespace before its template — write `ask `…`` (`ask`…`` reads as a tagged template).",
+  // No code prefix: this is the ordinary syntax error (NOLA1001), worded the
+  // way TypeScript words it — only its recovery is ours.
+  NolaExpectedExpression: "expected an expression before the end of the file.",
 });
 
 export default (superClass: typeof Parser) =>
@@ -65,6 +71,14 @@ export default (superClass: typeof Parser) =>
     // own template literal, say). Depth > 0 is what makes a leading dot in
     // expression position a scope access instead of a syntax error.
     nolaTemplateStack: Array<{ scopeAccess: boolean }> = [];
+
+    // The parser state the end-of-file placeholder was minted on (see
+    // parseExprAtom). Nothing is consumed at EOF, so the recovery must not
+    // repeat on the SAME state or a loop that keeps asking for an expression
+    // there would never end — while a tryParse rollback (the typescript mixin
+    // tries `<T>` as arrow type parameters before a type assertion) swaps in
+    // a fresh state object and legitimately asks again.
+    nolaEofPlaceholderState: object | null = null;
 
     parseTemplate(isTagged: boolean): N.TemplateLiteral {
       const entry = { scopeAccess: false };
@@ -180,6 +194,29 @@ export default (superClass: typeof Parser) =>
       return this.finishNode(node as never, "NolaExtractExpression" as never);
     }
 
+    // The expression missing at the END OF THE FILE: `const x =`, a `<T>` type
+    // assertion with nothing after it (the `;` slipped in before an
+    // extractor's type args). A zero-width placeholder right after the last
+    // token — where the operand belongs, and where the diagnostic lands
+    // rather than on the trailing blank line the EOF token sits on. Same
+    // placeholder node as the marker recoveries: the lowering replaces it
+    // with the inert expression under a `broken` span.
+    nolaMissingExpression(): N.Expression {
+      const at = (this.state.lastTokEndLoc ?? this.state.startLoc) as Position;
+      this.raise(NolaErrors.NolaExpectedExpression, at);
+      const node = this.startNodeAt(at) as unknown as {
+        quasi: unknown;
+        prompt: string;
+        typeArgs: unknown;
+        nolaError: boolean;
+      };
+      node.quasi = null;
+      node.prompt = "";
+      node.typeArgs = null;
+      node.nolaError = true;
+      return this.finishNodeAt(node as never, "NolaExtractExpression" as never, at);
+    }
+
     // `person.` with the name still being typed — the most common editor state
     // there is, and it carries no Nola construct at all. super reaches
     // parseIdentifier → unexpected(), which THROWS even under errorRecovery: the
@@ -227,6 +264,39 @@ export default (superClass: typeof Parser) =>
       return super.parseMember(base, startLoc, state, computed, optional);
     }
 
+    // The template-and-<T> tail shared by both extractor spellings: `..`
+    // (node started at the sigil) and the implied form directly after `ask`
+    // (node started at the backtick, see parseMaybeUnary).
+    nolaFinishExtractor(node: { quasi: unknown; prompt: string; typeArgs: unknown }): N.Expression {
+      // Babel's tokenizer never emits a bare backQuote: a `` ` `` becomes a
+      // templateTail (no substitution) or templateNonTail (before `${`).
+      if (!this.match(tt.templateTail) && !this.match(tt.templateNonTail)) {
+        this.raise(NolaErrors.NolaExpectedPromptTemplate, this.state.startLoc);
+        node.quasi = null;
+        node.prompt = "";
+        node.typeArgs = null;
+        (node as unknown as { nolaError: boolean }).nolaError = true;
+        return this.finishNode(node as never, "NolaExtractExpression" as never);
+      }
+      // `${...}` substitutions ARE allowed in extractor prompts (spliced at
+      // lowering via __nola.fmt). Keep the parsed expressions on the quasi.
+      const quasi = this.parseTemplate(false) as unknown as {
+        expressions: unknown[];
+        quasis: Array<{ value: { cooked: string | null; raw: string } }>;
+      };
+      node.quasi = quasi;
+      node.prompt = quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
+      node.typeArgs = null;
+      if (this.match(tt.lt)) {
+        // After an extractor, `<` ALWAYS starts type args (documented rule).
+        // Parenthesize — `(..`p`) < x` — to force a comparison instead.
+        // tsParseTypeArguments is provided by the typescript mixin below us,
+        // invisible on the base Parser type — hence the structural cast.
+        node.typeArgs = (this as unknown as { tsParseTypeArguments(): unknown }).tsParseTypeArguments();
+      }
+      return this.finishNode(node as never, "NolaExtractExpression" as never);
+    }
+
     parseExprAtom(refExpressionErrors?: ExpressionErrors | null): N.Expression | N.Super | N.Import {
       // `${.member}` inside a template hole: prompt-scope access.
       if (this.match(tt.dot) && this.nolaTemplateStack.length > 0) {
@@ -239,6 +309,21 @@ export default (superClass: typeof Parser) =>
       // describes it better than "expected a prompt".
       if (this.match(tt.dot) && this.optionFlags & OptionFlags.ErrorRecovery) {
         return this.nolaIncompleteExtract();
+      }
+      // An expression expected at the end of the file. super reaches
+      // unexpected(), which THROWS even under errorRecovery — the whole file
+      // bails and the editor serves last-good output whose mappings describe
+      // an OLDER text (semantic tokens on the wrong characters, the parse
+      // error dropped). TypeScript recovers with a missing expression; do the
+      // same, ONCE per parser state: the second visit at EOF on the same state
+      // (an unclosed block's statement loop) reaches the throw as before.
+      if (
+        this.match(tt.eof) &&
+        this.optionFlags & OptionFlags.ErrorRecovery &&
+        this.nolaEofPlaceholderState !== this.state
+      ) {
+        this.nolaEofPlaceholderState = this.state;
+        return this.nolaMissingExpression();
       }
       if (this.match(tt.nolaDotDot)) {
         const node = this.startNode() as unknown as {
@@ -257,33 +342,20 @@ export default (superClass: typeof Parser) =>
           (node as unknown as { nolaError: boolean }).nolaError = true;
           return this.finishNode(node as never, "NolaExtractExpression" as never);
         }
-        // Babel's tokenizer never emits a bare backQuote: a `` ` `` becomes a
-        // templateTail (no substitution) or templateNonTail (before `${`).
-        if (!this.match(tt.templateTail) && !this.match(tt.templateNonTail)) {
-          this.raise(NolaErrors.NolaExpectedPromptTemplate, this.state.startLoc);
-          node.quasi = null;
-          node.prompt = "";
-          node.typeArgs = null;
-          (node as unknown as { nolaError: boolean }).nolaError = true;
-          return this.finishNode(node as never, "NolaExtractExpression" as never);
+        // `..choice` / `..scale` / `..prob` (decision types spec 2026-09-18 §5):
+        // the primitive's name between the sigil and the template. Any other
+        // identifier there is NOLA1016; tolerant mode drops it and parses the
+        // extractor as plain so the editor keeps a construct to map.
+        if (this.match(tt.name)) {
+          const word = String(this.state.value);
+          if (word === "choice" || word === "scale" || word === "prob") {
+            (node as unknown as { kind: string }).kind = word;
+          } else {
+            this.raise(NolaErrors.NolaUnknownExtractorKind, this.state.startLoc);
+          }
+          this.next(); // consume the identifier
         }
-        // `${...}` substitutions ARE allowed in extractor prompts (spliced at
-        // lowering via __nola.fmt). Keep the parsed expressions on the quasi.
-        const quasi = this.parseTemplate(false) as unknown as {
-          expressions: unknown[];
-          quasis: Array<{ value: { cooked: string | null; raw: string } }>;
-        };
-        node.quasi = quasi;
-        node.prompt = quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
-        node.typeArgs = null;
-        if (this.match(tt.lt)) {
-          // After an extractor, `<` ALWAYS starts type args (documented rule).
-          // Parenthesize — `(..`p`) < x` — to force a comparison instead.
-          // tsParseTypeArguments is provided by the typescript mixin below us,
-          // invisible on the base Parser type — hence the structural cast.
-          node.typeArgs = (this as unknown as { tsParseTypeArguments(): unknown }).tsParseTypeArguments();
-        }
-        return this.finishNode(node as never, "NolaExtractExpression" as never);
+        return this.nolaFinishExtractor(node);
       }
       return super.parseExprAtom(refExpressionErrors);
     }
@@ -319,7 +391,27 @@ export default (superClass: typeof Parser) =>
         // file would bail and the editor would fall back to stale lowered
         // output. Consume the dot into the same placeholder the two-dot path
         // produces, so the rest of the file keeps parsing.
-        node.argument = this.match(tt.dot) ? this.nolaIncompleteExtract() : this.parseMaybeUnary(null, true);
+        if (this.match(tt.dot)) {
+          node.argument = this.nolaIncompleteExtract();
+        } else if (this.match(tt.templateTail) || this.match(tt.templateNonTail)) {
+          // Implied sigil (spec 2026-09-18): a template literal as the FIRST
+          // token of the operand is an extractor — a plain string could never
+          // be asked, so the `..` carries no information here. Only the first
+          // token: `ask (`x`)` and `ask tag`x`` stay plain expressions.
+          // Subscripts (`.withRetry(2)`) attach to the extractor exactly as
+          // parseExprAtom's `..` path hands them to parseSubscripts.
+          // Whitespace is mandatory before the template (owner, 2026-09-19):
+          // `ask`x`` and `ask with fast`x`` read as tagged templates. NOLA1017;
+          // the operand still parses as the extractor so the file goes on.
+          const startLoc = this.state.startLoc;
+          if ((this.state.lastTokEndLoc as Position | null)?.index === startLoc.index) {
+            this.raise(NolaErrors.NolaAskTemplateNeedsSpace, startLoc);
+          }
+          const extract = this.startNode() as unknown as { quasi: unknown; prompt: string; typeArgs: unknown };
+          node.argument = this.parseSubscripts(this.nolaFinishExtractor(extract), startLoc);
+        } else {
+          node.argument = this.parseMaybeUnary(null, true);
+        }
         return this.finishNode(node as never, "NolaAskExpression" as never);
       }
       return super.parseMaybeUnary(refExpressionErrors, sawUnary);
@@ -442,18 +534,37 @@ export default (superClass: typeof Parser) =>
       return super.parseBindingElement(flags, decorators);
     }
 
-    // `const .x` / `let .x` / `var .x` (either dot count): the contextual
-    // BINDING form is reserved. Consume the marker, report, then parse the id
-    // normally so tolerant mode keeps a sane tree; the span rides on the id so
-    // the lowering can drop the bytes under a `broken` span.
+    // `const .x` / `let .x`: a contextual BINDING (scope-bodies spec §2.2) —
+    // the marker span rides on the id as `nolaContextual`, exactly like a
+    // parameter's; the lowerer judges the position (a scope body or not).
+    // `..x` is the retired spelling (NOLA1013, recovers as contextual), a
+    // pattern after the dot is NOLA1011, and `var .x` stays reserved
+    // (NOLA1014: `var` hoists to undefined, which no ask should see) — its
+    // span is parked as `nolaReservedMarker` so tolerant lowering drops it.
     parseVarId(decl: Undone<N.VariableDeclarator>, kind: "var" | "let" | "const" | "using" | "await using"): void {
       if (this.match(tt.dot) || this.match(tt.nolaDotDot)) {
         const span = { start: this.state.start, end: this.state.end };
         const startLoc = this.state.startLoc;
+        const doubleDot = this.match(tt.nolaDotDot);
         this.next(); // consume the marker
-        this.raise(NolaErrors.NolaContextualBindingReserved, startLoc);
         super.parseVarId(decl, kind);
-        (decl.id as unknown as { nolaReservedMarker?: { start: number; end: number } }).nolaReservedMarker = span;
+        const id = decl.id as unknown as {
+          type: string;
+          nolaContextual?: { start: number; end: number };
+          nolaReservedMarker?: { start: number; end: number };
+        };
+        if (kind === "var" || (kind !== "const" && kind !== "let")) {
+          this.raise(NolaErrors.NolaContextualBindingReserved, startLoc);
+          id.nolaReservedMarker = span;
+          return;
+        }
+        if (id.type !== "Identifier") {
+          this.raise(NolaErrors.NolaContextualParamReserved, startLoc);
+          id.nolaReservedMarker = span;
+          return;
+        }
+        if (doubleDot) this.raise(NolaErrors.NolaContextualParamDoubleDot, startLoc);
+        id.nolaContextual = span;
         return;
       }
       super.parseVarId(decl, kind);

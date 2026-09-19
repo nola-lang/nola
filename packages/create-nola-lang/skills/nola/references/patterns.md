@@ -1,10 +1,85 @@
 # Nola patterns — worked examples
 
-## The starter project, end to end
+## The feature-extraction project: one .tsi file is the program
 
-This is the shape every Nola project takes: `.tsi` files hold the infer
+The smallest Nola program is a single `.tsi` file run directly — `ask` is
+legal at the top level, a bare template literal as the FIRST statement is
+the instruction for the whole file, and `const .x` bindings are context the
+model sees at every ask that follows them (`npm create nola` scaffolds this
+shape as `feature-extraction`):
+
+```tsi
+// src/main.tsi — run with: nola run src/main.tsi
+`You read short professional bios. Answer from the text alone; never invent facts.`
+
+interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+const .message = "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.";
+
+const person = ask `the person described in the text`<Person>;
+
+// declared after the first ask, so only the second ask sees it — one answer feeds the next
+const .role = person.job;
+const seniority = ask `the seniority level the role implies`<"junior" | "mid" | "senior" | "staff">;
+
+console.log(JSON.stringify({ ...person, seniority }));
+```
+
+Rules that matter here: the instruction literal must be the very first
+statement (a comment before it is fine, an `import` or a type is not); a
+`.` binding is visible to the asks declared after it in the same or an
+enclosing block, never to its own initializer; `ask` at the top level is
+legal in the module body and top-level blocks/loops, not inside a plain
+function or callback (NOLA2001). When a script outgrows one file, move the
+asks into an `infer function` and call it from plain TypeScript — the shape
+below.
+
+## The function-calling project: a top-level call intent
+
+The same one-file shape, with the other feature (`npm create nola` scaffolds
+it as `function-calling`): the top-level `ask` is a CALL INTENT — the model
+fills the extractor-shaped arguments of an ordinary async function that lives
+in a plain `.ts` file next door, and the call runs with them.
+
+```ts
+// src/tickets.ts — plain TypeScript, nothing Nola about it
+export interface Ticket { id: string; title: string; priority: number }
+const tickets: Ticket[] = [];
+export async function createTicket(title: string, priority: number): Promise<Ticket> {
+  const ticket = { id: `T-${tickets.length + 1}`, title, priority };
+  tickets.push(ticket);
+  return ticket;
+}
+```
+
+```tsi
+// src/main.tsi — run with: nola run src/main.tsi
+import { createTicket } from "./tickets.js";
+
+const .message = "Hi, I can't log in since this morning and I have a customer demo in an hour — please help!";
+
+const ticket = ask createTicket(..`a short ticket title`<string>, ..`priority 1-5, where 1 is most urgent`<number>);
+
+console.log(JSON.stringify(ticket));
+```
+
+`ask` yields the callee's SETTLED value — a `Ticket`, not a `Promise<Ticket>`.
+The import uses the NodeNext `./tickets.js` specifier for the on-disk
+`tickets.ts`. Note there is no first-line instruction here: an `import` is a
+statement, so a template literal placed after it is not the file's first
+statement and would be a no-op.
+
+## The typescript-interop project, end to end
+
+This is the shape a Nola library or app takes: `.tsi` files hold the infer
 functions, a plain `.ts` entry point calls them, and `nola run` executes the
-entry with the loader and `nola.config.ts` in place.
+entry with the loader and `nola.config.ts` in place (`npm create nola`
+scaffolds it as `typescript-interop`).
 
 ```
 my-app/
@@ -27,7 +102,7 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask ..`the person described in the text`<Person>;
+  const person = ask `the person described in the text`<Person>;
   return person;
 }
 ```
@@ -69,8 +144,8 @@ export infer function solve(.problem: string) {
   // Both asks see `problem` (the contextual parameter). They do NOT see each
   // other's answers automatically — the reasoning is handed to the second ask
   // explicitly through `${}`.
-  const reasoning = ask ..`think step by step about the problem before answering`;
-  const answer = ask ..`the final numeric answer, given this reasoning: ${reasoning}`<number>;
+  const reasoning = ask `think step by step about the problem before answering`;
+  const answer = ask `the final numeric answer, given this reasoning: ${reasoning}`<number>;
   return { reasoning, answer };
 }
 ```
@@ -83,8 +158,8 @@ later prompt:
 export type Category = "billing" | "refund" | "fraud" | "other";
 
 export infer function classifyMessage(.message: string) {
-  const category = ask ..`the category of the customer message`<Category>;
-  const urgent = ask ..`does the message need urgent attention`<"yes" | "no">;
+  const category = ask `the category of the customer message`<Category>;
+  const urgent = ask `does the message need urgent attention`<"yes" | "no">;
 
   // plain TS from here on
   if (category === "fraud") return { category, urgent: true, escalate: true };
@@ -103,11 +178,11 @@ export interface Conclusion {
 }
 
 export infer function nextQuery(.question: string, .notes: string[]) {
-  return ask ..`the single best search query to advance the research; keywords only`<string>;
+  return ask `the single best search query to advance the research; keywords only`<string>;
 }
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask ..`answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`<Conclusion>;
 }
 ```
 
@@ -204,7 +279,7 @@ export interface Invoice {
 }
 
 export infer function extractInvoice(.document: string) {
-  return ask ..`the invoice data from the document`<Invoice>;
+  return ask `the invoice data from the document`<Invoice>;
 }
 ```
 
@@ -221,9 +296,9 @@ export enum Sentiment {
 }
 
 export infer function triage(.message: string) {
-  const category = ask ..`the category of the customer message`<Category>;
-  const sentiment = ask ..`the overall sentiment of the message`<Sentiment>;
-  const urgent = ask ..`does the message need urgent attention`<"yes" | "no">;
+  const category = ask `the category of the customer message`<Category>;
+  const sentiment = ask `the overall sentiment of the message`<Sentiment>;
+  const urgent = ask `does the message need urgent attention`<"yes" | "no">;
   return { category, sentiment, urgent: urgent === "yes" };
 }
 ```
@@ -248,7 +323,7 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 
@@ -272,7 +347,7 @@ export type TreeNode = {
 };
 
 export infer function parseTree(.input: string) {
-  return ask ..`the tree structure described in the input`<TreeNode>;
+  return ask `the tree structure described in the input`<TreeNode>;
 }
 ```
 
@@ -282,7 +357,7 @@ export infer function parseTree(.input: string) {
 export type CalendarEvent = { title: string; at: Date };
 
 export infer function nextEvent(.calendar: string) {
-  const event = ask ..`the next event on the calendar`<CalendarEvent>;
+  const event = ask `the next event on the calendar`<CalendarEvent>;
   const when: Date = event.at;   // a Date, not a string
   return when;
 }

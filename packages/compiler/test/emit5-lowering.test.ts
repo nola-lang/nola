@@ -12,7 +12,7 @@ describe("emit contract 5 lowering (phase-1 shape since emit 15)", () => {
     expect(diagnostics).toEqual([]);
     expect(code).toContain("type: __nola_type_$1(), loc:");
     expect(code).toContain(`function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> { return ${INERT}; }`);
-    expect(code).toContain("__nola.useRuntime(16);");
+    expect(code).toContain("__nola.useRuntime(18);");
     expect(meta.derivations).toHaveLength(1);
     expect(code.slice(meta.derivations[0]?.lowered.start, meta.derivations[0]?.lowered.end)).toBe("User");
   });

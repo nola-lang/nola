@@ -34,14 +34,14 @@ The whole notation is three marks on top of TypeScript:
 ```tsi
 // analyze.tsi
 export infer function analyzeUserRequest(userId: string, .message: string) {
-  const ticketId = ask ..`ticket id mentioned in the message`<string>;
-  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  const ticketId = ask `ticket id mentioned in the message`<string>;
+  const isFraud = ask `does the message look fraudulent`<boolean>;
   return { userId, ticketId, isFraud };
 }
 ```
 
 - **`infer`** marks a function whose body is resolved by a model, the way `async` marks one resolved by the event loop. It returns an [`Intent<T>`](/docs/language/intent/), Nola's `Promise<T>`.
-- **One dot in, two dots out.** `.message` is a contextual parameter — its value flows *into* the model's context for every `ask` in the invocation. `` ..`instruction`<T> `` is an extractor — a `T` comes *out* of the model.
+- **One dot in, `ask` out.** `.message` is a contextual parameter — its value flows *into* the model's context for every `ask` in the invocation. `` ask `instruction`<T> `` is an extractor — a `T` comes *out* of the model (`` ..`instruction`<T> `` builds the same request where `ask` is not directly in front of it).
 - **`ask`** resolves an intent the way `await` resolves a promise, with the same precedence and the same place in your code.
 
 Plain TypeScript imports the file directly and `await`s the result:

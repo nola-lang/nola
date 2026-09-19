@@ -1,3 +1,4 @@
+import { stripTypeScriptTypes } from "node:module";
 import remappingImport from "@ampproject/remapping";
 import { decode, encode } from "@jridgewell/sourcemap-codec";
 import type { Diagnostic } from "@nola-lang/ast";
@@ -8,7 +9,6 @@ import {
   type DerivationAnswer,
   finalizeDerivations,
 } from "@nola-lang/compiler";
-import { transform } from "esbuild";
 
 // `@ampproject/remapping` ships an array-fallback `exports` map that TS resolves as a
 // CJS namespace, though the runtime (.mjs) default is the callable itself.
@@ -50,9 +50,7 @@ export class NolaTransformError extends Error {
  *   `return valid;` bug). A carry is precise to detect: a column-0 segment
  *   whose original position equals the previous line's last segment's.
  */
-function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
-  const map = JSON.parse(jsMap) as { mappings: string };
-  const decoded = decode(map.mappings);
+function wrapperLinesOf(lowered: CompileResult): Set<number> {
   const generated = lowered.code;
   const lineStarts = [0];
   for (let i = 0; i < generated.length; i++) if (generated[i] === "\n") lineStarts.push(i + 1);
@@ -73,6 +71,29 @@ function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
     if (lineStarts[line] < sp.generatedStart) line += 1;
     for (; line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) wrapperLines.add(line);
   }
+  return wrapperLines;
+}
+
+/**
+ * The debug map when stripping preserved the layout: the compiler map itself,
+ * minus every segment on a wrapper line (the compiler's `anchorInsertedLines`
+ * anchors, kept for `nola build` dist maps and `nola check`, deliberately
+ * absent here — see stripWrapperSegments). `sources` is the on-disk .tsi in
+ * forward-slash form, which is what js-debug's breakpoint matching needs.
+ */
+function layoutMap(lowered: CompileResult): string {
+  const map = JSON.parse(lowered.map.toString()) as { mappings: string; sources: string[] };
+  const decoded = decode(map.mappings);
+  for (const line of wrapperLinesOf(lowered)) if (line < decoded.length) decoded[line] = [];
+  map.mappings = encode(decoded);
+  map.sources = map.sources.map((src) => src.replace(/\\/g, "/"));
+  return JSON.stringify(map);
+}
+
+function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
+  const map = JSON.parse(jsMap) as { mappings: string };
+  const decoded = decode(map.mappings);
+  const wrapperLines = wrapperLinesOf(lowered);
   let prevLast: number[] | undefined;
   for (let l = 0; l < decoded.length; l++) {
     const original = decoded[l];
@@ -88,15 +109,60 @@ function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
   return JSON.stringify(map);
 }
 
-// Async `transform` (esbuild's child-process service), NOT `transformSync`. The loader
-// runs inside Node's module-hooks worker thread, and `transformSync` there spawns a
-// nested worker_threads Worker (startWorkerThreadService) that the VS Code debugger's
-// worker instrumentation intermittently breaks ("Worker is not a constructor"). The
-// async API uses a child process instead, so it is safe under a debugger. Keep it async.
+/**
+ * Type stripping is Node's own (`stripTypeScriptTypes`, the same amaro/swc
+ * pass that runs plain `.ts`), not esbuild's — for the debugger. Strip mode
+ * replaces types with whitespace, so the generated text keeps the lowered
+ * text's line/column layout exactly. That matters because js-debug binds a
+ * `.tsi` breakpoint twice: through the inline map AND raw by URL + line on
+ * the compiled script, whose URL IS the .tsi path. esbuild collapsed removed
+ * declarations (a 6-line interface shifted everything up), so the raw copy
+ * landed in the appendix — inside `__nola_file_ctx`, which every ask calls —
+ * and F10 over a top-level ask stopped there, in unmapped code, and degraded
+ * into a continue. With the layout preserved the two bindings coincide.
+ *
+ * Erasable syntax only, like Node's own `.ts` rule; a file that needs more
+ * (an enum, a namespace, parameter properties) falls back to transform mode,
+ * which carries a map and is merged like esbuild's used to be. Synchronous
+ * and in-process — no esbuild service to mind inside the hooks worker.
+ */
+export function stripTypes(code: string, file: string): { code: string; map?: string } {
+  try {
+    return { code: quietly(() => stripTypeScriptTypes(code, { mode: "strip" })) };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") throw error;
+  }
+  const out = quietly(() => stripTypeScriptTypes(code, { mode: "transform", sourceMap: true, sourceUrl: file }));
+  const m = /\n\/\/# sourceMappingURL=data:application\/json[^,]*,([A-Za-z0-9+/=]+)\s*$/.exec(out);
+  if (!m) return { code: out };
+  return { code: out.slice(0, m.index), map: Buffer.from(m[1] as string, "base64").toString("utf8") };
+}
+
+/**
+ * The API is stability 1.1; Node emits one ExperimentalWarning per process the
+ * first time it is called. The loader calls it on purpose, on every run, so
+ * that line is ours to own — swallow exactly that warning, nothing else.
+ */
+let warned = false;
+function quietly<T>(fn: () => T): T {
+  if (warned) return fn();
+  warned = true;
+  const original = process.emitWarning;
+  process.emitWarning = ((warning: unknown, ...rest: unknown[]) => {
+    if (String(warning).includes("stripTypeScriptTypes")) return;
+    return (original as (...args: unknown[]) => void).call(process, warning, ...rest);
+  }) as typeof process.emitWarning;
+  try {
+    return fn();
+  } finally {
+    process.emitWarning = original;
+  }
+}
+
 /** Phase 2 seam: answer a phase-1 result's derivation requests (the DerivationService, or tshost's checker). */
 export type DeriveStep = (file: string, phase1: CompileResult) => DerivationAnswer[];
 
-/** Turbopack seam: rewrite the FINALIZED appendix (inline views) before esbuild; the appendix is unmapped, so the map survives. */
+/** Turbopack seam: rewrite the FINALIZED appendix (inline views) before stripping; the appendix is unmapped, so the map survives. */
 export type InlineViewsStep = (lowered: CompileResult) => CompileResult;
 
 export async function transformNola(
@@ -112,10 +178,12 @@ export async function transformNola(
   if (lowered.diagnostics.length > 0) throw new NolaTransformError(lowered.diagnostics);
   if (inlineViews) lowered = inlineViews(lowered);
   const deps = [...new Set(answers.flatMap((a) => a.deps))];
-  const js = await transform(lowered.code, { loader: "ts", format: "esm", sourcemap: "external", sourcefile: file });
+  const js = stripTypes(lowered.code, file);
+  if (js.map === undefined) return { code: js.code, map: layoutMap(lowered), deps };
+  // Transform mode (non-erasable syntax): the stripper's map chains onto the
+  // compiler map. One-shot loader: its single source resolves to the compiler
+  // map; the compiler map's own source (same file name) is the original leaf → null.
   const stripped = stripWrapperSegments(js.map, lowered);
-  // One-shot loader: the esbuild map's single source resolves to the compiler map;
-  // the compiler map's own source (same file name) is the original leaf → null.
   let consumed = false;
   const merged = remapping(stripped, () => {
     if (consumed) return null;

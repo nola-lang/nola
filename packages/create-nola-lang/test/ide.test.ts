@@ -29,6 +29,14 @@ describe("writeVscodeSetup", () => {
     expect(extensions.recommendations).toEqual(["nola.nola-vscode"]);
   });
 
+  it("points launch.json at the template's entry when given one (feature-extraction runs src/main.tsi)", async () => {
+    const dir = await tmp();
+    await writeVscodeSetup(dir, "src/main.tsi");
+    const launch = JSON.parse(await readFile(join(dir, ".vscode", "launch.json"), "utf8"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code variable syntax
+    expect(launch.configurations[0].program).toBe("${workspaceFolder}/src/main.tsi");
+  });
+
   it("recommends exactly the extension's marketplace ID (publisher.name of packages/vscode)", async () => {
     // Derived, not pinned: renaming the publisher or extension without
     // updating the scaffold recommendation (or vice versa) must go red.

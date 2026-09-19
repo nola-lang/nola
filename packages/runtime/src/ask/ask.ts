@@ -1,15 +1,34 @@
 import { type Askable, NolaResolutionError, Site } from "@nola-lang/core";
+import type { AskLocals } from "../infer-context/index.js";
 import { Intent } from "../intents/intent.js";
+import { runInvocation } from "../intents/invocation/lifecycle.js";
+import { ModuleContext } from "../intents/invocation/module-context.js";
 import type { Frame } from "../runtime/index.js";
 
 /**
  * `ask expr` — validate the operand is an Intent and run it against the asking
- * function's frame. Context chains here: this is the only place a parent frame
- * reaches an intent. `provider` is the `ask with <name>` alias; being the
- * ask-site choice it overrides an intent's own .withModel pin (forceModel
- * still beats both — resolveModel owns that precedence).
+ * scope's frame. Context chains here: this is the only place a parent frame
+ * reaches an intent. Inside an infer body the scope IS the frame; the module
+ * body has no wrapper to mint one, so it passes its scope node and a
+ * `<module>` root is opened here — one per ask, with the asked intent's own
+ * timeout as its clock (at module level the ask is the root; whether asks
+ * share one module frame is this function's decision, never the emitted
+ * text's). `model` is the `ask with <name>` alias; being the ask-site choice
+ * it overrides an intent's own .withModel pin (forceModel still beats both —
+ * resolveModel owns that precedence).
  */
-export async function ask<T>(value: Askable<T>, frame: Frame, model?: string): Promise<T> {
+export async function ask<T>(
+  value: Askable<T>,
+  scope: Frame | ModuleContext,
+  model?: string,
+  locals?: AskLocals,
+): Promise<T> {
+  if (scope instanceof ModuleContext) {
+    const timeout = Intent.isIntent(value) ? value.timeout : undefined;
+    const root = scope.runtime.openFrame(scope, timeout === undefined ? {} : { timeout });
+    return runInvocation(root, (frame) => ask(value, frame, model, locals));
+  }
+  const frame = scope;
   if (!Intent.isIntent(value)) {
     throw new NolaResolutionError("ask operand is not an Intent", {
       prompt: "<not an intent>",
@@ -17,8 +36,10 @@ export async function ask<T>(value: Askable<T>, frame: Frame, model?: string): P
       site: new Site(frame.sourceFile(), "?"),
     });
   }
-  const intent = value as unknown as Intent<T>;
-  return (model === undefined ? intent : intent.withModel(model)).run(frame);
+  let intent = value as unknown as Intent<T>;
+  if (model !== undefined) intent = intent.withModel(model);
+  if (locals !== undefined) intent = intent.withLocals(locals);
+  return intent.run(frame);
 }
 
 /** `${expr}` prompt splice: strings verbatim, everything else JSON. */

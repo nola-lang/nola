@@ -60,6 +60,11 @@ type TypeNode =
   | { kind: "union"; members: TypeCarrier<unknown>[] }
   | { kind: "ref"; name: string; resolve: RefResolver }
   | { kind: "constrained"; inner: TypeCarrier<unknown>; constraints: Constraints }
+  // decision types (spec 2026-09-18): the answer shapes of a decision question
+  // `numeric`: the labels (by text) written as number literals — criteria keyed by their text, `choice` answered as the number
+  | { kind: "choice"; criteria: Record<string, string | null>; numeric?: readonly string[] }
+  | { kind: "scale"; levels: readonly string[] }
+  | { kind: "prob"; criteria?: { true: string; false: string } }
   | { kind: "unsupported"; reason: string };
 
 /**
@@ -160,6 +165,11 @@ export class TypeCarrier<T = unknown> implements InferType<T> {
       case "nullable":
       case "constrained":
         return n.inner.toNativeType();
+      case "choice":
+      case "scale":
+        return "object";
+      case "prob":
+        return "number";
       default:
         return n.kind;
     }
@@ -209,6 +219,19 @@ export class TypeCarrier<T = unknown> implements InferType<T> {
         return this.refName() as string;
       case "constrained":
         return n.inner.toTypeText();
+      case "choice": {
+        const entries = Object.entries(n.criteria);
+        if (entries.every(([, d]) => d === null)) {
+          return `Choice<${entries.map(([l]) => (n.numeric?.includes(l) ? l : JSON.stringify(l))).join(" | ")}>`;
+        }
+        return `Choice<{ ${entries.map(([l, d]) => `${l}: ${d === null ? "null" : JSON.stringify(d)}`).join("; ")} }>`;
+      }
+      case "scale":
+        return `Scale<[${n.levels.map((l) => JSON.stringify(l)).join(", ")}]>`;
+      case "prob":
+        return n.criteria
+          ? `Prob<{ true: ${JSON.stringify(n.criteria.true)}; false: ${JSON.stringify(n.criteria.false)} }>`
+          : "Prob";
       case "unsupported":
         return "never";
     }
@@ -350,6 +373,9 @@ export function hasRevivable(t: TypeCarrier<unknown>, visited: Set<string>): boo
       visited.add(n.name);
       return hasRevivable(resolveRef(n), visited);
     }
+    case "scale":
+      // the runtime fills `levels` into the answer, so an enclosing object is copied
+      return true;
     default:
       return false;
   }
@@ -388,6 +414,10 @@ function reviveValue(t: TypeCarrier<unknown>, value: unknown): unknown {
       return reviveValue(resolveRef(n), value);
     case "constrained":
       return reviveValue(n.inner, value);
+    case "scale":
+      return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? { ...value, levels: [...n.levels] }
+        : value;
     default:
       return value;
   }
@@ -396,6 +426,9 @@ function reviveValue(t: TypeCarrier<unknown>, value: unknown): unknown {
 function withDescription(schema: JsonSchema, description?: string): JsonSchema {
   return description ? ({ ...schema, description } as JsonSchema) : schema;
 }
+
+/** A probability on the wire: the unit interval. */
+const UNIT: JsonSchema = { type: "number", minimum: 0, maximum: 1 };
 
 function expand(
   t: TypeCarrier<unknown>,
@@ -475,6 +508,68 @@ function expand(
         mergeConstraintKeywords(expand(n.inner, cyclic, defs, building), n.constraints),
         t._description,
       );
+    case "prob":
+      return withDescription(
+        {
+          type: "number",
+          minimum: 0,
+          maximum: 1,
+          "x-nola-decision": n.criteria ? { kind: "prob", criteria: n.criteria } : { kind: "prob" },
+        },
+        t._description,
+      );
+    case "choice": {
+      const labels = Object.keys(n.criteria);
+      const numeric = n.numeric ?? [];
+      const perLabel: Record<string, JsonSchema> = {};
+      for (const label of labels) perLabel[label] = UNIT;
+      // the chosen label in its own kind: all strings, all numbers, or a union of consts when mixed
+      const choice: JsonSchema =
+        numeric.length === 0
+          ? { type: "string", enum: labels }
+          : numeric.length === labels.length
+            ? { type: "number", enum: labels.map(Number) }
+            : { anyOf: labels.map((l) => ({ const: numeric.includes(l) ? Number(l) : l })) };
+      return withDescription(
+        {
+          type: "object",
+          properties: {
+            choice,
+            probabilities: { type: "object", properties: perLabel, required: labels, additionalProperties: false },
+            confidence: UNIT,
+          },
+          required: ["choice", "probabilities"],
+          additionalProperties: false,
+          "x-nola-decision":
+            numeric.length > 0 ? { kind: "choice", criteria: n.criteria, numeric } : { kind: "choice", criteria: n.criteria },
+        },
+        t._description,
+      );
+    }
+    case "scale": {
+      const count = n.levels.length;
+      return withDescription(
+        {
+          type: "object",
+          properties: {
+            score: { type: "number", minimum: 0, maximum: count - 1 },
+            probabilities: { type: "array", items: UNIT, minItems: count, maxItems: count },
+            levels: {
+              type: "array",
+              prefixItems: n.levels.map((l) => ({ const: l })),
+              items: false,
+              minItems: count,
+              maxItems: count,
+            },
+            confidence: UNIT,
+          },
+          required: ["score", "probabilities"],
+          additionalProperties: false,
+          "x-nola-decision": { kind: "scale", levels: n.levels },
+        },
+        t._description,
+      );
+    }
     case "unsupported":
       throw new NolaSchemaError(
         `NOLA3009: this type cannot be used in an intent schema: ${n.reason}`,
@@ -537,6 +632,23 @@ export const inferTypes = {
   },
   union(members: InferType<unknown>[]): TypeCarrier<unknown> {
     return new TypeCarrier({ kind: "union", members: members.map(asCarrier) });
+  },
+  choice(
+    criteria: Record<string, string | null>,
+    options?: { readonly numeric?: readonly string[] },
+  ): TypeCarrier<Record<string, unknown>> {
+    const numeric = options?.numeric ?? [];
+    return new TypeCarrier(
+      numeric.length > 0
+        ? { kind: "choice", criteria: { ...criteria }, numeric: [...numeric] }
+        : { kind: "choice", criteria: { ...criteria } },
+    );
+  },
+  scale(levels: readonly string[]): TypeCarrier<Record<string, unknown>> {
+    return new TypeCarrier({ kind: "scale", levels: [...levels] });
+  },
+  prob(criteria?: { true: string; false: string }): TypeCarrier<number> {
+    return new TypeCarrier(criteria ? { kind: "prob", criteria: { ...criteria } } : { kind: "prob" });
   },
   ref<T = unknown>(name: string, resolve: () => InferType<T> | (() => InferType<T>)): TypeCarrier<T> {
     return new TypeCarrier({ kind: "ref", name, resolve: resolve as RefResolver });

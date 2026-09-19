@@ -99,10 +99,17 @@ export function createLoweredProgram(
       ? ts.createSourceFile(f, virtual.get(norm(f)) as string, lang)
       : defaultGetSourceFile(f, lang, onError, shouldCreate);
 
+  // realpath is load-bearing: without it TypeScript resolves a package's OWN
+  // imports from the symlink path, so under a linked or pnpm-style install
+  // `@nola-lang/core` is not found next to the runtime's link and `Askable`
+  // becomes an error type — every ask silently types as `unknown`.
   const defaultResolve = (specifier: string, containing: string) =>
     ts.resolveModuleName(specifier, containing, options, {
       fileExists: host.fileExists,
       readFile: (f) => host.readFile(f) ?? undefined,
+      directoryExists: host.directoryExists?.bind(host),
+      realpath: host.realpath?.bind(host),
+      getCurrentDirectory: host.getCurrentDirectory.bind(host),
     }).resolvedModule;
   host.resolveModuleNameLiterals = (literals, containingFile) =>
     literals.map((lit) => {

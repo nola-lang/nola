@@ -18,5 +18,5 @@ export type Draft = Partial<Refund>;
 export type Counts = Record<string, number>;
 
 export infer function classify(.message: string) {
-  return ask ..`the payment event described in the message`<PaymentEvent>;
+  return ask `the payment event described in the message`<PaymentEvent>;
 }

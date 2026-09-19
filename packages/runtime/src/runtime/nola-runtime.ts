@@ -5,6 +5,7 @@ import { type ResolvedNolaConfig, resolveNolaConfig } from "../config.js";
 import { FileInferContext, SystemInferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
 import type { InvocationContext } from "../intents/invocation/invocation-context.js";
+import type { ModuleContext } from "../intents/invocation/module-context.js";
 // call-time-only cycle with terminal-trace.ts (via ingest-envelope.ts): both directions resolve inside function bodies.
 import { terminalTrace } from "../terminal-trace.js";
 import { Frame } from "./frame.js";
@@ -109,7 +110,7 @@ export class NolaRuntime {
     return provider;
   }
 
-  openFrame(inferContext: InvocationContext, options: IntentOptions): Frame {
+  openFrame(inferContext: InvocationContext | ModuleContext, options: IntentOptions): Frame {
     // TODO: add tracking of opened frames 
     return Frame.open(inferContext, options);
   }

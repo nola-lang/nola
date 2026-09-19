@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,22 +11,32 @@ const tmp = () => mkdtemp(join(tmpdir(), "nola-agents-"));
 const LEGACY = "node_modules/nola-lang/skills/nola";
 const SKILL_DIRS = [".claude/skills/nola", ".agents/skills/nola"] as const;
 const REFERENCES = ["syntax.md", "patterns.md", "config.md", "pitfalls.md"] as const;
+/** What `wrote` lists for the Claude Code link. */
+const CLAUDE_LINK = ".claude/skills/nola → .agents/skills/nola";
+const claudeDir = (dir: string) => join(dir, ".claude", "skills", "nola");
 
 describe("writeAgentSkills", () => {
-  it("claude + universal write the canonical directory twice — .claude/skills and .agents/skills", async () => {
+  it("claude + universal: .agents/skills holds the content and .claude/skills/nola is a relative link to it", async () => {
     const dir = await tmp();
     const version = await ownVersion();
     const result = await writeAgentSkills(dir, ["claude", "universal"]);
 
+    // the universal directory is the one real copy…
+    expect(result.wrote).toContain(".agents/skills/nola/SKILL.md");
+    expect((await lstat(join(dir, ".agents", "skills", "nola"))).isDirectory()).toBe(true);
+    // …and Claude Code reads it through a link whose target is relative, so the project can move
+    expect(result.wrote).toContain(CLAUDE_LINK);
+    expect(result.wrote.some((p) => p.startsWith(".claude/skills/nola/"))).toBe(false);
+    expect((await lstat(claudeDir(dir))).isSymbolicLink()).toBe(true);
+    expect((await readlink(claudeDir(dir))).replaceAll("\\", "/")).toBe("../../.agents/skills/nola");
+
     for (const base of SKILL_DIRS) {
-      expect(result.wrote).toContain(`${base}/SKILL.md`);
       const skill = await readFile(join(dir, ...base.split("/"), "SKILL.md"), "utf8");
       expect(skill).toMatch(/^---\n/);
       expect(skill).toMatch(/^name: nola$/m);
       expect(skill).toContain(`<!-- nola-skill v${version}`);
       expect(skill).not.toContain(LEGACY);
       for (const ref of REFERENCES) {
-        expect(result.wrote).toContain(`${base}/references/${ref}`);
         const copied = join(dir, ...base.split("/"), "references", ref);
         expect((await readFile(copied, "utf8")).length, `${base}/${ref} is real content`).toBeGreaterThan(1500);
       }
@@ -39,10 +49,11 @@ describe("writeAgentSkills", () => {
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
   });
 
-  it("claude alone writes only .claude/skills; universal alone only .agents/skills", async () => {
+  it("claude alone writes a real .claude/skills copy (nothing to link to); universal alone only .agents/skills", async () => {
     const a = await tmp();
     const claude = await writeAgentSkills(a, ["claude"]);
     expect(claude.wrote.every((p) => p.startsWith(".claude/skills/nola/"))).toBe(true);
+    expect((await lstat(claudeDir(a))).isDirectory()).toBe(true);
     expect(existsSync(join(a, ".agents"))).toBe(false);
     const b = await tmp();
     const universal = await writeAgentSkills(b, ["universal"]);
@@ -83,7 +94,64 @@ describe("writeAgentSkills", () => {
     expect(again.stale).toBe(false);
     const notes = again.skipped.join("\n");
     expect(notes).toContain(".agents/skills/nola/SKILL.md is up to date");
-    expect(notes).toContain(".claude/skills/nola/SKILL.md is up to date");
+    expect(notes).toContain(".claude/skills/nola is a link to .agents/skills/nola — up to date");
+    expect((await lstat(claudeDir(dir))).isSymbolicLink()).toBe(true);
+  });
+
+  it("a claude-only copy at the current version is reported as a copy; --force turns it into the link", async () => {
+    const dir = await tmp();
+    const version = await ownVersion();
+    await writeAgentSkills(dir, ["claude"]);
+    const held = await writeAgentSkills(dir, ["claude", "universal"]);
+    expect(held.wrote).toContain(".agents/skills/nola/SKILL.md");
+    expect(held.wrote).not.toContain(CLAUDE_LINK);
+    expect(held.stale).toBe(true);
+    expect(held.skipped.join("\n")).toContain(
+      `.claude/skills/nola is a copy (v${version}) — re-run with --force to replace it with a link to .agents/skills/nola`,
+    );
+    expect((await lstat(claudeDir(dir))).isDirectory()).toBe(true);
+
+    const forced = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
+    expect(forced.wrote).toEqual([CLAUDE_LINK]);
+    expect((await lstat(claudeDir(dir))).isSymbolicLink()).toBe(true);
+    expect(await readFile(join(claudeDir(dir), "SKILL.md"), "utf8")).toContain(`<!-- nola-skill v${version}`);
+  });
+
+  it("a checkout without symlink support leaves the link as a plain file holding its target — repaired into a link", async () => {
+    const dir = await tmp();
+    await writeAgentSkills(dir, ["universal"]);
+    await mkdir(join(dir, ".claude", "skills"), { recursive: true });
+    await writeFile(claudeDir(dir), "../../.agents/skills/nola");
+    const result = await writeAgentSkills(dir, ["claude", "universal"]);
+    expect(result.wrote).toEqual([CLAUDE_LINK]);
+    expect((await lstat(claudeDir(dir))).isSymbolicLink()).toBe(true);
+    // a plain file that is not our link text is the user's — left alone
+    const other = await tmp();
+    await writeAgentSkills(other, ["universal"]);
+    await mkdir(join(other, ".claude", "skills"), { recursive: true });
+    await writeFile(claudeDir(other), "mine");
+    const kept = await writeAgentSkills(other, ["claude", "universal"], { force: true });
+    expect(kept.wrote).toEqual([]);
+    expect(await readFile(claudeDir(other), "utf8")).toBe("mine");
+    expect(kept.skipped.join("\n")).toContain(".claude/skills/nola already exists and was not generated by nola");
+  });
+
+  it("a link that points somewhere else is the user's; a dangling one is replaced", async () => {
+    const dir = await tmp();
+    await mkdir(join(dir, "elsewhere"), { recursive: true });
+    await mkdir(join(dir, ".claude", "skills"), { recursive: true });
+    await symlink(join("..", "..", "elsewhere"), claudeDir(dir), "dir");
+    const kept = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
+    expect(kept.wrote).not.toContain(CLAUDE_LINK);
+    expect((await readlink(claudeDir(dir))).replaceAll("\\", "/")).toBe("../../elsewhere");
+    expect(kept.skipped.join("\n")).toContain(".claude/skills/nola already exists and was not generated by nola");
+
+    const dangling = await tmp();
+    await mkdir(join(dangling, ".claude", "skills"), { recursive: true });
+    await symlink(join("..", "..", "gone"), claudeDir(dangling), "dir");
+    const fixed = await writeAgentSkills(dangling, ["claude", "universal"]);
+    expect(fixed.wrote).toContain(CLAUDE_LINK);
+    expect((await readlink(claudeDir(dangling))).replaceAll("\\", "/")).toBe("../../.agents/skills/nola");
   });
 
   it("each copy is classified on its own — a project with only the old Claude copy gains .agents/", async () => {
@@ -102,9 +170,10 @@ describe("writeAgentSkills", () => {
     expect(await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8")).toBe(old);
 
     const forced = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
-    expect(forced.wrote).toContain(".claude/skills/nola/SKILL.md");
+    expect(forced.wrote).toContain(CLAUDE_LINK);
     expect(forced.wrote).not.toContain(".agents/skills/nola/SKILL.md");
     expect(await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8")).not.toBe(old);
+    expect((await lstat(claudeDir(dir))).isSymbolicLink()).toBe(true);
   });
 
   it("never overwrites an unstamped skill copy, even with force", async () => {
@@ -114,7 +183,9 @@ describe("writeAgentSkills", () => {
     const result = await writeAgentSkills(dir, ["claude", "universal"], { force: true });
     expect(await readFile(join(dir, ".agents", "skills", "nola", "SKILL.md"), "utf8")).toBe("# mine\n");
     expect(result.wrote).not.toContain(".agents/skills/nola/SKILL.md");
-    expect(result.wrote).toContain(".claude/skills/nola/SKILL.md");
+    // Claude Code is linked to whatever .agents/skills/nola holds — the user's copy is the one source
+    expect(result.wrote).toContain(CLAUDE_LINK);
+    expect(await readFile(join(dir, ".claude", "skills", "nola", "SKILL.md"), "utf8")).toBe("# mine\n");
     expect(result.skipped.join("\n")).toContain(".agents/skills/nola/SKILL.md already exists and was not generated by nola");
   });
 

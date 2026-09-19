@@ -22,6 +22,23 @@ function kindOf(v: unknown): string {
   return typeof v;
 }
 
+/** Distributions must sum to 1 within this (Effect's DecisionModel uses the same figure). */
+const SUM_TOLERANCE = 1e-6;
+
+function unit(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+}
+
+function checkConfidence(obj: Record<string, unknown>, path: Path, issues: ValidationIssue[]): void {
+  if ("confidence" in obj && obj.confidence !== undefined && !unit(obj.confidence)) {
+    fail(
+      issues,
+      { key: "confidence", up: path },
+      `expected a number between 0 and 1, got ${JSON.stringify(obj.confidence)}`,
+    );
+  }
+}
+
 /**
  * The ask-path validator (spec §5.2): ONE walk over the carrier that
  * type-checks every node, collects every issue, and builds the revived value
@@ -201,6 +218,104 @@ function check(t: TypeCarrier<unknown>, value: unknown, path: Path, issues: Vali
       }
       fail(issues, path, `expected ${t.toTypeText()}, got ${kindOf(value)}`);
       return value;
+    }
+    case "prob": {
+      if (typeof value !== "number") {
+        fail(issues, path, `expected a probability number, got ${kindOf(value)}`);
+        return value;
+      }
+      if (!unit(value)) fail(issues, path, `expected a number between 0 and 1, got ${value}`);
+      return value;
+    }
+    case "choice": {
+      if (kindOf(value) !== "object") {
+        fail(issues, path, `expected a Choice answer object, got ${kindOf(value)}`);
+        return value;
+      }
+      const obj = value as Record<string, unknown>;
+      const labels = Object.keys(n.criteria);
+      const numeric = n.numeric ?? [];
+      // each label is answered in its own kind: the number for a numeric label, the text otherwise
+      const asNumber = typeof obj.choice === "number";
+      const text = asNumber ? String(obj.choice) : typeof obj.choice === "string" ? obj.choice : undefined;
+      if (text === undefined || !labels.includes(text) || numeric.includes(text) !== asNumber) {
+        const shown = labels.map((l) => (numeric.includes(l) ? l : JSON.stringify(l))).join(", ");
+        fail(issues, { key: "choice", up: path }, `expected one of ${shown}, got ${JSON.stringify(obj.choice)}`);
+      }
+      const probs = obj.probabilities;
+      const probsPath: Path = { key: "probabilities", up: path };
+      if (kindOf(probs) !== "object") {
+        fail(issues, probsPath, `expected an object of probabilities, got ${kindOf(probs)}`);
+      } else {
+        const p = probs as Record<string, unknown>;
+        let sum = 0;
+        let complete = true;
+        for (const label of labels) {
+          if (!unit(p[label])) {
+            complete = false;
+            fail(issues, { key: label, up: probsPath }, `missing probability for label ${JSON.stringify(label)}`);
+          } else sum += p[label] as number;
+        }
+        for (const key of Object.keys(p)) {
+          if (!labels.includes(key)) fail(issues, { key, up: probsPath }, `unknown label ${JSON.stringify(key)}`);
+        }
+        if (complete && Math.abs(sum - 1) > SUM_TOLERANCE) {
+          fail(issues, probsPath, `expected probabilities to sum to 1, got ${Number(sum.toFixed(6))}`);
+        }
+      }
+      checkConfidence(obj, path, issues);
+      for (const key of Object.keys(obj)) {
+        if (key !== "choice" && key !== "probabilities" && key !== "confidence") {
+          fail(issues, path, `unknown property '${key}'`);
+        }
+      }
+      return value;
+    }
+    case "scale": {
+      if (kindOf(value) !== "object") {
+        fail(issues, path, `expected a Scale answer object, got ${kindOf(value)}`);
+        return value;
+      }
+      const obj = value as Record<string, unknown>;
+      const top = n.levels.length - 1;
+      if (typeof obj.score !== "number" || !Number.isFinite(obj.score)) {
+        fail(issues, { key: "score", up: path }, `expected finite number, got ${kindOf(obj.score)}`);
+      } else if (obj.score < 0 || obj.score > top) {
+        fail(issues, { key: "score", up: path }, `expected a number between 0 and ${top}, got ${obj.score}`);
+      }
+      const probs = obj.probabilities;
+      const probsPath: Path = { key: "probabilities", up: path };
+      if (!Array.isArray(probs)) {
+        fail(issues, probsPath, `expected an array of probabilities, got ${kindOf(probs)}`);
+      } else if (probs.length !== n.levels.length) {
+        fail(issues, probsPath, `expected ${n.levels.length} probabilities, got ${probs.length}`);
+      } else {
+        let sum = 0;
+        let complete = true;
+        for (let i = 0; i < probs.length; i++) {
+          if (!unit(probs[i])) {
+            complete = false;
+            fail(issues, { key: i, up: probsPath }, `expected a number between 0 and 1, got ${JSON.stringify(probs[i])}`);
+          } else sum += probs[i] as number;
+        }
+        if (complete && Math.abs(sum - 1) > SUM_TOLERANCE) {
+          fail(issues, probsPath, `expected probabilities to sum to 1, got ${Number(sum.toFixed(6))}`);
+        }
+      }
+      if ("levels" in obj && obj.levels !== undefined) {
+        const given = obj.levels;
+        const same =
+          Array.isArray(given) && given.length === n.levels.length && given.every((l, i) => l === n.levels[i]);
+        if (!same) {
+          fail(issues, { key: "levels", up: path }, `expected the levels [${n.levels.map((l) => JSON.stringify(l)).join(", ")}]`);
+        }
+      }
+      checkConfidence(obj, path, issues);
+      for (const key of Object.keys(obj)) {
+        if (!["score", "probabilities", "levels", "confidence"].includes(key)) fail(issues, path, `unknown property '${key}'`);
+      }
+      // the runtime owns `levels`: the answer always carries the type's levels
+      return { ...obj, levels: [...n.levels] };
     }
   }
 }

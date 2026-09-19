@@ -1,23 +1,29 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { checkoutRoot } from "../src/checkout.js";
 import { CREDENTIALS_FILE } from "../src/credentials.js";
 import {
-  AGENTS_QUESTION,
-  EDITOR_QUESTION,
+  BACK,
+  EXAMPLE_QUESTION,
+  exampleMenu,
+  INSTALL_OPEN_QUESTION,
+  INSTALL_QUESTION,
   lastOutputLine,
+  MORE_EXAMPLES,
   NAME_QUESTION,
   nolaHint,
   PROVIDER_QUESTION,
   type Prompter,
   type PrompterOption,
+  providerOptions,
   resolveScaffoldOptions,
   runFlow,
-  SETUP_LIST_QUESTION,
   SETUP_QUESTION,
+  TEMPLATE_QUESTION,
+  templateMenu,
 } from "../src/flow.js";
 import { HOME_CONFIG_FILE } from "../src/home-config.js";
 
@@ -99,7 +105,7 @@ function recording(p: Prompter): string[] {
 
 describe("resolveScaffoldOptions", () => {
   it("prompts name then template when nothing is given", async () => {
-    const p = scripted({ text: ["my-proj"], select: ["empty"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ text: ["my-proj"], select: ["empty"] });
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd: await tmp() }, p);
     expect(out).toEqual({
       kind: "scaffold",
@@ -107,22 +113,22 @@ describe("resolveScaffoldOptions", () => {
       template: "empty",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
   it("skips the name prompt when dir is given, the template prompt when --template is given", async () => {
-    const p = scripted({ groupMultiselect: [[]] , confirm: [true] });
-    const out = await resolveScaffoldOptions({ dir: "given-dir", template: "starter", interactive: true, provider: "none" }, p);
+    const p = scripted({});
+    const out = await resolveScaffoldOptions({ dir: "given-dir", template: "typescript-interop", interactive: true, provider: "none" }, p);
     expect(out).toEqual({
       kind: "scaffold",
       dir: "given-dir",
-      template: "starter",
+      template: "typescript-interop",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
@@ -131,16 +137,16 @@ describe("resolveScaffoldOptions", () => {
     expect(out).toEqual({
       kind: "scaffold",
       dir: "nola-app",
-      template: "starter",
+      template: "feature-extraction",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
   it("empty name answer falls back to the default", async () => {
-    const p = scripted({ text: ["   "], select: ["starter"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ text: ["   "], select: ["typescript-interop"] });
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd: await tmp() }, p);
     expect(out).toMatchObject({ kind: "scaffold", dir: "nola-app" });
   });
@@ -152,12 +158,12 @@ describe("resolveScaffoldOptions", () => {
 
   it("rejects an unknown --template non-interactively, listing valid names", async () => {
     await expect(resolveScaffoldOptions({ dir: "d", template: "nope", interactive: false }, scripted({}))).rejects.toThrow(
-      /unknown template "nope".*starter/,
+      /unknown template "nope".*typescript-interop/,
     );
   });
 
   it("falls back to the menu on an unknown --template interactively", async () => {
-    const p = scripted({ select: ["classify-message"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: [MORE_EXAMPLES, "classify-message"] });
     const out = await resolveScaffoldOptions({ dir: "d", template: "nope", interactive: true, provider: "none" }, p);
     expect(out).toMatchObject({ kind: "scaffold", template: "classify-message" });
     expect(p.notes.join("\n")).toContain('Unknown template "nope"');
@@ -166,7 +172,7 @@ describe("resolveScaffoldOptions", () => {
   it("non-empty target: declining the remove-confirm cancels", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "keep.txt"), "x");
-    const out = await resolveScaffoldOptions({ dir, template: "starter", interactive: true, provider: "none" }, scripted({ confirm: [false] }));
+    const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, scripted({ confirm: [false] }));
     expect(out).toEqual({ kind: "cancelled" });
   });
 
@@ -174,8 +180,8 @@ describe("resolveScaffoldOptions", () => {
     const dir = await tmp();
     await writeFile(join(dir, "old.txt"), "x");
     const out = await resolveScaffoldOptions(
-      { dir, template: "starter", interactive: true, provider: "none" },
-      scripted({ confirm: [true, true], groupMultiselect: [[]] }),
+      { dir, template: "typescript-interop", interactive: true, provider: "none" },
+      scripted({ confirm: [true] }),
     );
     expect(out).toMatchObject({ kind: "scaffold", dir, force: true });
   });
@@ -197,7 +203,7 @@ describe("runFlow", () => {
 
   it("drives the full interactive path through the scripted prompter (example from the dev checkout)", async () => {
     const dir = join(await tmp(), "resume-app");
-    const p = scripted({ select: ["extract-resume"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: ["extract-resume"] });
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p });
     expect(code).toBe(0);
     const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
@@ -222,35 +228,35 @@ describe("runFlow", () => {
 describe("resolveScaffoldOptions — add mode", () => {
   it("--add resolves straight to the add outcome (default dir '.')", async () => {
     const out = await resolveScaffoldOptions({ add: true, interactive: false }, scripted({}));
-    expect(out).toEqual({ kind: "add", dir: ".", provider: "none", ide: "none", agents: [] });
+    expect(out).toEqual({ kind: "add", dir: ".", provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("--add keeps an explicit dir", async () => {
     const out = await resolveScaffoldOptions(
       { add: true, dir: "proj", interactive: true, provider: "none" },
-      scripted({ groupMultiselect: [[]] , confirm: [true] }),
+      scripted({}),
     );
-    expect(out).toEqual({ kind: "add", dir: "proj", provider: "none", ide: "none", agents: [] });
+    expect(out).toEqual({ kind: "add", dir: "proj", provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("--add with --template is contradictory", async () => {
     await expect(
-      resolveScaffoldOptions({ add: true, template: "starter", interactive: false }, scripted({})),
+      resolveScaffoldOptions({ add: true, template: "typescript-interop", interactive: false }, scripted({})),
     ).rejects.toThrow(/--add and --template/);
   });
 
   it("bare interactive run detects the cwd package.json and offers add", async () => {
     const cwd = await tmp();
     await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
-    const p = scripted({ select: ["add"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: ["add"] });
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
-    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "none", agents: [] });
+    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("detection: choosing new project continues into the normal flow", async () => {
     const cwd = await tmp();
     await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
-    const p = scripted({ select: ["new", "empty"], text: ["fresh-app"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: ["new", "empty"], text: ["fresh-app"] });
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
     expect(out).toEqual({
       kind: "scaffold",
@@ -258,17 +264,17 @@ describe("resolveScaffoldOptions — add mode", () => {
       template: "empty",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
   it("a dir argument bypasses detection", async () => {
     const cwd = await tmp();
     await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
-    const p = scripted({ select: ["starter"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: ["typescript-interop"] });
     const out = await resolveScaffoldOptions({ dir: "sub", interactive: true, provider: "none", cwd }, p);
-    expect(out).toMatchObject({ kind: "scaffold", dir: "sub", template: "starter" });
+    expect(out).toMatchObject({ kind: "scaffold", dir: "sub", template: "typescript-interop" });
   });
 
   it("non-interactive bare run never detects (stays deterministic)", async () => {
@@ -278,94 +284,89 @@ describe("resolveScaffoldOptions — add mode", () => {
     expect(out).toEqual({
       kind: "scaffold",
       dir: "nola-app",
-      template: "starter",
+      template: "feature-extraction",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
   it("non-empty target WITH package.json offers add", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "package.json"), '{"name":"existing"}');
-    const p = scripted({ select: ["add"], groupMultiselect: [[]] , confirm: [true] });
-    const out = await resolveScaffoldOptions({ dir, template: "starter", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "none", agents: [] });
+    const p = scripted({ select: ["add"] });
+    const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
+    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("non-empty target WITH package.json can still scaffold fresh", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "package.json"), '{"name":"existing"}');
-    const p = scripted({ select: ["fresh"], groupMultiselect: [[]] , confirm: [true] });
-    const out = await resolveScaffoldOptions({ dir, template: "starter", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "scaffold", dir, template: "starter", force: true, provider: "none", ide: "none", agents: [] });
+    const p = scripted({ select: ["fresh"] });
+    const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
+    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("non-empty target WITHOUT package.json keeps the remove-confirm", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "keep.txt"), "x");
-    const p = scripted({ confirm: [true, true], groupMultiselect: [[]] });
-    const out = await resolveScaffoldOptions({ dir, template: "starter", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "scaffold", dir, template: "starter", force: true, provider: "none", ide: "none", agents: [] });
+    const p = scripted({ confirm: [true] });
+    const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
+    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 });
 
-describe("resolveScaffoldOptions — editor step", () => {
-  it("choosing VS Code carries ide through the scaffold outcome", async () => {
-    const p = scripted({ select: ["starter"], groupMultiselect: [["vscode"]] , confirm: [true] });
+describe("resolveScaffoldOptions — the setup step is retired (editor + agents are defaults)", () => {
+  it("asks nothing after the template: VS Code and both skill copies are the answer", async () => {
+    const p = scripted({ select: ["typescript-interop"] });
+    const asked = recording(p);
     const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
     expect(out).toEqual({
       kind: "scaffold",
       dir: "d",
-      template: "starter",
+      template: "typescript-interop",
       force: false,
       provider: "none",
       ide: "vscode",
-      agents: [],
+      agents: ["claude", "universal"],
     });
+    expect(asked).toEqual([TEMPLATE_QUESTION]);
+    expect(asked.join("\n")).not.toContain(SETUP_QUESTION);
   });
 
-  it("the add path asks the setup question too", async () => {
+  it("the add path gets the same defaults without a question", async () => {
     const cwd = await tmp();
     await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
-    const p = scripted({ select: ["add"], groupMultiselect: [["vscode"]] , confirm: [true] });
+    const p = scripted({ select: ["add"] });
+    const asked = recording(p);
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
-    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: [] });
+    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(asked).toHaveLength(1);
   });
 
-  it("--ide vscode drops the editor group; only the agents half is asked", async () => {
-    const p = scripted({ select: ["starter"], groupMultiselect: [[]] , confirm: [true] });
-    const asked: string[] = [];
-    const inner = p.groupMultiselect;
-    p.groupMultiselect = (m, groups, initial) => {
-      asked.push(`${m}|${groups.map((g) => g.label).join("+")}|${initial.join(",")}`);
-      return inner(m, groups, initial);
-    };
-    const confirm = p.confirm;
-    p.confirm = (m, i) => {
-      asked.push(`${m}|${i}`);
-      return confirm(m, i);
-    };
-    const out = await resolveScaffoldOptions({ dir: "d", ide: "vscode", interactive: true, provider: "none" }, p);
+  it("--ide none opts out of the editor; the agents default stays", async () => {
+    const out = await resolveScaffoldOptions(
+      { dir: "d", template: "typescript-interop", ide: "none", interactive: true, provider: "none" },
+      scripted({}),
+    );
     expect(out).toEqual({
       kind: "scaffold",
       dir: "d",
-      template: "starter",
+      template: "typescript-interop",
       force: false,
       provider: "none",
-      ide: "vscode",
-      agents: [],
+      ide: "none",
+      agents: ["claude", "universal"],
     });
-    expect(asked).toEqual([`${AGENTS_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Coding agents|claude,universal`]);
   });
 
-  it("--ide none answers the editor half; the agents half is still asked", async () => {
+  it("--ide vscode is the default spelled out", async () => {
     const out = await resolveScaffoldOptions(
-      { dir: "d", template: "starter", ide: "none", interactive: true, provider: "none" },
-      scripted({ groupMultiselect: [[]] , confirm: [true] }),
+      { dir: "d", template: "typescript-interop", ide: "vscode", interactive: true, provider: "none" },
+      scripted({}),
     );
-    expect(out).toEqual({ kind: "scaffold", dir: "d", template: "starter", force: false, provider: "none", ide: "none", agents: [] });
+    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["claude", "universal"] });
   });
 
   it("rejects an invalid --ide listing valid values", async () => {
@@ -374,10 +375,9 @@ describe("resolveScaffoldOptions — editor step", () => {
     ).rejects.toThrow(/invalid --ide "emacs".*vscode.*none/);
   });
 
-  it("cancelling the setup gate cancels the flow", async () => {
-    const p = scripted({ select: ["starter"] }); // the gate's confirm consumes past the queue -> null
-    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "cancelled" });
+  it("non-interactive runs get the same defaults as interactive ones", async () => {
+    const out = await resolveScaffoldOptions({ interactive: false }, scripted({}));
+    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["claude", "universal"] });
   });
 });
 
@@ -390,6 +390,19 @@ describe("runFlow — editor step", () => {
     expect(existsSync(join(dir, ".vscode", "extensions.json"))).toBe(true);
     // the entry file greets the user with the VS Code next steps the launch config enables
     const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    expect(main).toContain("F5");
+    expect(main).not.toContain("__NEXT_STEPS__");
+  });
+
+  it("feature-extraction's launch config runs src/main.tsi, and that file carries the next steps", async () => {
+    const dir = join(await tmp(), "app");
+    const code = await runFlow({ dir, ide: "vscode" }, { interactive: false, prompter: scripted({}) });
+    expect(code).toBe(0);
+    const launch = JSON.parse(await readFile(join(dir, ".vscode", "launch.json"), "utf8"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code variable syntax
+    expect(launch.configurations[0].program).toBe("${workspaceFolder}/src/main.tsi");
+    expect(existsSync(join(dir, "src", "main.ts"))).toBe(false);
+    const main = await readFile(join(dir, "src", "main.tsi"), "utf8");
     expect(main).toContain("F5");
     expect(main).not.toContain("__NEXT_STEPS__");
   });
@@ -407,20 +420,36 @@ describe("runFlow — editor step", () => {
     expect(p.notes.join("\n")).toContain(".vscode/launch.json already exists");
   });
 
-  it("non-interactive without --ide writes no .vscode (unchanged default)", async () => {
+  it("without --ide the .vscode files are written — the editor setup is the default, non-interactively too", async () => {
     const dir = join(await tmp(), "app");
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: scripted({}) });
+    expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
+    expect(existsSync(join(dir, ".vscode", "extensions.json"))).toBe(true);
+    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    expect(main).toContain("F5");
+  });
+
+  it("--ide none writes no .vscode, and the entry file's next steps are editor-neutral", async () => {
+    const dir = join(await tmp(), "app");
+    await runFlow({ dir, template: "empty", ide: "none" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, ".vscode"))).toBe(false);
+    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    expect(main).not.toContain("F5");
+    expect(main).toContain("npm start");
   });
 });
 
 describe("runFlow — install + open VS Code step", () => {
   /** Records what the flow would have executed instead of spawning anything. */
-  function recordingLauncher(opts: { installExit?: number; code?: "opened" | "not-found"; output?: string[] } = {}) {
+  function recordingLauncher(
+    opts: { installExit?: number; code?: "opened" | "not-found" | "absent"; output?: string[] } = {},
+  ) {
     const calls: string[] = [];
     return {
       calls,
       launcher: {
+        // "absent" = `code` is not on PATH when the flow checks, BEFORE the question
+        hasVscode: () => opts.code !== "absent",
         install: async (pm: string, dir: string, onOutput: (chunk: string) => void) => {
           calls.push(`install:${pm}:${basename(dir)}`);
           for (const chunk of opts.output ?? ["\nadded 12 packages in 3s\n"]) onOutput(chunk);
@@ -436,10 +465,12 @@ describe("runFlow — install + open VS Code step", () => {
 
   it("asks after the scaffold when VS Code was chosen; yes installs then opens, in the project dir", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
+    const asked = recording(p);
     const { calls, launcher } = recordingLauncher();
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, packageManager: "pnpm" });
     expect(code).toBe(0);
+    expect(asked.at(-1)).toBe(`${INSTALL_OPEN_QUESTION}|true`);
     expect(calls).toEqual(["install:pnpm:app", "code:app:src/main.ts"]);
     // the install runs under a spinner: title, the latest output line, then the success line
     expect(p.notes).toContain("progress: Installing dependencies (pnpm install)");
@@ -452,9 +483,30 @@ describe("runFlow — install + open VS Code step", () => {
     expect(outro).toContain("pnpm start");
   });
 
+  it("opens VS Code on src/main.tsi for function-calling too (its entry is the .tsi)", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({ select: ["function-calling"], confirm: [true] });
+    const { calls, launcher } = recordingLauncher();
+    const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, packageManager: "npm" });
+    expect(code).toBe(0);
+    expect(calls).toEqual(["install:npm:app", "code:app:src/main.tsi"]);
+    const launch = JSON.parse(await readFile(join(dir, ".vscode", "launch.json"), "utf8"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code variable syntax
+    expect(launch.configurations[0].program).toBe("${workspaceFolder}/src/main.tsi");
+  });
+
+  it("opens VS Code on src/main.tsi for feature-extraction", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({ select: ["feature-extraction"], confirm: [true] });
+    const { calls, launcher } = recordingLauncher();
+    const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, packageManager: "npm" });
+    expect(code).toBe(0);
+    expect(calls).toEqual(["install:npm:app", "code:app:src/main.tsi"]);
+  });
+
   it("with NOLA_LINK_CHECKOUT set, a successful install is relinked to that checkout's packages and the outro says so", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
     const { launcher } = recordingLauncher();
     const workspace = (await checkoutRoot()) as string;
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, linkCheckout: workspace });
@@ -466,11 +518,16 @@ describe("runFlow — install + open VS Code step", () => {
     const notes = p.notes.join("\n");
     expect(notes).toContain("NOLA_LINK_CHECKOUT: linked @nola-lang/runtime, @nola-lang/providers, nola-lang");
     expect(notes).toContain("npm install");
+    // The linked runtime lives in packages/*/dist, outside node_modules, so the
+    // launch config must blackbox it or F10 over the first ask runs to the end.
+    const launch = JSON.parse(await readFile(join(dir, ".vscode", "launch.json"), "utf8"));
+    expect(launch.configurations[0].skipFiles).toContain("**/packages/*/dist/**");
+    expect(notes).toContain("**/packages/*/dist/**");
   });
 
   it("the env variable is read when the option is absent", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
     const { launcher } = recordingLauncher();
     const workspace = (await checkoutRoot()) as string;
     const prev = process.env.NOLA_LINK_CHECKOUT;
@@ -486,7 +543,7 @@ describe("runFlow — install + open VS Code step", () => {
 
   it("without NOLA_LINK_CHECKOUT nothing is linked, even inside the checkout", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
     const { launcher } = recordingLauncher();
     await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, linkCheckout: null });
     expect(existsSync(join(dir, "node_modules", "nola-lang"))).toBe(false);
@@ -495,7 +552,7 @@ describe("runFlow — install + open VS Code step", () => {
 
   it("no leaves everything to the user (nothing runs, install stays in Next steps)", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, false] });
+    const p = scripted({ select: ["empty"], confirm: [false] });
     const { calls, launcher } = recordingLauncher();
     await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
     expect(calls).toEqual([]);
@@ -504,7 +561,7 @@ describe("runFlow — install + open VS Code step", () => {
 
   it("Ctrl+C at that prompt is a no, not a flow cancel — the project is already written", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, null] });
+    const p = scripted({ select: ["empty"], confirm: [null] });
     const { calls, launcher } = recordingLauncher();
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
     expect(code).toBe(0);
@@ -513,12 +570,12 @@ describe("runFlow — install + open VS Code step", () => {
     expect(p.notes.join("\n")).not.toContain("Cancelled");
   });
 
-  it("is never asked when the editor choice is None", async () => {
+  it("is never asked under --ide none", async () => {
     const dir = join(await tmp(), "app");
     // no confirm answers queued: being asked would throw through the scripted prompter
-    const p = scripted({ select: ["empty"], groupMultiselect: [[]] , confirm: [true] });
+    const p = scripted({ select: ["empty"] });
     const { calls, launcher } = recordingLauncher();
-    await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
+    await runFlow({ dir, provider: "none", ide: "none" }, { interactive: true, prompter: p, launcher });
     expect(calls).toEqual([]);
   });
 
@@ -532,7 +589,7 @@ describe("runFlow — install + open VS Code step", () => {
   it("is never asked on the add path", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "package.json"), '{"name":"existing-api"}\n');
-    const p = scripted({ groupMultiselect: [["vscode"]] , confirm: [true] });
+    const p = scripted({});
     const { calls, launcher } = recordingLauncher();
     await runFlow({ dir, add: true, provider: "none" }, { interactive: true, prompter: p, launcher });
     expect(calls).toEqual([]);
@@ -540,7 +597,7 @@ describe("runFlow — install + open VS Code step", () => {
 
   it("a failing install is reported with the output tail, and VS Code still opens", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
     const { calls, launcher } = recordingLauncher({
       installExit: 1,
       output: ["npm ERR! code E404\n", "npm ERR! 404 Not Found - GET https://registry.npmjs.org/nope\n"],
@@ -563,9 +620,27 @@ describe("runFlow — install + open VS Code step", () => {
     expect(lastOutputLine(`${"x".repeat(100)}\n`)).toBe(`${"x".repeat(79)}…`);
   });
 
-  it("a missing `code` command is explained, not thrown", async () => {
+  it("without VS Code on PATH the question is just the install, and nothing is opened", async () => {
     const dir = join(await tmp(), "app");
-    const p = scripted({ select: ["empty"], groupMultiselect: [["vscode"]], confirm: [true, true] });
+    const p = scripted({ select: ["empty"], confirm: [true] });
+    const asked = recording(p);
+    const { calls, launcher } = recordingLauncher({ code: "absent" });
+    const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
+    expect(code).toBe(0);
+    expect(asked.at(-1)).toBe(`${INSTALL_QUESTION}|true`);
+    expect(INSTALL_QUESTION).not.toMatch(/VS Code/);
+    expect(calls).toEqual(["install:npm:app"]);
+    const notes = p.notes.join("\n");
+    expect(notes).toContain("progress done: Installed dependencies (npm install)");
+    // nothing to explain: the user was never promised an editor
+    expect(notes).not.toContain("`code` command");
+    // the .vscode files are still there for whenever VS Code arrives
+    expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
+  });
+
+  it("a `code` command that vanishes between the check and the open is explained, not thrown", async () => {
+    const dir = join(await tmp(), "app");
+    const p = scripted({ select: ["empty"], confirm: [true] });
     const { launcher } = recordingLauncher({ code: "not-found" });
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
     expect(code).toBe(0);
@@ -573,65 +648,32 @@ describe("runFlow — install + open VS Code step", () => {
   });
 });
 
-describe("resolveScaffoldOptions — agents step", () => {
-  it("carries the ticked agents out of the setup list (VS Code unticked = no editor)", async () => {
-    const p = scripted({ select: ["starter"], groupMultiselect: [["claude", "agents-md"]] , confirm: [true] });
-    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({
-      kind: "scaffold",
-      dir: "d",
-      template: "starter",
-      force: false,
-      provider: "none",
-      ide: "none",
-      agents: ["claude", "agents-md"],
-    });
-  });
-
-  it("the add path asks the agents question too", async () => {
-    const cwd = await tmp();
-    await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
-    const p = scripted({ select: ["add"], groupMultiselect: [["agents-md"]] , confirm: [true] });
-    const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
-    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "none", agents: ["agents-md"] });
-  });
-
-  it("--agents drops the agents group; only the editor half is asked (comma list)", async () => {
-    const p = scripted({ select: ["starter"], groupMultiselect: [["vscode"]] , confirm: [true] });
-    const asked: string[] = [];
-    const inner = p.groupMultiselect;
-    p.groupMultiselect = (m, groups, initial) => {
-      asked.push(`${m}|${groups.map((g) => g.label).join("+")}|${initial.join(",")}`);
-      return inner(m, groups, initial);
-    };
-    const out = await resolveScaffoldOptions({ dir: "d", agents: "universal", interactive: true, provider: "none" }, p);
-    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["universal"] });
-    expect(asked).toEqual([`${SETUP_LIST_QUESTION}|Editor|vscode`]);
-  });
-
-  it("--agents none plus --ide none: nothing is asked", async () => {
+describe("resolveScaffoldOptions — agents flags", () => {
+  it("--agents is carried verbatim (comma list), the editor default untouched", async () => {
     const out = await resolveScaffoldOptions(
-      { dir: "d", template: "starter", ide: "none", agents: "none", interactive: true, provider: "none" },
+      { dir: "d", template: "typescript-interop", agents: "claude,agents-md", interactive: true, provider: "none" },
       scripted({}),
     );
-    expect(out).toMatchObject({ kind: "scaffold", agents: [] });
+    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["claude", "agents-md"] });
+  });
+
+  it("--agents none opts out of the skill; --agents none plus --ide none opts out of both", async () => {
+    const some = await resolveScaffoldOptions(
+      { dir: "d", template: "typescript-interop", agents: "none", interactive: true, provider: "none" },
+      scripted({}),
+    );
+    expect(some).toMatchObject({ kind: "scaffold", ide: "vscode", agents: [] });
+    const none = await resolveScaffoldOptions(
+      { dir: "d", template: "typescript-interop", ide: "none", agents: "none", interactive: true, provider: "none" },
+      scripted({}),
+    );
+    expect(none).toMatchObject({ kind: "scaffold", ide: "none", agents: [] });
   });
 
   it("rejects an invalid --agents id listing valid values", async () => {
     await expect(
       resolveScaffoldOptions({ dir: "d", agents: "emacs", interactive: false }, scripted({})),
     ).rejects.toThrow(/invalid --agents "emacs".*claude, universal, agents-md/);
-  });
-
-  it("non-interactive default is none", async () => {
-    const out = await resolveScaffoldOptions({ interactive: false }, scripted({}));
-    expect(out).toMatchObject({ kind: "scaffold", agents: [] });
-  });
-
-  it("cancelling the setup list (after a yes at the gate) cancels the flow too", async () => {
-    const p = scripted({ select: ["starter"], confirm: [true] }); // group queue empty -> null
-    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "cancelled" });
   });
 });
 
@@ -645,6 +687,8 @@ describe("runFlow — agents step", () => {
     expect(code).toBe(0);
     expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, ".claude", "skills", "nola", "SKILL.md"))).toBe(true);
+    // one copy of the content: Claude Code reads it through a link
+    expect((await lstat(join(dir, ".claude", "skills", "nola"))).isSymbolicLink()).toBe(true);
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(dir, ".cursor"))).toBe(false);
   });
@@ -661,9 +705,18 @@ describe("runFlow — agents step", () => {
     expect(p.notes.join("\n")).toContain("AGENTS.md already exists");
   });
 
-  it("non-interactive without --agents writes no skill (unchanged default)", async () => {
+  it("without --agents both skill copies are written and AGENTS.md is not — the default, non-interactively too", async () => {
     const dir = join(await tmp(), "app");
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: scripted({}) });
+    expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+    expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
+    expect((await lstat(join(dir, ".claude", "skills", "nola"))).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(dir, ".claude", "skills", "nola", "references", "syntax.md"))).toBe(true);
+  });
+
+  it("--agents none writes no skill", async () => {
+    const dir = join(await tmp(), "app");
+    await runFlow({ dir, template: "empty", agents: "none" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(dir, ".agents"))).toBe(false);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
@@ -674,7 +727,7 @@ describe("runFlow — next steps follow the invoking package manager", () => {
   it("defaults to npm", async () => {
     const dir = join(await tmp(), "app");
     const p = scripted({});
-    await runFlow({ dir, template: "starter" }, { interactive: false, prompter: p });
+    await runFlow({ dir, template: "typescript-interop" }, { interactive: false, prompter: p });
     expect(p.notes.join("\n")).toContain("npm install\n  npm start");
   });
 
@@ -701,7 +754,7 @@ describe("runFlow — next steps follow the invoking package manager", () => {
   it("ends with the console suggestion — the start line and the console line share one comment column", async () => {
     const dir = join(await tmp(), "app");
     const p = scripted({});
-    await runFlow({ dir, template: "starter" }, { interactive: false, prompter: p });
+    await runFlow({ dir, template: "typescript-interop" }, { interactive: false, prompter: p });
     const outro = p.notes.at(-1) ?? "";
     expect(outro).toContain(
       "npm start              # runs offline — no API key needed\n  npx nola-lang console  # trace every ask in your browser (it prints the config line to add)",
@@ -810,45 +863,96 @@ async function seedConfig(home: string, apiUrl = "https://api.nola.sh") {
 }
 const sessionOf = async (home: string) => JSON.parse(await readFile(join(home, ".nola", CREDENTIALS_FILE), "utf8"));
 
+describe("template menu", () => {
+  it("the first menu is the templates by feature, feature-extraction first, triage-ticket (typesafe.ai) before empty, then one row that opens the examples", () => {
+    expect(templateMenu().map((o) => o.value)).toEqual([
+      "feature-extraction",
+      "function-calling",
+      "typescript-interop",
+      "triage-ticket",
+      "empty",
+      MORE_EXAMPLES,
+    ]);
+    const more = templateMenu().at(-1) as PrompterOption;
+    expect(more.label).toBe("More examples…");
+    expect(more.hint).toContain("file-ticket");
+    expect(more.hint).not.toContain("triage-ticket");
+    for (const o of templateMenu().slice(0, 5)) {
+      expect(o.label).toBe(o.value === "triage-ticket" ? "triage-ticket (typesafe.ai)" : o.value);
+    }
+  });
+
+  it("the examples menu lists the curated examples the first menu does not carry, then a Back row", () => {
+    const rows = exampleMenu();
+    expect(rows.map((o) => o.value)).toEqual([
+      "file-ticket",
+      "extract-resume",
+      "extract-invoice",
+      "classify-message",
+      "chain-of-thought",
+      "research-notes",
+      BACK,
+    ]);
+    expect(rows.find((o) => o.value === "file-ticket")?.label).toBe("file-ticket");
+    expect((rows.at(-1) as PrompterOption).label).toBe("← Back");
+  });
+
+  it("More examples… opens the second menu and the chosen example is the template", async () => {
+    const p = scripted({ select: [MORE_EXAMPLES, "extract-resume"] });
+    const asked = recording(p);
+    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
+    expect(asked).toEqual([TEMPLATE_QUESTION, EXAMPLE_QUESTION]);
+    expect(out).toMatchObject({ kind: "scaffold", template: "extract-resume" });
+  });
+
+  it("Back returns to the first menu", async () => {
+    const p = scripted({ select: [MORE_EXAMPLES, BACK, "typescript-interop"] });
+    const asked = recording(p);
+    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
+    expect(asked).toEqual([TEMPLATE_QUESTION, EXAMPLE_QUESTION, TEMPLATE_QUESTION]);
+    expect(out).toMatchObject({ kind: "scaffold", template: "typescript-interop" });
+  });
+
+  it("Ctrl+C on either menu cancels", async () => {
+    expect(await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, scripted({ select: [null] }))).toEqual({
+      kind: "cancelled",
+    });
+    expect(
+      await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, scripted({ select: [MORE_EXAMPLES, null] })),
+    ).toEqual({ kind: "cancelled" });
+  });
+
+  it("feature-extraction is the non-interactive default", async () => {
+    const out = await resolveScaffoldOptions({ dir: "d", interactive: false }, scripted({}));
+    expect(out).toMatchObject({ kind: "scaffold", template: "feature-extraction" });
+  });
+});
+
 describe("wizard order", () => {
   /** Every prompt in the order it was shown, with the preselection where one exists. */
 
-  it("asks name, template, the inference provider, the setup gate, then ONE setup list (editor + agents, VS Code and both skill copies preselected)", async () => {
-    const p = scripted({ text: ["app"], select: ["starter", "nola"], groupMultiselect: [["vscode", "claude"]], confirm: [true] });
+  it("asks name, template, the inference provider — and nothing after it: the editor and both skill copies are defaults", async () => {
+    const p = scripted({ text: ["app"], select: ["typescript-interop", "nola"] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ interactive: true, cwd: await tmp() }, p);
-    expect(asked).toEqual([
-      `${NAME_QUESTION}|nola-app`,
-      "Select a template:",
-      PROVIDER_QUESTION,
-      `${SETUP_QUESTION}|true`,
-      `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude,universal`,
-    ]);
+    expect(asked).toEqual([`${NAME_QUESTION}|nola-app`, "Select a template:", PROVIDER_QUESTION]);
     expect(out).toEqual({
       kind: "scaffold",
       dir: "app",
-      template: "starter",
+      template: "typescript-interop",
       force: false,
       provider: "nola",
       ide: "vscode",
-      agents: ["claude"],
+      agents: ["claude", "universal"],
     });
   });
 
-  it("a no at the gate skips the list: no editor, no agents, nothing else asked", async () => {
-    const p = scripted({ select: ["starter"], confirm: [false] });
-    const asked = recording(p);
-    const out = await resolveScaffoldOptions({ dir: "d", interactive: true, provider: "none" }, p);
-    expect(asked).toEqual(["Select a template:", `${SETUP_QUESTION}|true`]);
-    expect(out).toEqual({ kind: "scaffold", dir: "d", template: "starter", force: false, provider: "none", ide: "none", agents: [] });
-  });
-
-  it("a no at a narrowed gate keeps the flag's half", async () => {
-    const p = scripted({ select: ["starter"], confirm: [false] });
+  it("the retired setup gate is never shown, whatever the flags leave unanswered", async () => {
+    const p = scripted({ select: ["typescript-interop"] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ dir: "d", agents: "agents-md", interactive: true, provider: "none" }, p);
-    expect(asked).toEqual(["Select a template:", `${EDITOR_QUESTION}|true`]);
-    expect(out).toMatchObject({ kind: "scaffold", ide: "none", agents: ["agents-md"] });
+    expect(asked).toEqual(["Select a template:"]);
+    expect(out).toMatchObject({ kind: "scaffold", ide: "vscode", agents: ["agents-md"] });
   });
 
   it("the name prompt says Enter keeps the default", () => {
@@ -856,14 +960,14 @@ describe("wizard order", () => {
     expect(NAME_QUESTION).toContain("nola-app");
   });
 
-  it("the add path follows the same order: provider, then setup", async () => {
+  it("the add path asks the provider and nothing after it", async () => {
     const dir = await tmp();
     await writeFile(join(dir, "package.json"), '{"name":"x"}');
-    const p = scripted({ select: ["none"], groupMultiselect: [[]], confirm: [true] });
+    const p = scripted({ select: ["none"] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ add: true, dir, interactive: true }, p);
-    expect(asked).toEqual([PROVIDER_QUESTION, `${SETUP_QUESTION}|true`, `${SETUP_LIST_QUESTION}|Editor+Coding agents|vscode,claude,universal`]);
-    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "none", agents: [] });
+    expect(asked).toEqual([PROVIDER_QUESTION]);
+    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
   });
 });
 
@@ -879,19 +983,38 @@ describe("provider question", () => {
     return shown;
   }
 
-  it("lists nola (first), the three vendors and skip, in that order, and lands the choice on the outcome", async () => {
-    const p = scripted({ text: ["app"], select: ["starter", "anthropic"], confirm: [false] });
+  it("lists nola (first), the four vendors and skip, in that order, and lands the choice on the outcome", async () => {
+    const p = scripted({ text: ["app"], select: ["typescript-interop", "anthropic"], confirm: [false] });
     const shown = recordOptions(p);
     const out = await resolveScaffoldOptions({ interactive: true, cwd: await tmp() }, p);
-    expect(out).toMatchObject({ kind: "scaffold", template: "starter", provider: "anthropic" });
+    expect(out).toMatchObject({ kind: "scaffold", template: "typescript-interop", provider: "anthropic" });
     expect(shown[PROVIDER_QUESTION]?.map((o) => `${o.value}|${o.label}`)).toEqual([
-      "nola|Nola",
+      "nola|nola: dev",
       "openai|OpenAI",
       "anthropic|Anthropic",
       "google|Gemini",
+      "typesafe|typesafe.ai",
       "none|Skip for now",
     ]);
-    expect(shown[PROVIDER_QUESTION]?.[0]?.hint).toBe("25 free runs, no account or provider key needed");
+    expect(shown[PROVIDER_QUESTION]?.[0]?.hint).toBe("25 free hosted runs, no API key required, suited for dev experiments");
+  });
+
+  it("the typesafe row's hint brackets the caveat for the selected template, generic in add mode, absent when the template pins typesafe.ai", () => {
+    const hintFor = (template?: string) => providerOptions({ kind: "trial" }, template).find((o) => o.value === "typesafe")?.hint;
+    expect(hintFor("typescript-interop")).toBe(
+      "typesafe(), reads TYPESAFE_API_KEY (does not support every construct in typescript-interop: literal unions and booleans only)",
+    );
+    expect(hintFor("extract-resume")).toContain("(does not support every construct in extract-resume:");
+    expect(hintFor(undefined)).toBe("typesafe(), reads TYPESAFE_API_KEY (literal unions and booleans only)");
+    expect(hintFor("triage-ticket")).toBe("typesafe(), reads TYPESAFE_API_KEY");
+  });
+
+  it("the typesafe row is shown for a template it does not fully support and lands on the outcome", async () => {
+    const p = scripted({ text: ["app"], select: ["extract-resume", "typesafe"], confirm: [false] });
+    const shown = recordOptions(p);
+    const out = await resolveScaffoldOptions({ interactive: true, cwd: await tmp() }, p);
+    expect(out).toMatchObject({ kind: "scaffold", template: "extract-resume", provider: "typesafe" });
+    expect(shown[PROVIDER_QUESTION]?.find((o) => o.value === "typesafe")?.hint).toContain("every construct in extract-resume");
   });
 
   it("the nola row's hint follows the machine: sign in once the trial is used, a key on the account when signed in — and no network before a choice", async () => {
@@ -952,7 +1075,7 @@ describe("provider question", () => {
 
   it("rejects an unknown --provider listing the valid ids, and --provider disagreeing with --trial", async () => {
     await expect(resolveScaffoldOptions({ dir: "d", provider: "mistral", interactive: false }, scripted({}))).rejects.toThrow(
-      /invalid --provider "mistral".*nola, openai, anthropic, google, none/,
+      /invalid --provider "mistral".*nola, openai, anthropic, google, typesafe, none/,
     );
     await expect(resolveScaffoldOptions({ dir: "d", provider: "openai", trial: true, interactive: false }, scripted({}))).rejects.toThrow(
       /--trial.*--provider/,
@@ -976,7 +1099,7 @@ describe("runFlow with a vendor provider", () => {
     const dir = join(await tmp(), "app");
     const { fn, calls } = trialFetch();
     const p = scripted({});
-    expect(await runFlow({ dir, template: "starter", provider: "anthropic" }, { interactive: false, prompter: p, fetch: fn, home: await tmp() })).toBe(0);
+    expect(await runFlow({ dir, template: "typescript-interop", provider: "anthropic" }, { interactive: false, prompter: p, fetch: fn, home: await tmp() })).toBe(0);
     expect(calls).toEqual([]);
     expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain('model: anthropic("claude-sonnet-4-5")');
     expect(existsSync(join(dir, "nola.replay.jsonl"))).toBe(false);
@@ -1009,7 +1132,7 @@ describe("runFlow with the nola provider", () => {
     const { fn, calls } = trialFetch();
     const p = scripted({});
     const code = await runFlow(
-      { dir, template: "starter", provider: "nola" },
+      { dir, template: "typescript-interop", provider: "nola" },
       { interactive: false, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh" },
     );
     expect(code).toBe(0);
@@ -1034,7 +1157,7 @@ describe("runFlow with the nola provider", () => {
     const p = scripted({});
     expect(
       await runFlow(
-        { dir, template: "starter", provider: "nola" },
+        { dir, template: "typescript-interop", provider: "nola" },
         { interactive: false, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh" },
       ),
     ).toBe(0);
@@ -1055,7 +1178,7 @@ describe("runFlow with the nola provider", () => {
     const p = scripted({});
     expect(
       await runFlow(
-        { dir, template: "starter", provider: "nola" },
+        { dir, template: "typescript-interop", provider: "nola" },
         { interactive: false, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh" },
       ),
     ).toBe(0);
@@ -1067,7 +1190,7 @@ describe("runFlow with the nola provider", () => {
     expect(p.notes.at(-1)).toContain("# key in .env (run `npx nola-lang account` to check the balance)");
     expect(p.notes.join("\n")).not.toContain(AT2);
   });
-  it("interactive on a used machine: Enter on the Nola row runs the PKCE sign-in RIGHT THERE (browser before the setup gate) with the recorded trial account as the hint, the session is stored, the key comes from the console", async () => {
+  it("interactive on a used machine: Enter on the Nola row runs the PKCE sign-in RIGHT THERE (browser at the select, before anything else) with the recorded trial account as the hint, the session is stored, the key comes from the console", async () => {
     const dir = join(await tmp(), "app");
     const home = await tmp();
     await seedConfig(home);
@@ -1090,8 +1213,8 @@ describe("runFlow with the nola provider", () => {
       events.push("browser");
       return browser(url);
     };
-    expect(await runFlow({ dir, template: "empty" }, { interactive: true, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh", open })).toBe(0);
-    expect(events).toEqual([`select:${PROVIDER_QUESTION}`, "browser", `confirm:${SETUP_QUESTION}`]);
+    expect(await runFlow({ dir, template: "empty", ide: "none" }, { interactive: true, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh", open })).toBe(0);
+    expect(events).toEqual([`select:${PROVIDER_QUESTION}`, "browser"]);
     expect(calls.map((c) => c.path)).toEqual(["/v1/capabilities", "/oauth/token", "/v1/console/keys"]);
     expect(calls[1]?.body).toMatchObject({ grant_type: "authorization_code", client_id: "cli", code: "ac" });
     expect(calls[2]?.authorization).toBe(`Bearer ${AT}`);
@@ -1122,7 +1245,7 @@ describe("runFlow with the nola provider", () => {
       asked.push(m);
       return select(m, o);
     };
-    expect(await runFlow({ dir, template: "starter" }, { interactive: true, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh", open: () => true })).toBe(0);
+    expect(await runFlow({ dir, template: "typescript-interop" }, { interactive: true, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh", open: () => true })).toBe(0);
     expect(asked).toEqual([PROVIDER_QUESTION, PROVIDER_QUESTION]);
     expect(calls.map((c) => c.path)).toEqual(["/v1/capabilities"]);
     expect(p.notes.some((n) => n.startsWith("Could not sign in to Nola:"))).toBe(true);
@@ -1138,7 +1261,7 @@ describe("runFlow with the nola provider", () => {
     const p = scripted({});
     expect(
       await runFlow(
-        { dir, template: "starter", provider: "nola" },
+        { dir, template: "typescript-interop", provider: "nola" },
         { interactive: false, prompter: p, fetch: fn, home, apiUrl: "https://api.nola.sh" },
       ),
     ).toBe(0);
@@ -1155,7 +1278,7 @@ describe("runFlow with the nola provider", () => {
     const p2 = scripted({});
     expect(
       await runFlow(
-        { dir: dir2, template: "starter", provider: "nola" },
+        { dir: dir2, template: "typescript-interop", provider: "nola" },
         { interactive: false, prompter: p2, fetch: boom.fn, home: home2, apiUrl: "https://api.nola.sh" },
       ),
     ).toBe(0);
@@ -1186,7 +1309,7 @@ describe("runFlow with the nola provider", () => {
     const home = await tmp();
     const { fn } = trialFetch({ status: 429, body: { error: { code: "rate_limited", message: "Too many trial sign-ups." } } });
     const p = scripted({});
-    const code = await runFlow({ dir, template: "starter", provider: "nola" }, { interactive: false, prompter: p, fetch: fn, home });
+    const code = await runFlow({ dir, template: "typescript-interop", provider: "nola" }, { interactive: false, prompter: p, fetch: fn, home });
     expect(code).toBe(0);
     expect(existsSync(join(home, ".nola", HOME_CONFIG_FILE))).toBe(false);
     expect(existsSync(join(dir, ".env"))).toBe(false);
@@ -1294,22 +1417,22 @@ describe("runFlow: old-Node warning", () => {
 
 describe("a template that pins its vendor (triage-ticket)", () => {
   it("skips the provider question and keeps the template's own config (provider none)", async () => {
-    const p = scripted({ select: ["triage-ticket"], confirm: [false] });
+    const p = scripted({ select: ["triage-ticket"] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ dir: "d", interactive: true }, p);
-    expect(asked).toEqual(["Select a template:", `${SETUP_QUESTION}|true`]);
+    expect(asked).toEqual([TEMPLATE_QUESTION]);
     expect(out).toEqual({
       kind: "scaffold",
       dir: "d",
       template: "triage-ticket",
       force: false,
       provider: "none",
-      ide: "none",
-      agents: [],
+      ide: "vscode",
+      agents: ["claude", "universal"],
     });
   });
 
-  it("its menu row names the vendor: `example: triage-ticket (typesafe.ai)`; the other rows are unchanged", async () => {
+  it("its first-menu row names the vendor: `triage-ticket (typesafe.ai)`, right before empty; the other rows are unchanged", async () => {
     const p = scripted({ select: ["triage-ticket"], confirm: [false] });
     const shown: Record<string, PrompterOption[]> = {};
     const select = p.select;
@@ -1318,10 +1441,9 @@ describe("a template that pins its vendor (triage-ticket)", () => {
       return select(m, o);
     };
     await resolveScaffoldOptions({ dir: "d", interactive: true }, p);
-    const rows = shown["Select a template:"]?.map((o) => o.label) ?? [];
-    expect(rows).toContain("example: triage-ticket (typesafe.ai)");
-    expect(rows).toContain("example: classify-message");
-    expect(rows[0]).toBe("starter");
+    const rows = shown[TEMPLATE_QUESTION]?.map((o) => o.label) ?? [];
+    expect(rows.indexOf("triage-ticket (typesafe.ai)")).toBe(rows.indexOf("empty") - 1);
+    expect(rows[0]).toBe("feature-extraction");
   });
 
   it("an explicit --provider flag still wins over the pin", async () => {
@@ -1338,6 +1460,11 @@ describe("a template that pins its vendor (triage-ticket)", () => {
     expect(await runFlow({ dir, template: "triage-ticket" }, { interactive: false, prompter: p, home: await tmp() })).toBe(0);
     expect(await readFile(join(dir, "nola.config.ts"), "utf8")).toContain("model: typesafe()");
     expect(existsSync(join(dir, "nola.replay.jsonl"))).toBe(false);
+    // one file is the program: the .tsi entry, no plain-TS consumer, launch.json runs it
+    expect(existsSync(join(dir, "src", "main.tsi"))).toBe(true);
+    expect(existsSync(join(dir, "src", "main.ts"))).toBe(false);
+    expect(await readFile(join(dir, ".vscode", "launch.json"), "utf8")).toContain(`\${workspaceFolder}/src/main.tsi`);
+    expect(await readFile(join(dir, ".env.example"), "utf8")).toContain("TYPESAFE_API_KEY=");
     expect(p.notes.at(-1)).toContain("npm start              # set TYPESAFE_API_KEY in .env first");
   });
 });

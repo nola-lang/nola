@@ -12,19 +12,36 @@ An `infer function` is an LLM-backed function. Calling it runs nothing; it retur
 ```tsi
 // forms.tsi
 infer function summarize(.text: string) {
-  return ask ..`a one-sentence summary`<string>;
+  return ask `a one-sentence summary`<string>;
 }
 
 export infer function classify(.message: string) {
-  return ask ..`the category of the message`<string>;
+  return ask `the category of the message`<string>;
 }
 
 export infer function triage`triage the ticket like a support lead`(.ticket: string) {
-  return ask ..`the severity: low, medium or high`<"low" | "medium" | "high">;
+  return ask `the severity: low, medium or high`<"low" | "medium" | "high">;
 }
 ```
 
 The third form carries an **instruction marker**: a template literal between the name and the parameter list. Its text is the function's *instruction* — guidance that applies to every `ask` in the invocation. `${expr}` holes interpolate lexical values into the instruction; a `${.member}` hole turns the marker into a prompt template for the function's context block (see [Prompt templates](/docs/language/prompt-templates/)).
+
+## The body instruction
+
+The marker has a second spelling: a bare template literal as the **first statement** of the body. It means exactly the same thing — prose is the instruction, a `${.member}` hole makes it the function's prompt template — and reads better when the instruction is long:
+
+```tsi
+// triage-body.tsi
+export infer function triage(.ticket: string) {
+  `${.default}
+  Triage like a support lead. Escalate anything mentioning a refund.`
+  return ask `the severity: low, medium or high`<"low" | "medium" | "high">;
+}
+```
+
+Its lexical `${}` holes see the parameters (the only bindings initialised on a body's first line). Writing both a marker and a body instruction is [`NOLA2013`](/docs/reference/error-codes/#nola2013). A string literal in that position is a JavaScript directive and is left alone; a template literal that is not the first statement is ordinary code.
+
+The module body takes the same first statement — see [ask at module level](/docs/language/ask/#at-module-level).
 
 ## Rules
 
@@ -36,11 +53,11 @@ The third form carries an **instruction marker**: a template literal between the
   // enrich.tsi
   export infer function enrich(.handle: string, fetchProfile: (h: string) => Promise<string>) {
     const profile = await fetchProfile(handle);       // ordinary promise
-    return ask ..`the person's job title from: ${profile}`<string>;
+    return ask `the person's job title from: ${profile}`<string>;
   }
   ```
 
-- **`ask` only directly inside the body** — not at module level, not inside a nested closure, not even one written inside the infer function ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
+- **`ask` only directly inside the body** (or directly in the module body — see [ask](/docs/language/ask/#at-module-level)) — not inside a nested closure, not even one written inside the infer function ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
 - **Export by name.** `export default infer function` does not parse; write `export infer function f(…)` and let consumers import the name.
 
 ## Return type
@@ -56,7 +73,7 @@ interface User {
 }
 
 export infer function getUser(.message: string): Intent<User> {
-  const user = ask ..`the user described in the message`<User>;
+  const user = ask `the user described in the message`<User>;
   return user;
 }
 ```

@@ -1,5 +1,5 @@
 export infer function nextQuery(.question: string, .notes: string[]) {
-  const query = ask ..`the single best search query to advance the research; keywords only`<string>;
+  const query = ask `the single best search query to advance the research; keywords only`<string>;
   return query;
 }
 
@@ -10,5 +10,5 @@ export interface Conclusion {
 }
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask ..`answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`<Conclusion>;
 }

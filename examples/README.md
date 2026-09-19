@@ -5,7 +5,13 @@ Each example is a standalone npm workspace with the same layout: `src/*.tsi`
 nola run src/main.ts`), and a `nola.config.ts` that uses the deterministic
 mock provider so the example runs without an API key (switch to a real
 provider by editing the config — the comment inside shows how). The one
-exception is `triage-ticket`, whose config IS the vendor it demonstrates.
+exception is `triage-ticket`: its config IS the vendor it demonstrates, and
+it is the one-file script shape (`ask` at the top level, a `const .ticket`
+context binding, a first-line instruction — `src/main.tsi` is the program,
+run via `npx nola run src/main.tsi`), the shape the scaffolder's
+`feature-extraction` and `function-calling` templates
+(`packages/create-nola-lang/templates/`) teach; every other example keeps the
+library shape — infer functions in `.tsi`, called from plain TypeScript.
 
 Each example is a standalone project built around one canonical
 LLM-programming task (see its README for what it demonstrates).
@@ -25,7 +31,7 @@ LLM-programming task (see its README for what it demonstrates).
 | [recursive-tree](recursive-tree/) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively |
 | [prompt-template](prompt-template/) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor |
 | [file-ticket](file-ticket/) | Call intents: the model fills a function's arguments, sigil-less and hint forms |
-| [triage-ticket](triage-ticket/) | Ticket triage on typesafe.ai's Jev through `typesafe()`: literal unions and booleans as typed questions — the one example whose committed config names a live vendor (`TYPESAFE_API_KEY`), so `npm create nola` skips the provider question for it |
+| [triage-ticket](triage-ticket/) | Ticket triage on typesafe.ai's Jev through `typesafe()`: literal unions and booleans as typed questions, as one `.tsi` file with a top-level `ask` — the one example whose committed config names a live vendor (`TYPESAFE_API_KEY`), so `npm create nola` skips the provider question for it and lists it on the first template menu |
 
 `_playground/` is an internal debugging sandbox, not a maintained example.
 

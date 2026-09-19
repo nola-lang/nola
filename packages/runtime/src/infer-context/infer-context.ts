@@ -14,6 +14,13 @@ export interface AskIdentity {
 }
 
 /**
+ * The contextual bindings visible at one ask site, by name — the dynamic half
+ * of `const .x` (scope-bodies spec §3.3): read when the ask runs, never stored
+ * on a node. They describe the scope the ask runs in.
+ */
+export type AskLocals = Readonly<Record<string, unknown>>;
+
+/**
  * Frozen lineage node: system → file → function. Concrete subclasses are
  * created only by the runtime and by lowering (fileContext / func) — never
  * constructed from .tsi user code. Pure construction data: `data`, `parent`,
@@ -32,8 +39,8 @@ export class InferContext<TInferParams extends Record<string, unknown> = Record<
     return new InferContext(Object.freeze({ ...data }), this.runtime, this);
   }
 
-  /** Base nodes contribute nothing to the composed model. */
-  compose(_composer: InferenceComposer): void {}
+  /** Base nodes contribute nothing to the composed model. `locals` are the ask site's visible bindings (scope nodes list them). */
+  compose(_composer: InferenceComposer, _locals?: AskLocals): void {}
 
   /** The ask-site identity; undefined for lineage nodes (system, file, function). */
   askIdentity(): AskIdentity | undefined {

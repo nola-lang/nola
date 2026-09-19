@@ -20,12 +20,12 @@ export type Issue = { id: string; description: string };
 
 // `issue` is visible to the model; `fallback` is a normal JS value only.
 export infer function classifyIssue(.issue: Issue, fallback: string) {
-  const kind = ask ..`the kind of this issue`<string>;
+  const kind = ask `the kind of this issue`<string>;
   return kind || fallback;
 }
 ```
 
-The mnemonic is *one dot in, two dots out*: `.name` sends a value into the model, `` ..`instruction` `` brings one out.
+The mnemonic is *one dot in, `ask` out*: `.name` sends a value into the model, `` ask `instruction` `` brings one out (spelled `` ..`instruction` `` where `ask` is not directly in front of it — see [Extractors](/docs/language/extractors/#two-spellings-one-construct)).
 
 ## Several compose into one block
 
@@ -34,7 +34,7 @@ Any number of contextual parameters is fine; they compose into one context block
 ```tsi
 // research.tsi
 export infer function nextQuery(.question: string, .notes: string[]) {
-  return ask ..`the single best search query to advance the research`<string>;
+  return ask `the single best search query to advance the research`<string>;
 }
 ```
 
@@ -52,13 +52,13 @@ Three ways out, in order of preference:
 // top-label.tsi
 // 1. Pass a JSON-shaped view as the contextual parameter.
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask ..`the label with the highest count`<string>;
+  return ask `the label with the highest count`<string>;
 }
 
 // 2. Keep the exotic value, but as a PLAIN parameter — the model never sees
 //    its value, so nothing needs deriving.
 export infer function topLabelFrom(.summary: string, index: Map<string, number>) {
-  const label = ask ..`the label with the highest count`<string>;
+  const label = ask `the label with the highest count`<string>;
   return { label, count: index.get(label) ?? 0 };
 }
 ```
@@ -78,12 +78,34 @@ export default defineConfig({
 
 Keep that value a literal — the editor reads it statically and cannot execute your config, so a computed value is invisible to it.
 
+## Contextual bindings
+
+The same dot works on a `const` or `let` **inside a body** — an infer function's or the module's. A contextual binding is context for every `ask` that comes after it in the same body, in its block or an enclosing one:
+
+```tsi
+// support.tsi
+type Customer = { id: string; tier: "free" | "pro" };
+
+export infer function reply(.mail: string) {
+  const .tone = "brief, friendly";
+  const .customer: Customer = { id: "c1", tier: "pro" };
+  return ask `a reply to the mail`<string>;
+}
+```
+
+- The binding renders after the parameters in the function's `CONTEXT` block — `- tone = "brief, friendly"` — and its **current** value is read when the ask runs, so a reassigned `let .x` contributes what it holds at that moment.
+- Visibility is lexical: an ask sees the bindings declared before it, in its block or an enclosing block of the same body. `const .bio = ask …` never lists itself, and nothing declared after an ask reaches it.
+- An annotated binding (`const .customer: Customer`) derives its type exactly as a contextual parameter does, under the same `underivableContextType` policy; an unannotated one carries the value alone.
+- `ask fn()` hands the bindings visible at the call site to `fn` as its caller's context, the way parameters already travel.
+- At module level the bindings give the implicit `<module>` scope its `CONTEXT` block — see [ask at module level](/docs/language/ask/#at-module-level). They do **not** reach an infer function merely declared in the same file; context chains where `ask` happens.
+- `var .x` is not a binding form ([`NOLA1014`](/docs/reference/error-codes/#nola1014)); a pattern after the dot is [`NOLA1011`](/docs/reference/error-codes/#nola1011); a dotted binding inside a plain function is [`NOLA1010`](/docs/reference/error-codes/#nola1010).
+
 ## Errors
 
-- [`NOLA1010`](/docs/reference/error-codes/#nola1010) — `.` on a parameter of a plain (non-infer) function. Drop the dot; the parameter is an ordinary argument.
+- [`NOLA1010`](/docs/reference/error-codes/#nola1010) — `.` on a parameter of a plain (non-infer) function, or on a binding outside an infer body / the module body. Drop the dot; it is an ordinary argument or variable.
 - [`NOLA1013`](/docs/reference/error-codes/#nola1013) — `..name`: contextual parameters take one dot; two dots is the extractor sigil.
 - [`NOLA1012`](/docs/reference/error-codes/#nola1012) — an incomplete `.` with no name after it.
 - [`NOLA1011`](/docs/reference/error-codes/#nola1011) — `.` on a destructuring pattern or a parameter with a default value; reserved — use a plain identifier parameter.
-- [`NOLA1014`](/docs/reference/error-codes/#nola1014) — `const .x = …` inside the body: contextual *bindings* are reserved for a later version.
+- [`NOLA1014`](/docs/reference/error-codes/#nola1014) — `var .x`: a contextual binding is `const .x` or `let .x`.
 
 Next: [Extractors](/docs/language/extractors/)

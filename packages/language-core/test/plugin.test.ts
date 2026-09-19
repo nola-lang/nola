@@ -121,3 +121,33 @@ describe("createNolaLanguagePlugin", () => {
     ]);
   });
 });
+
+describe("NolaVirtualCode: what a bailed snapshot may serve", () => {
+  // Still an irrecoverable parse: the placeholder recovery is once-only, and
+  // `foo(` needs a `)` the tokenizer never delivers.
+  const GOOD = "const i = ..`x`<string>;\n";
+  const BAILS = "const i = ..`x`<string>;\nfoo(\n";
+
+  it("the root mapping admits diagnostics, so nola errors never depend on the embedded mapper", () => {
+    const code = create(GOOD);
+    expect(code.mappings).toHaveLength(1);
+    expect(code.mappings[0]?.data).toMatchObject({ verification: true, format: true });
+  });
+
+  it("stale last-good mappings paint no semantic tokens — they describe a text that is not the document", () => {
+    const code = create(GOOD);
+    expect(code.embeddedCodes[0].mappings.some((m) => m.data.semantic)).toBe(true);
+    const updated = plugin.updateVirtualCode?.("/proj/a.tsi", code, snap(BAILS), {} as never);
+    const current = updated instanceof NolaVirtualCode ? updated : code;
+    expect(current.stale).toBe(true);
+    expect(current.embeddedCodes[0].mappings.some((m) => m.data.semantic)).toBe(false);
+    // everything else survives: completion, hover, navigation, verification
+    expect(current.embeddedCodes[0].mappings.some((m) => m.data.completion)).toBe(true);
+    expect(current.embeddedCodes[0].mappings.some((m) => m.data.verification)).toBe(true);
+    // and a good snapshot restores them
+    const restored = plugin.updateVirtualCode?.("/proj/a.tsi", current, snap(GOOD), {} as never);
+    const back = restored instanceof NolaVirtualCode ? restored : current;
+    expect(back.stale).toBe(false);
+    expect(back.embeddedCodes[0].mappings.some((m) => m.data.semantic)).toBe(true);
+  });
+});

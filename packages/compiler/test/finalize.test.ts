@@ -135,4 +135,22 @@ describe("finalizeDerivations", () => {
     expect(errors.join("\n")).toContain("unsupported type Map<string, number> at W");
     expect(errors.filter((e) => e.includes("consumer.ts:2"))).toEqual([]);
   });
+
+  it("a NOLA2015 answer is a diagnostic at every site kind, like NOLA2012", () => {
+    const src = "export type Bad = Choice<{ only: null }>;\nconst i = ..`i`<Bad>;\n";
+    const phase1 = compileNola(src, "x.tsi");
+    const answers = phase1.meta.derivations.map((req) => ({
+      accessor: req.accessor,
+      ok: false as const,
+      reason: "Bad: Choice needs 2 to 255 labels, got 1",
+      code: "NOLA2015",
+      accessors: [],
+      deps: [],
+    }));
+    const out = finalizeDerivations(phase1, answers, "x.tsi");
+    const codes = out.diagnostics.map((d) => d.code);
+    expect(codes).toEqual(["NOLA2015", "NOLA2015"]); // the exported type AND the extract site
+    expect(out.code).not.toContain("unsupported(");
+    expect(out.code).toContain("__nola.types.string()"); // the evaluable stand-in, as for NOLA2012
+  });
 });

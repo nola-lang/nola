@@ -48,7 +48,19 @@ export type { Session } from "./credentials.js";
 export { CREDENTIALS_FILE, credentialsPath, deleteSession, readSession, writeSession } from "./credentials.js";
 export { collectExampleFromDisk, devExamplesDir, rewriteExamplePackageJson } from "./examples.js";
 export type { FlowInput, FlowOutcome, KeyPath, Prompter, PrompterOption, RunFlowArgs, RunFlowOptions } from "./flow.js";
-export { CREATE_COMMAND, FLOW_OPTIONS, nolaHint, PROVIDER_QUESTION, plainPrompter, providerOptions, resolveScaffoldOptions, runFlow, SIGN_IN_QUESTION } from "./flow.js";
+export {
+  CREATE_COMMAND,
+  FLOW_OPTIONS,
+  INSTALL_OPEN_QUESTION,
+  INSTALL_QUESTION,
+  nolaHint,
+  PROVIDER_QUESTION,
+  plainPrompter,
+  providerOptions,
+  resolveScaffoldOptions,
+  runFlow,
+  SIGN_IN_QUESTION,
+} from "./flow.js";
 export type { FetchLike } from "./github.js";
 export { ExampleFetchError, fetchExampleFromGitHub } from "./github.js";
 export type { NolaHomeConfig, TrialAccountRecord } from "./home-config.js";

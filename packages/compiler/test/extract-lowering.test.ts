@@ -12,7 +12,7 @@ describe("extract lowering v2", () => {
       `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola_type_$1(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
     );
     expect(code).toContain('import { __nola } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(16);");
+    expect(code).toContain("__nola.useRuntime(18);");
   });
 
   it("wraps each ${} substitution in __nola.fmt and keeps the template", () => {
@@ -27,6 +27,36 @@ describe("extract lowering v2", () => {
   it("an untyped extractor stays <any> with a string schema", () => {
     const { code } = compileNola("const i = ..`free text`;\n", "x.tsi");
     expect(code).toContain("__nola.intents.ExtractIntent<any>({ instruction: `free text`, type: __nola.types.string()");
+  });
+
+  it("the implied form lowers to the same ExtractIntent call as the `..` form (loc aside)", () => {
+    const bare = compileNola("infer function f() {\n  return ask `ticket id`<string>;\n}\n", "x.tsi");
+    const sigil = compileNola("infer function f() {\n  return ask ..`ticket id`<string>;\n}\n", "x.tsi");
+    expect(bare.diagnostics).toEqual([]);
+    const stripLoc = (code: string) => code.replace(/loc: "\d+:\d+"/g, 'loc: ""');
+    expect(stripLoc(bare.code)).toBe(stripLoc(sigil.code));
+    expect(bare.code).toContain('loc: "2:14"'); // the backtick, 1-based col
+    // same def as the .. form: the hash never saw the sigil
+    expect(bare.code).toContain(`def: "${defHash("x.tsi", "extract", "ticket id", "string")}"`);
+  });
+
+  it("a typed template literal outside `ask` is NOLA2014 with the `..` fix", () => {
+    const { diagnostics } = compileNola(
+      "declare function f(a: string): Promise<void>;\ninfer function go() {\n  return ask f(`x`<string>);\n}\n",
+      "x.tsi",
+    );
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA2014"]);
+    expect(diagnostics[0]?.message).toContain("..`");
+    expect(diagnostics[0]?.loc.start.line).toBe(3);
+  });
+
+  it("the implied form at module level and under `ask with`", () => {
+    const { code, diagnostics } = compileNola("const a = ask with fast `free text`;\n", "x.tsi");
+    expect(diagnostics).toEqual([]);
+    expect(code).toContain(
+      "await __nola.ask(__nola.intents.ExtractIntent<any>({ instruction: `free text`, type: __nola.types.string()",
+    );
+    expect(code).toContain('"fast"');
   });
 
   it("appends the runtime import at end of file exactly once", () => {

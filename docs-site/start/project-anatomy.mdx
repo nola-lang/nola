@@ -1,24 +1,27 @@
 ---
 title: Project anatomy
-description: What every file in a scaffolded Nola project is for — nola.config.ts, src/*.tsi, the plain-TS entry, tsconfig, package.json, .env and the replay ledger.
+description: What every file in a scaffolded Nola project is for — nola.config.ts, the .tsi entry or the .tsi + plain-TS pair, tsconfig, package.json, .env, the ledger.
 sidebar:
   order: 40
 ---
 
-This is the project `npm create nola` lays down, file by file. Every Nola project has the same shape: `.tsi` files hold the infer functions, a plain `.ts` entry calls them, and `nola.config.ts` says which provider answers.
+This is the project `npm create nola` lays down, file by file. Every Nola project has the same shape: `.tsi` files hold the asks, and `nola.config.ts` says which provider answers. The builtin templates differ only in `src/`: `feature-extraction` (the default) and `function-calling` are one `.tsi` file that is the whole program — `function-calling` adds `tickets.ts`, the async function its ask calls — and `typescript-interop` puts an `infer function` in a `.tsi` file and calls it from a plain `.ts` entry.
 
 ```
 my-app/
   nola.config.ts        # provider and runtime options
-  nola.replay.jsonl     # offline scaffold only: the starter's recorded answers
+  nola.replay.jsonl     # offline scaffold only: the template's recorded answers
   package.json          # runtime + providers as dependencies, nola-lang as a devDependency
   tsconfig.json         # NodeNext, allowArbitraryExtensions, include: ["src"]
   .gitignore            # node_modules, dist, *.tsbuildinfo, *.d.tsi.ts, .env, .env.*
-  README.md             # the starter's own notes
+  README.md             # the template's own notes
   src/
-    person.tsi          # Nola source: types + infer functions
-    main.ts             # plain TypeScript entry point
+    main.tsi            # feature-extraction / function-calling: the program — a first-line instruction, `.` bindings, top-level asks
+    tickets.ts          # function-calling: the plain async function the top-level ask calls
+    person.tsi          # typescript-interop: types + infer functions
+    main.ts             # typescript-interop: plain TypeScript entry point
   .env                  # NOLA_API_KEY when you chose Nola as the provider; otherwise yours to create (ignored by git)
+  .env.example          # vendor scaffolds only: the slot for that vendor's key (OPENAI_API_KEY=), to copy to .env
 ```
 
 ## nola.config.ts
@@ -40,11 +43,36 @@ export default defineConfig({
 });
 ```
 
-`"nola"` is short for [`nola.infer()`](/docs/reference/providers-api/#nola), the platform model. Scaffolded offline instead, the starter's config is `model: replay("./nola.replay.jsonl")` — answers come from the committed ledger and the first run needs no key.
+`"nola"` is short for [`nola.infer()`](/docs/reference/providers-api/#nola), the platform model. Scaffolded offline instead, a builtin template's config is `model: replay("./nola.replay.jsonl")` — answers come from the committed ledger and the first run needs no key.
 
 The config lives at the project root and default-exports a `defineConfig` call. `model` is one model or a map whose `default` is required; every other key of the map becomes an `ask with <name>` target. The import surface is exactly two specifiers — `defineConfig`, `nola` and `terminalTrace` from `@nola-lang/runtime`, everything bring-your-own from `@nola-lang/providers`. Full reference: [nola.config.ts](/docs/config/nola-config/).
 
-## src/person.tsi
+## src/main.tsi (feature-extraction)
+
+```tsi
+// src/main.tsi
+`You read short professional bios. Answer from the text alone; never invent facts.`
+
+interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+const .message = "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.";
+
+const person = ask `the person described in the text`<Person>;
+
+const .role = person.job;
+const seniority = ask `the seniority level the role implies`<"junior" | "mid" | "senior" | "staff">;
+
+console.log(JSON.stringify({ ...person, seniority }));
+```
+
+The file is the program: `nola run src/main.tsi` executes it with the loader and the config in place, and `ask` is legal directly in the module body. The template literal on the first line is the [body instruction](/docs/language/infer-functions/#the-body-instruction) for the whole file; `const .message` and `const .role` are [contextual bindings](/docs/language/contextual-parameters/#contextual-bindings) — their values are shown to the model at every `ask` that follows them, so one answer can feed the next; `` ask `…`<T> `` is an [extractor](/docs/language/extractors/) resolved by [`ask`](/docs/language/ask/#at-module-level). The `function-calling` template is the same file shape with the other feature: its top-level `ask` is a [call intent](/docs/guides/function-calling/) — `ask createTicket(..`a short ticket title`<string>, ..`priority 1-5`<number>)` — over `createTicket`, an ordinary async function exported from `src/tickets.ts` next to it (imported with the NodeNext `./tickets.js` specifier). When a script outgrows one file, move the asks into an `infer function` and call it from plain TypeScript — the `typescript-interop` shape below.
+
+## src/person.tsi (typescript-interop)
 
 ```tsi
 // src/person.tsi
@@ -56,14 +84,14 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask ..`the person described in the text`<Person>;
+  const person = ask `the person described in the text`<Person>;
   return person;
 }
 ```
 
 The type and the infer function live together. `Person` is both the TypeScript type of the result and the schema the model is asked to fill; `.message` is a contextual parameter whose value is shown to the model; `ask` resolves the extractor.
 
-## src/main.ts
+## src/main.ts (typescript-interop)
 
 ```ts
 // src/main.ts
@@ -104,16 +132,16 @@ Plain TypeScript. The import keeps the literal `.tsi` extension, and `await` on 
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "nola run src/main.ts",
+    "start": "nola run src/main.tsi",
     "build": "nola build",
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.11",
-    "@nola-lang/runtime": "^0.1.11"
+    "@nola-lang/providers": "^0.1.12",
+    "@nola-lang/runtime": "^0.1.12"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.11",
+    "nola-lang": "^0.1.12",
     "typescript": "^5.6.0"
   },
   "engines": {
@@ -122,7 +150,7 @@ Plain TypeScript. The import keeps the literal `.tsi` extension, and `await` on 
 }
 ```
 
-The split is deliberate: the app depends on the **runtime** and the **providers**; `nola-lang` — compiler, CLI and the loader — is a **devDependency** and never ships to production. The three Nola packages are released in lockstep: keep them on the same version (the scaffold pins them for you). The scaffold sets `"type": "module"`: the loader and `nola build` output are ESM.
+`start` runs the template's entry (`src/main.ts` under `typescript-interop`). The split is deliberate: the app depends on the **runtime** and the **providers**; `nola-lang` — compiler, CLI and the loader — is a **devDependency** and never ships to production. The three Nola packages are released in lockstep: keep them on the same version (the scaffold pins them for you). The scaffold sets `"type": "module"`: the loader and `nola build` output are ESM.
 
 ## .env
 
@@ -130,14 +158,14 @@ The split is deliberate: the app depends on the **runtime** and the **providers*
 NOLA_API_KEY=nola_sk_...
 ```
 
-Written by the scaffold when you chose Nola as the provider; otherwise create it yourself for dev-time secrets (`OPENAI_API_KEY=…`, or the env var the config's comment names). `nola run` and `node --import nola-lang/register` apply the `.env` next to `nola.config.ts` (the project root here) before evaluating the config; values already set in the real environment win. Production reads the real environment — nothing loads `.env` there. Every scaffolded template — the builtin ones and the curated examples alike — gets the same `.gitignore`: `.env` and `.env.*` (with `.env.example` kept trackable) beside `node_modules/`, `dist/`, `*.tsbuildinfo` and the generated `*.d.tsi.ts` declarations; keep it that way. In a retrofitted project the trial step adds those lines for you.
+Written by the scaffold when you chose Nola as the provider; otherwise create it yourself for dev-time secrets (`OPENAI_API_KEY=…`, or the env var the config's comment names) — a scaffold whose config names a vendor (a chosen one, or `triage-ticket`'s own `typesafe()`) ships a `.env.example` holding that variable's empty slot, so copy it to `.env` and fill in the key. `nola run` and `node --import nola-lang/register` apply the `.env` next to `nola.config.ts` (the project root here) before evaluating the config; values already set in the real environment win. Production reads the real environment — nothing loads `.env` there. Every scaffolded template — the builtin ones and the curated examples alike — gets the same `.gitignore`: `.env` and `.env.*` (with `.env.example` kept trackable) beside `node_modules/`, `dist/`, `*.tsbuildinfo` and the generated `*.d.tsi.ts` declarations; keep it that way. In a retrofitted project the trial step adds those lines for you.
 
 ## nola.replay.jsonl
 
-The offline starter's *ledger*: one JSON line per recorded exchange, keyed by a fingerprint of the exact request. `replay("./nola.replay.jsonl")` serves answers from it, which is why the first run needs no key. Replay is strict — a request with no matching entry fails with `NOLA3008` rather than quietly calling the network, so after editing `person.tsi` you either switch to a live provider or re-record. See [Record and replay](/docs/config/record-and-replay/). A project scaffolded with the trial has no ledger.
+The offline templates' *ledger*: one JSON line per recorded exchange, keyed by a fingerprint of the exact request. `replay("./nola.replay.jsonl")` serves answers from it, which is why the first run needs no key. Replay is strict — a request with no matching entry fails with `NOLA3008` rather than quietly calling the network, so after editing the `.tsi` file you either switch to a live provider or re-record. See [Record and replay](/docs/config/record-and-replay/). A project scaffolded with the trial has no ledger.
 
 ## Built output
 
-`nola build` writes `dist/`, mirroring the source tree: `dist/src/person.tsi.js` plus `dist/src/person.tsi.js.map` and `dist/src/person.tsi.d.ts`, and `dist/nola.config.js` — the bundled config every built module imports, so the output runs under plain `node` with no loader. `nola build` compiles `.tsi` files only; a plain `.ts` entry such as `src/main.ts` is not part of its output. The production recipe is in [Deploying](/docs/guides/deploying/).
+`nola build` writes `dist/`, mirroring the source tree: `dist/src/main.tsi.js` (or `person.tsi.js`) plus its `.js.map` and `.d.ts`, and `dist/nola.config.js` — the bundled config every built module imports, so the output runs under plain `node` with no loader (`node dist/src/main.tsi.js` runs the feature-extraction program). `nola build` compiles `.tsi` files only; a plain `.ts` entry such as `typescript-interop`'s `src/main.ts` is not part of its output. The production recipe is in [Deploying](/docs/guides/deploying/).
 
 Next: [The mental model](/docs/language/mental-model/)

@@ -37,7 +37,8 @@ describe("load: checker-backed derivation (emit 15)", () => {
     const dir = await project({ "src/models.ts": 'export interface Q { k: "a" | "b"; n?: number }\n' });
     const result = await load(`${pathToFileURL(join(dir, "src/models.ts")).href}?nola-view`, {}, nextLoad);
     const code = String(result.source);
-    expect(code).toContain('__nola.types.object({ k: __nola.types.enum(["a", "b"]), n: __nola.types.optional(__nola.types.number()) })');
+    // the compiler's own text: Node's strip mode never reprints it (esbuild used to space the array)
+    expect(code).toContain('__nola.types.object({ k: __nola.types.enum(["a","b"]), n: __nola.types.optional(__nola.types.number()) })');
     expect(code).toMatch(/const Q = __nola_type_Q\(\)/);
   });
 

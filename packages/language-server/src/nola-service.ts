@@ -10,12 +10,11 @@ import { URI } from "vscode-uri";
  * The one hand-written service plugin.
  *
  * Diagnostics: publishes nola-native (parse + lower) errors the TypeScript
- * layer cannot see. Volar's diagnostics worker runs plugins against the
- * EMBEDDED documents of a file that has generated code — so this plugin
- * decodes the embedded URI back to the source script, reads the
- * NolaVirtualCode's diagnostics (source offsets), translates them into
- * embedded coordinates through Volar's own mapper, and lets the pipeline map
- * them back to the .tsi document.
+ * layer cannot see. Volar's diagnostics worker runs plugins against every
+ * code of a file that has generated code whose mappings admit verification —
+ * the ROOT code (the .tsi source, identity-mapped) included. That is where
+ * the NolaVirtualCode's diagnostics go, at their source offsets, untouched;
+ * the embedded TypeScript document carries only the lazy derivation pass.
  *
  * Formatting: runs TypeScript's error-tolerant syntactic formatter over the
  * .tsi SOURCE text (reached through the root code's format-only identity
@@ -48,27 +47,24 @@ export function createNolaServicePlugin(typescript: typeof ts, options: { source
           const virtualCode = sourceScript?.generated?.embeddedCodes.get(decoded[1]);
           if (!sourceScript || !virtualCode || !(root instanceof NolaVirtualCode)) return undefined;
 
-          const mapper = context.language.maps.get(virtualCode, sourceScript);
-          const toGenerated = (sourceOffset: number): number | undefined => {
-            for (const [generatedOffset] of mapper.toGeneratedLocation(sourceOffset)) {
-              return generatedOffset;
-            }
-            return undefined;
-          };
-
-          const out = [];
-          for (const d of root.diagnostics) {
-            const start = toGenerated(d.start) ?? toGenerated(d.end);
-            if (start === undefined) continue; // outside any mapped span
-            const end = toGenerated(d.end) ?? start;
-            out.push({
-              range: { start: document.positionAt(start), end: document.positionAt(Math.max(end, start)) },
+          if (virtualCode === root) {
+            // The .tsi source itself — Volar visits the root code too, through
+            // its identity mapping (NolaVirtualCode.rootMapping). nola-native
+            // diagnostics carry SOURCE offsets, so they are published here as
+            // they are. Never through the embedded mappings: after a bailed
+            // parse those describe the last-good text, not this snapshot, and
+            // an error past their extent (a `<T>` typed at the end of the
+            // file) simply vanished.
+            return root.diagnostics.map((d) => ({
+              range: { start: document.positionAt(d.start), end: document.positionAt(Math.max(d.end, d.start)) },
               severity: 1 as const,
               code: d.code,
               source: "nola",
               message: d.message,
-            });
+            }));
           }
+
+          const out = [];
           // The lazy derivation pass (spec §7): the embedded code is phase-1
           // output, so underivable types are found here against the live
           // program. Generated offsets — this IS the embedded document.

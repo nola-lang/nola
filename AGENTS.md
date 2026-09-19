@@ -27,7 +27,13 @@ from `nola.config.ts` (static identifier only — NOLA1009 otherwise; lowers to
 inference — `model: nola.infer()` — an UNCONFIGURED
 name is legal and rides the request as a free-form `profile` for the
 platform, see the routing bullet below); `` ..`prompt`<T> `` extractors
-support `${}` interpolation; `` fn``(...) `` call intents lower to
+support `${}` interpolation — and since the implied-sigil spec (2026-09-18)
+the `..` is IMPLIED directly after `ask` / `ask with <name>`: `` ask
+`prompt`<T> `` is the taught form (a template as the operand's FIRST token;
+parenthesized/tagged stay plain), `..` stays required for a stored intent,
+a call-intent argument or a nested literal (a typed template elsewhere is
+NOLA2014), `` ask ..`…` `` remains legal and lowers identically (loc at the
+backtick; def/fingerprints never saw the sigil); `` fn``(...) `` call intents lower to
 `FunctionCallIntent`; since the 2026-08-14 sigil-less spec the empty marker
 is optional — a plain call with an Identifier/MemberExpression callee whose
 arguments contain a well-formed extractor (directly or nested in plain
@@ -85,7 +91,17 @@ any plugin runs. So there is no tsc fork and no TS language-service plugin. Inst
   (`packages/compiler/test/tsc-clean.test.ts`).
 
 Pipeline: `.tsi` → **parser** (Babel fork + nola plugin) → Nola AST → **compiler**
-(magic-string span replacement) → plain TS + source map → esbuild type-strip → JS.
+(magic-string span replacement) → plain TS + source map → type-strip → JS. The
+loader (`nola run`, `--import nola-lang/register`, the bundler plugins) strips
+with Node's own `stripTypeScriptTypes` (node-loader `stripTypes`, since
+2026-09-17): strip mode replaces types with whitespace so the JS keeps the
+lowered text's line/column LAYOUT — that is what lets the debugger work (see
+the editor bullet) — with a fallback to transform mode (+ map) for
+non-erasable syntax (an enum, a namespace, parameter properties). The
+consequence users see is Node's own rule for `.ts`: a type-only import from a
+plain module must say `import type` — a bare `import { Person } from
+"./models.js"` is kept verbatim and fails at load (esbuild used to elide it).
+`nola build` still emits dist through esbuild.
 
 ## Package dependency order
 
@@ -147,7 +163,7 @@ combinators in `@nola-lang/providers` do NOT take strings. The input type is
 core's `ModelConfigInput`; `ModelConfigEntry` stays the resolved type. The
 scaffolder's trial config and the console banner write the string forms.
 The strings are what every user-facing surface TEACHES FIRST — templates
-(the Nola config, the offline starter's "switch to a real model" comment),
+(the Nola config, the offline templates' "switch to a real model" comment),
 the `nola console` banner and the console UI's empty state, `nola key`'s
 closing line, runtime error copy, docs-site samples and the agent skill;
 the calls appear only where an argument is needed (upstream selector,
@@ -157,11 +173,35 @@ copy on that rule.
 built output imports only `@nola-lang/runtime` (running `.tsi` directly in prod
 via `node --import nola-lang/register` is the documented tsx-style exception).
 Scaffolding (spec 2026-08-12-interactive-init-design.md): `create-nola-lang`
-owns the builtin templates (`templates/starter` + `templates/empty`), the
-static template registry (`src/registry.ts` — the menu; extract-person is
-deliberately absent, the starter IS it), and the shared interactive flow
-(`runFlow`; args fill prompts, non-TTY or dir+`--template` means zero
-prompts). The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
+owns the builtin templates (`templates/feature-extraction` + `templates/function-calling`
++ `templates/typescript-interop` + `templates/empty`), the static template
+registry (`src/registry.ts` — the menu; extract-person is deliberately absent,
+typescript-interop IS it), and the
+shared interactive flow (`runFlow`; args fill prompts, non-TTY or
+dir+`--template` means zero prompts). THE TEMPLATE MENU (2026-09-18) is two
+levels because clack's `select` has no sections: `TEMPLATE_QUESTION` lists
+the builtin templates in registry order, ONE PER FEATURE (owner's framing,
+2026-09-18) — `feature-extraction` (the default, also non-interactively; was
+quick-script/basic for a few hours), `function-calling`,
+`typescript-interop` (the former `starter`, briefly ts-import and
+infer-function; renamed with no alias), `empty` — plus one `MORE_EXAMPLES` row that opens
+`EXAMPLE_QUESTION` over the curated examples (vendor bracket on a pinned
+row, a `BACK` row returns); `--template <name>` names either level
+directly (`templateMenu` / `exampleMenu` / `selectTemplate` in flow.ts).
+`feature-extraction` is the scope-bodies showcase: ONE `src/main.tsi` that is the
+program — a first-statement instruction literal, `const .message` /
+`const .role` bindings, two top-level asks (the second reads the first's
+answer through `.role`) — with its own recorded ledger. `function-calling`
+is the same shape for the other feature: `src/main.tsi` imports
+`createTicket` from the plain `src/tickets.ts` (NodeNext `./tickets.js`)
+and its top-level ask is a call intent over it (no first-line instruction —
+the `import` would make the literal a non-first statement). A one-file
+template names its `.tsi` as `entry` in the registry, and
+`entryFile(template)` (registry.ts) answers it or `src/main.ts`; that value drives `start` in its
+package.json, the launch.json `program` (`writeVscodeSetup(dir, entry)`),
+what `code` opens, and which file carries `__NEXT_STEPS__` (`SUBSTITUTED`
+includes `main.tsi`; the VS Code variant says "a breakpoint on the `ask`
+line below"). Re-record the one-file ledgers the same way as typescript-interop's — feature-extraction over `record(mockProvider([person, "staff"]))`, function-calling over `record(mockProvider([{ arg0: title, arg1: 1 }]))` (a call intent's slots are one object keyed `arg0`, `arg1`, …) — from `src/main.tsi`. The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
 `defineCommand` entry per command, each with its OWN parseArgs option map)
 routed by the zero-dep dispatcher in create-nola-lang (`src/cli.ts` —
 generated help, `--help`/`--version`, per-command flag scoping); `nola init`
@@ -176,23 +216,35 @@ select all resolve to `addNola` (`src/add.ts`) — writes the empty template's
 config (skipped if present) and additively merges runtime/providers/nola-lang
 (`^<lockstep>`) + typescript (`^5.6.0`) into the existing manifest; existing
 entries are never rewritten, scripts/tsconfig are suggested, never written.
-The optional editor step (spec 2026-08-12-ide-setup-design.md): the flow asks
-"Set up your editor?" (interactive default VS Code; non-interactive default
-none; `--ide vscode|none`), and `writeVscodeSetup` (`src/ide.ts`) writes
-guarded `.vscode/launch.json` (the extension's "Nola: Launch File" snippet
-resolved to `src/main.ts`, keeping the mandatory resolveSourceMapLocations +
-skipFiles invariants) and `.vscode/extensions.json` (recommends
+The editor + agents step (spec 2026-08-12-ide-setup-design.md) is a DEFAULT
+since 2026-09-18, not a question: `resolveSetup` (flow.ts) answers `vscode`
++ `defaultAgents()` (claude, universal) unless `--ide none` / `--agents …`
+say otherwise, interactive or not — every scaffold and `--add` carries
+`.vscode/` and the skill, and a test that does not want them passes the
+flags. The "Set up your Editor and Coding Agents?" gate and its grouped list
+(`SETUP_QUESTION`, `SETUP_LIST_QUESTION`, `groupMultiselect`) are KEPT in
+flow.ts behind `SETUP_STEP_ASKED` (false) should the step return — flip it
+and the old wizard is back. `writeVscodeSetup(dir, entry)` (`src/ide.ts`) writes guarded
+`.vscode/launch.json` (the extension's "Nola: Launch File" snippet resolved
+to the template's entry — a one-file template's `src/main.tsi`, else
+`src/main.ts` — keeping the mandatory resolveSourceMapLocations + skipFiles invariants) and `.vscode/extensions.json` (recommends
 `nola.nola-vscode`) on both the scaffold and add paths — existing files
-are skipped with a note, never merged. The builtin templates' `src/main.ts`
-opens with a `__NEXT_STEPS__` placeholder that `scaffold({ ide })` renders
-(`nextStepsComment` in scaffold.ts): the VS Code variant — F5, a breakpoint
-in `src/person.tsi` (or "your .tsi file" for `empty`), the recommended
-extension — ONLY when the editor was chosen, since the `.vscode` files are
+are skipped with a note, never merged. The builtin templates' entry file (`src/main.ts`, or a one-file template's
+`src/main.tsi`) opens with a `__NEXT_STEPS__` placeholder that
+`scaffold({ ide })` renders (`nextStepsComment` in scaffold.ts): the VS Code
+variant — F5, a breakpoint ("on the `ask` line below" for a one-file template, in
+`src/person.tsi` for typescript-interop, "in your .tsi file" for `empty`), the
+recommended extension — ONLY when the editor was chosen, since the `.vscode` files are
 what make it true; otherwise an editor-neutral `npm start` + editor-setup
 docs link. Examples from `examples/` are copied verbatim and carry none. The
-install-and-open step opens `code <dir> <dir>/src/main.ts` (`vscodeArgs`,
-launch.ts: the folder becomes the workspace, the file the active editor) so
-the user lands on that comment instead of an empty window.
+install-and-open step opens `code <dir> <dir>/<entry>` (`vscodeArgs`,
+launch.ts: the folder becomes the workspace, the entry file the active
+editor) so
+the user lands on that comment instead of an empty window. It checks for
+`code` BEFORE asking (`Launcher.hasVscode`, 2026-09-18): without it the
+question is `INSTALL_QUESTION` ("Install dependencies?"), nothing is opened
+and no note is printed — the `not-found` note survives only for a `code`
+that vanishes between the check and the open.
 The provider step (2026-09-08, reshaping the trial step of spec
 2026-08-24-trial-onboarding-design.md): right after the template,
 `resolveExtras` asks `PROVIDER_QUESTION` ("Select an inference provider:"),
@@ -205,8 +257,8 @@ is asked BEFORE the editor/agents setup. `--provider <id>` answers it;
 `none` — the e2e suites depend on that. `FlowOutcome.provider` is a
 `ProviderId` (was `trial: boolean`). A vendor choice writes
 `templates/_providers/<id>.config.ts` over the template's `nola.config.ts`
-(`scaffold({ provider })`, `providerConfigUrl`), skips the starter's replay
-ledger, renders vendor README notes naming the env var (`OPENAI_API_KEY` /
+(`scaffold({ provider })`, `providerConfigUrl`), skips the offline templates'
+replay ledger, renders vendor README notes naming the env var (`OPENAI_API_KEY` /
 `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`), and the outro says "set <ENV> in
 .env first" — no key prompt, no network. The add path passes the provider to
 `addNola({ provider })`: a vendor config is written when the project has
@@ -243,7 +295,7 @@ every question by `acquireKey`, which then finds the stored session, so a
 cancelled flow consumes nothing (`SIGN_IN_QUESTION` survives only for `nola
 key`'s confirm). Then
 `scaffold({ provider: "nola" })` (skips `nola.replay.jsonl`, renders
-`__START_NOTE__` / `__PROVIDER_NOTE__` in the starter README) and
+`__START_NOTE__` / `__PROVIDER_NOTE__` in the offline templates' README) and
 `applyTrial` (`src/trial.ts`: `.env` append-never-overwrite via
 `writeEnvKey`, the `.gitignore` guard `.env` + `.env.*` via
 `ensureEnvIgnored`, and `templates/_providers/nola.config.ts` — the
@@ -292,7 +344,17 @@ interactive install is followed by replacing `node_modules/@nola-lang/runtime`,
 `@nola-lang/providers` and `nola-lang` with junctions into that checkout's
 `packages/*` (`linkCheckoutPackages`; internal deps resolve through the
 junction's real path into the checkout's hoisted node_modules) plus an outro
-note. An env var, not detection, so a CLI installed OUTSIDE the monorepo can
+note, AND adding `"**/packages/*/dist/**"` to every `skipFiles` in the
+scaffold's `.vscode/launch.json` (`skipCheckoutDistInLaunch`,
+`CHECKOUT_DIST_SKIP_GLOB`): the junction resolves the runtime to
+`packages/*/dist`, OUTSIDE node_modules, so the snippet's skipFiles no
+longer blackbox Nola's own code and js-debug loses F10 over the process's
+FIRST network ask — V8's step-over of the top-level await stays a plain
+step, lands on js-debug's injected WebAssembly pause (undici compiling its
+HTTP parser for the first fetch) and js-debug resumes it without
+re-stepping, so the program runs to the end (VS Code trace, 2026-09-18).
+A real install has the runtime under node_modules and needs nothing; the
+glob stays OUT of the user-facing snippet (see the editor bullet). An env var, not detection, so a CLI installed OUTSIDE the monorepo can
 be pointed at it while testing; unset = never. Declining the install, the add
 path and non-interactive runs never install, so they never relink (the e2e's
 `linkDeps` covers that case by hand); a
@@ -306,9 +368,10 @@ an example does carry wins — `withRecommendedGitignore`). No template keeps
 its own copy; `scaffold.test.ts` holds every menu entry to it. The published manifest
 keeps ZERO runtime deps — `@clack/prompts` is a devDep inlined by
 `scripts/bundle.mjs` (root `npm run build` runs it; the dist is an esbuild ESM
-bundle). The starter's `nola.replay.jsonl` makes the first run keyless; it is
-fingerprint-keyed, so prompt-composition changes fail
-`test/e2e/scaffold.test.ts` until the ledger is re-recorded (record over
+bundle). The `nola.replay.jsonl` ledgers of feature-extraction, function-calling and
+typescript-interop make the first run keyless; they are fingerprint-keyed, so
+prompt-composition changes fail `test/e2e/scaffold.test.ts` until ALL THREE
+ledgers are re-recorded (record over
 `mockProvider`, see the plan `docs/superpowers/plans/2026-08-10-scaffolding-phase2.md`).
 Publish partition: 12 public, guarded by `test/publish-manifests.test.ts`.
 
@@ -451,12 +514,37 @@ plugin expects, adapt the *plugin*, never the test expectations.
   name `__nola_incomplete_<offset>`) that `lowerInferFunction` replaces with
   NOTHING under a `broken` span — a parameter list has no inert expression to
   stand in for. NOLA1012 reports it; the retired `..name` spelling is
-  NOLA1013 and recovers as contextual; `const .x` is the reserved binding
-  form (NOLA1014 — `parseVarId` parks the marker span on the id and the
-  lowerer's `VariableDeclarator` case drops it under `broken`; a
-  `let`-scoped `chStartsBindingIdentifier` override lets `let .x` reach it).
+  NOLA1013 and recovers as contextual; `const .x` / `let .x` are contextual
+  BINDINGS since the scope-bodies spec (the parser marks the id
+  `nolaContextual`; a `let`-scoped `chStartsBindingIdentifier` override lets
+  `let .x` reach `parseVarId`), while `var .x` stays reserved (NOLA1014 —
+  the marker span is parked on the id as `nolaReservedMarker` and the
+  lowerer's `VariableDeclarator` case drops it under `broken`).
   On a plain function `.` is NOLA1010 and its bytes survive into the lowered
-  output, as before. `CompileResult.meta.spans`
+  output, as before. A THIRD recovery (2026-09-19): an expression expected at
+  the END OF THE FILE — `const x =`, or `` ask `p`;<T> `` where the `;` slipped
+  in before the type args and the typescript mixin reads `<T>` as a type
+  assertion with no operand — used to reach the same throwing `unexpected()`
+  and bail. `parseExprAtom` now mints a ZERO-WIDTH placeholder right after
+  the last token (`nolaMissingExpression`: NOLA1001 "expected an expression
+  before the end of the file", reported on the line it belongs to, not the
+  trailing blank one), lowered by `appendLeft` under a `broken` span since
+  there are no bytes to overwrite. It is once per PARSER STATE OBJECT
+  (`nolaEofPlaceholderState`): nothing is consumed at EOF, so an unclosed
+  block's statement loop must hit the throw on its second visit, while a
+  `tryParse` rollback (the typescript mixin tries `<T>` as arrow type
+  parameters BEFORE a type assertion) swaps in a fresh state and asks again
+  legitimately — a plain boolean on the parser survived the rollback and
+  broke exactly the `<T>` case. Two editor-layer rules follow from what a
+  bail costs: nola-native diagnostics are published on the ROOT document
+  (the `.tsi` source, whose identity mapping carries `verification` — Volar
+  visits the root code in its diagnostics loop too), never translated
+  through the embedded mappings, which after a bail describe the LAST-GOOD
+  text (an error past their extent was silently dropped); and stale
+  last-good mappings are served WITHOUT `semantic` (`withoutSemanticTokens`,
+  virtual-code.ts) — completion and hover are asked at a cursor and degrade
+  gracefully, but semantic tokens are painted over the whole document and
+  landed a type name over the middle of a prompt. `CompileResult.meta.spans`
   tiles the generated output (`verbatim` | `replaced` | `broken` | `appendix`)
   and is the ground truth for editor mappings; the v3 source map is derived output.
   `meta.anchors` rides on top of the tiling: source fragments copied
@@ -566,18 +654,43 @@ plugin expects, adapt the *plugin*, never the test expectations.
   ask-site node composed before the frame chain; there is no separate prompt
   field, only the model. What crosses to `LanguageModel.complete` is
   `ProviderRequest = { payload, params?, signal?, trace? }` where `payload`
-  is `ClassicPrompt | InferenceModel`, picked by the provider's DIALECT:
-  `isModelProvider(provider)` (core `provider-dialect.ts` — the
-  `MODEL_PROVIDER` global-symbol brand that `nola.infer()` sets and
-  `withRetry`/`record` copy forward; `fallback`/`roundRobin` demand one
-  shared dialect and throw NolaConfigError otherwise) gets the canonical
-  model, everyone else gets `renderClassic(model)`. There is deliberately NO
-  public `dialect` option: a custom provider always receives the rendering,
-  `mockProvider`'s callback is typed on it (`MockRequest`), and
-  `classicPayload(req)` (providers) is the typed accessor that fails
-  definitively on a model. The model leaves the runtime only through
-  `nola.infer()` — friction against reuse of the structured ask, not a security
-  boundary (the runtime is open source). `onProviderRequest` carries the
+  is `ClassicPrompt | InferenceModel`, picked by the provider's DIALECT —
+  the METHOD NAME (decision types spec 2026-09-18 §6.2, relaxing config
+  v2's "the platform model is the only infer-dialect model"): a model with
+  `infer(req)` receives `InferRequest { model }` (the canonical
+  `InferenceModel`), a model with `complete(req)` receives `ProviderRequest
+  { payload: renderClassic(model) }`; `LanguageModel` is the union
+  `ChatModel | InferModel`, `isInferModel` is the predicate, a model
+  carrying both methods is NOLA3003. `PLATFORM_MODEL` keeps only the
+  platform's own rules (root-only, profiles, no combinators, the `"nola"`
+  alias, `project` on the request). Combinators BRIDGE dialects: the outer
+  is infer-dialect iff any inner is, and `callModel` (providers
+  `dialect.ts`) renders for chat inners. There is deliberately NO public
+  `dialect` option; `mockProvider`'s callback is typed on the rendering
+  (`MockRequest`), and `classicPayload(req)` (providers) is the typed
+  accessor that fails definitively on a model. DECISION ASKS (an output
+  schema with an `x-nola-decision` node — `Choice` / `Scale` / `Prob`, emit
+  18) need a model carrying the `DECISION_MODEL` brand (core
+  `decision-model.ts`; `isDecisionModel`, `findDecisionQuestions`):
+  `Inference.terminal` refuses BEFORE the network with NOLA3018 otherwise,
+  since a chat model would fabricate a distribution. The brand is set by
+  `mockProvider(…, { decisions: true })` and `replay()` (a ledger serves
+  what it holds), forwarded by `record` / `withRetry`, carried by
+  `fallback` / `roundRobin` when any inner has it — and those two SKIP
+  unbranded inners on a decision request (`isDecisionRequest`).
+  SUGAR (emit unchanged): `` ..choice`q`<C> `` / `` ..scale`q`<L> `` /
+  `` ..prob`q` `` / `` ..prob`q`<C> `` — the parser records `kind` on
+  `NolaExtractExpression` (any other identifier after `..` is NOLA1016,
+  tolerant-recovered as plain), the lowerer wraps the written argument
+  (`<Choice<C>>`; the copied C is the anchor, the derivation request's
+  `loweredPad` widens its lowered range to the wrapper so the checker sees a
+  Choice; `def` hashes the wrapped text, so sugar and long-hand share one
+  definition; `collectDecisionTypeUses` counts the kind so the appendix
+  imports the wrapper); bare `..prob` is `__nola.types.prob()` with no
+  request; a kind-less `..choice` / `..scale` is NOLA2015 at the extractor.
+  The sugar needs the explicit sigil — after `ask`, `` choice`…` `` reads as
+  a tagged template.
+  `onProviderRequest` carries the
   `payload` as sent. `trace` carries `{askId,
   invocationId, spanPath}` for providers (like `nola`) that want it. The
   receipt's `originalPrompt`/`effectivePrompt` pair still holds the composed
@@ -610,9 +723,16 @@ plugin expects, adapt the *plugin*, never the test expectations.
   yet (TODO(history) markers in tests).
 - **Timeout + provider params ride `IntentOptions`.** `timeout` (ms; 0 disables;
   default `ask.timeoutMs` in config, `DEFAULT_ASK_TIMEOUT_MS` 60s) arms an
-  AbortController on the ROOT frame only — every provider call in the invocation
+  AbortController on the ROOT frame — every provider call in the invocation
   receives `frame.abortSignal`, `callProvider` fail-fasts via `throwIfAborted`,
-  and `frame.settle()` (InvocationIntent's finally) clears the clock. `params`
+  and `frame.settle()` (InvocationIntent's finally) clears the clock. Since the
+  scope-bodies spec (2026-09-17 §2.4) `.withTimeout(ms)` is on `Askable` and
+  means "bounds this intent's execution" everywhere: a CHILD frame whose
+  intent set one owns a clock of its own (`AbortSignal.any` with the parent's
+  signal; no config default, 0 = none), and an extract/call ask narrows its
+  provider signal the same way in `Inference.armSignal` (cleared when the ask
+  settles) — a nearer timeout can tighten the invocation's, never loosen it.
+  `params`
   (`ProviderParams`: `temperature`, `maxOutputTokens`, `providerOptions`
   escape-hatch) merges per-field along the frame chain nearest-wins
   (`mergeProviderParams` in core — `providerOptions` merges per key), with the
@@ -696,7 +816,82 @@ plugin expects, adapt the *plugin*, never the test expectations.
   extract/call asks); a lineage with no file root anywhere reports `<unknown>`. Since emit 4
   the lowered EOF insert opens with
   `__nola.useRuntime(<NOLA_EMIT>)` (was `__nola.assertEmit(3)` through emit 3; the
-  contract is 16 today — emit 16 is JSDoc constraints (spec 2026-09-15): a
+  contract is 18 today — emit 18 is DECISION TYPES (spec 2026-09-18, plans
+  stage1–4 same day): the intrinsic `Choice<{…}>` / `Scale<[…]>` / `Prob`
+  answer types (`packages/runtime/src/types/decision.ts`; criteria ride
+  optional `__nola_*` phantom members so the derive walk — `derive/src/
+  decision.ts`, called from `object()` AFTER the named-ref step — reads them
+  off the RESOLVED type), `__nola.types.choice/scale/prob` carrier nodes
+  (validation with Effect's 1e-6 tolerance, `levels` filled by the runtime,
+  schema = answer shape + the `x-nola-decision` keyword on `JsonSchema`;
+  NUMERIC LABELS since 2026-09-19 — `Choice<1 | 2>` / `Choice<{ 1: "Low" }>`
+  / a mixed `Choice<1 | "other">` emit `choice(criteria, { numeric: ["1"] })`,
+  the labels written as numbers BY TEXT: criteria and `probabilities` stay
+  keyed by the label's text, `choice` is answered as the number for a listed
+  label, the validator and the mapper's decoder convert per label, and
+  `1 | "1"` — one text, two labels — is NOLA2015),
+  the appendix `import type { Choice, Prob, Scale } from "@nola-lang/runtime"`
+  for the names a file uses and does not declare (`compiler/src/
+  decision-imports.ts`), NOLA2015 for malformed criteria (an authoring error
+  at every site kind, like NOLA2012), and the shared decisions mapper
+  `providers/src/decisions.ts` (`planFor(model, { threshold })`) that
+  `typesafe()` is the wire over; emit 17 is scope bodies (spec 2026-09-17): `ask` is
+  legal DIRECTLY in the module body too (the lowerer's ask scope is
+  `"infer" | "module" | "none"` — function scopes, class fields, static
+  blocks and namespace bodies reset it; NOLA2001 is now "inside a plain
+  function"), lowering to `await __nola.ask(X, __nola_module_ctx())` — the
+  second argument is a `Frame` OR the module scope node
+  (`__nola_file_ctx().module({})`, a hoisted appendix accessor emitted only
+  when the module body asks; `ModuleContext` lives in `intents/invocation/`,
+  memoized per file node, composes NOTHING while it has no instruction/locals
+  so a top-level ask renders as the bare TASK) and the runtime opens a
+  `<module>` root frame per ask in `ask()` itself through the shared
+  `runInvocation` lifecycle helper (`intents/invocation/lifecycle.ts`, also
+  what `InvocationIntent.infer` runs), with the asked intent's own
+  `.withTimeout` as that root's clock — whether module asks share one frame
+  is a runtime decision keyed by path, never the emitted text's. `ask fn()`
+  at the top chains `fn` under `<module>`; `await fn()` stays a detached
+  root. The file accessor carries the contract — `__nola.context.file(path,
+  17)` — because a module-body ask runs BEFORE the EOF `useRuntime`
+  statement. Stage 4 (same emit): `const .x` / `let .x` CONTEXTUAL BINDINGS
+  in both bodies — the parser marks the id `nolaContextual` (`var .x` keeps
+  NOLA1014, a pattern NOLA1011, `..x` NOLA1013); the lowerer keeps a
+  `BodyRecord` stack (block scopes: BlockStatement/for/for-in/for-of/switch)
+  and emits the STATIC half into the scope init (`locals: [{ name, type?
+  }]` on `func({...})` / `module({...})`; an annotation is a `context`
+  derivation request under the configured policy) and the DYNAMIC half at
+  each ask as a fourth argument — `__nola.ask(X, scope, alias | undefined,
+  { a, b })`, the bindings visible at that site (declared before it, in its
+  block or an enclosing one; an initializer never sees its own binding),
+  read by object shorthand when the ask runs. A binding outside a scope
+  body is NOLA1010. Runtime: `ask` attaches them as `IntentOptions.locals`
+  (`withLocals`, internal); `Frame.compose(composer, locals)` hands them to
+  the asking node and each caller frame's `options.locals` to ITS scope
+  (`ask fn()` carries the call site's locals on the child frame);
+  `localArgs` joins static + live into `FunctionArg`s flagged `local: true`
+  (wire: `InferenceScopeArg.local`, `InferenceScope.module` — additive;
+  `renderScopeBlock` lists locals after the params, keeps them out of the
+  signature, and heads a module scope `CONTEXT — module <file>`);
+  `ModuleContext` describes itself only when it has something to say (an
+  instruction, a template, or a visible local). Stage 5 (same emit): the
+  BODY INSTRUCTION — a bare template literal as a scope body's FIRST
+  statement (`bodyInstruction` in lowerer.ts; a string there is a JS
+  directive and untouched). In an infer body it is the marker's second
+  spelling and takes the marker's copy-to-closer path (anchors included;
+  marker + body literal = NOLA2013 `DuplicateInstruction`). In the module
+  body it is lowered AFTER the walk (`lowerModuleInstruction`, once
+  `moduleAsks` is known; the statement is skipped during the walk so its
+  `${.x}` holes are not NOLA2009): prose leaves the file and lands as the
+  init's `instruction` string; a literal with holes stays IN PLACE as the
+  hoisted `function __nola_module_tpl(...)` — `(__nola_s: FunctionPromptScope)
+  { return __nola.tpl\`…\`; }` + `template: __nola_module_tpl` for a
+  `${.member}` template, `() { return \`…fmt…\`; }` + `instruction:
+  __nola_module_tpl()` (read at the first ask) for lexical holes; a Nola
+  construct in a hole is NOLA2010. A prose-only literal in a module that
+  never asks is left as is (byte-identical output). The runtime side is
+  `ModuleScopeInit { instruction?, template?, locals? }`; the module scope's
+  template renders through the same pass-2 machinery as a function marker
+  (`FunctionPromptScope`, `.default` = the module's built-in block); emit 16 is JSDoc constraints (spec 2026-09-15): a
   carrier gains `.constrain({ … })`, one `constrained` node kind carrying the
   JSON Schema validation vocabulary (`packages/runtime/src/types/constraints.ts`
   — the keys ARE the keywords; strings minLength/maxLength/pattern/format,
@@ -916,9 +1111,16 @@ plugin expects, adapt the *plugin*, never the test expectations.
   emits declarations ONLY into `--out` (`<name>.tsi.js` + `<name>.tsi.d.ts`, a
   NodeNext pair for consumers of the built output); nothing is written next to
   sources. `nola check` plays the vue-tsc role: the tsconfig's plain `.ts` files
-  join the lowered program as roots and their `./x.tsi` imports resolve to the
-  LIVE lowered virtuals (tshost's custom resolver) — plain `tsc` over src is NOT
-  a supported check path. In the editor, both hosts apply
+join the lowered program as roots and their `./x.tsi` imports resolve to the
+LIVE lowered virtuals (tshost's custom resolver) — plain `tsc` over src is NOT
+a supported check path. tshost's resolution host MUST pass `realpath` (and
+`directoryExists`/`getCurrentDirectory`) through to `ts.resolveModuleName`
+(2026-09-18): without it a package's own imports resolve from the SYMLINK
+path, so under a junction-linked or pnpm-style install the runtime's
+`@nola-lang/core` import is not found beside the link, `Askable` becomes an
+error type and every ask silently types as `unknown` — `check` still said
+"no errors" because nothing in the typescript-interop scaffold USES the type; the
+feature-extraction scaffold e2e spreads `person`, which is what catches it. In the editor, both hosts apply
   `decorateHostHideShadowedDeclarations` (typescript-plugin): an `X.d.tsi.ts`
   with a sibling `X.tsi` is treated as nonexistent, so resolution falls through
   to Volar's extra-extension handling, the `.tsi` is served in-memory, and F12
@@ -982,14 +1184,23 @@ plugin expects, adapt the *plugin*, never the test expectations.
   runtime + the SAME `createNolaLanguagePlugin` (URI-keyed) +
   `volar-service-typescript` + one nola service plugin publishing
   `NolaVirtualCode.diagnostics` (source "nola"). Volar runs diagnostics plugins
-  against EMBEDDED documents when generated code exists — the nola plugin
-  decodes the embedded URI and translates source offsets through Volar's mapper
+  against every code of a script whose mappings admit `verification` — the
+  ROOT code (the `.tsi` source, identity-mapped) included, and that is where
+  the nola plugin publishes them, at their source offsets, since 2026-09-19;
+  the embedded TS document carries only the lazy derivation pass
   (`packages/language-server/src/nola-service.ts`). Diagnostics are PUSH-mode
   (volar-service-typescript declares interFileDependencies, which disables the
   pull model) — protocol tests consume `textDocument/publishDiagnostics`
   (`test/e2e/editor-lsp.test.ts`; both e2e files serialize `npm run build`
   through `test/e2e/helpers/ensure-built.ts` — keep using it). v1 feature set:
-  diagnostics, hover, completion, definition. Everything the editor host
+  diagnostics, hover, completion, definition. The server MUST register
+  its own file watchers (`server.fileWatcher.watchFiles` in `server.ts`,
+  after `server.initialized()`; the client declares none): Volar re-parses a
+  tsconfig's file list only on a watched-file event and registers no watcher
+  itself, so without it a `.tsi` created on disk after startup fell into
+  the INFERRED project (module CommonJS) and a top-level ask showed TS1378
+  until a window reload (2026-09-18; the LSP e2e advertises the capability
+  and sends the created-file notification the way VS Code does). Everything the editor host
   `require`s ships as an esbuild CJS bundle wired into `npm run build`:
   tsserver plugin (the `require` condition of `@nola-lang/typescript-plugin`),
   LSP server (`@nola-lang/language-server/server.cjs`), extension
@@ -1017,14 +1228,30 @@ plugin expects, adapt the *plugin*, never the test expectations.
   a line-start mapping to the edit's source position (opener → function
   header, closer → close-brace line), so `nola build` dist maps and
   `nola check` attribute wrapper positions honestly
-  (map-line-anchors.test.ts). Loader layer: `stripWrapperSegments`
-  (transform.ts, on esbuild's map BEFORE the remapping merge, where wrapper
-  lines are still identifiable via meta.spans) removes those segments again
-  PLUS esbuild's line-start carry segments — esbuild opens each output line
-  by re-emitting the previous token run, which would otherwise attribute the
-  closer line to the body's LAST token (the F11 bug: displayed
-  `return valid;` while paused in intent construction). Unmapped wrapper =
-  js-debug smart-steps through construction (transform.test.ts locks this).
+  (map-line-anchors.test.ts). Loader layer: the debug map is the compiler
+  map with every wrapper-line segment dropped (`layoutMap`, transform.ts;
+  wrapper lines = generated lines that begin inside replaced text, via
+  meta.spans) — in the transform-mode fallback `stripWrapperSegments` does
+  the same on the stripper's map before the remapping merge, and still
+  drops line-start CARRY segments (esbuild used to open each output line by
+  re-emitting the previous token run, which attributed the closer line to
+  the body's LAST token — the F11 bug: displayed `return valid;` while
+  paused in intent construction). Unmapped wrapper = js-debug smart-steps
+  through construction (transform.test.ts locks this). LAYOUT IS LOAD-BEARING
+  (2026-09-17): js-debug binds a `.tsi` breakpoint TWICE — through the
+  inline map AND raw by URL + line on the compiled script, whose URL is the
+  .tsi path itself. esbuild collapsed removed declarations (a 6-line
+  interface shifted the module up), so the raw copy of a breakpoint on
+  `const .message` landed in the appendix inside `__nola_file_ctx`, which
+  every ask calls: F10 over a top-level ask paused there in unmapped code and
+  degraded into a continue (reproduced with raw CDP, both breakpoints set
+  the way js-debug does). Hence Node's strip mode in the loader (layout
+  preserved), and hence lowering must never insert a mid-file newline —
+  `typeValueDecl` sits on the type declaration's line; the infer wrapper's
+  opener/closer still add one line each (raw line N inside a body binds one
+  statement early — pre-existing, benign under smart-step, the remaining
+  candidate if stepping inside bodies ever misbehaves). transform.test.ts
+  pins the layout ("generated line N maps to source line N").
   The third piece is the runtime: the executor runs in a
   thenable-assimilation microtask V8's async stepping cannot track, so F11
   across the call used to fly to the caller's resumption — the whole
@@ -1161,14 +1388,25 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `packages/create-nola-lang/skills/nola/**` (SKILL.md + references) teaches
   coding agents to write Nola; `nola skill install` / the init flow write
   SELF-CONTAINED, version-stamped copies into user projects. Three targets
-  since 2026-09-15 (`--agents claude,universal,agents-md`): `claude` copies
-  the whole directory to `.claude/skills/nola/` (Claude Code reads only its
-  own dir), `universal` copies it to `.agents/skills/nola/` (the open Agent
+  since 2026-09-15 (`--agents claude,universal,agents-md`): `universal`
+  copies the whole directory to `.agents/skills/nola/` (the open Agent
   Skills location Cursor, Copilot, Codex, Gemini CLI read natively — the
-  skills CLI's own word for it) — copies, not links, because a committed
-  symlink dies on Windows checkouts and a junction needs an absolute
-  target; `agents-md` embeds SKILL.md's body inline. Both copies are
-  preselected. The
+  skills CLI's own word for it) — a copy, not a link into node_modules;
+  `claude` is `.claude/skills/nola/` (Claude Code reads only its own dir) —
+  since 2026-09-18 a RELATIVE SYMLINK to the universal directory
+  (`CLAUDE_LINK_TARGET` = `../../.agents/skills/nola`, `linkClaudeDir` in
+  agents.ts; owner's call: the content exists once) whenever `universal` is
+  written in the same run, a copy when `claude` is chosen alone. The link is
+  the one symlink we put in user repos, so its failure modes are handled:
+  a checkout without symlink support (Windows, `core.symlinks` off) turns
+  it into a plain FILE holding the target text, which `linkClaudeDir`
+  recognizes and repairs without --force (a dangling link too); a stamped
+  copy at the link's path is reported ("is a copy (vX)" / stale) and
+  replaced under --force; a link elsewhere or an unstamped copy is the
+  user's; when `symlink` throws (Windows without Developer Mode) a copy is
+  written with a note. `agents-md` embeds SKILL.md's body inline. Both skill
+  targets are the scaffold's default and `nola skill install`'s
+  preselection. The
   `.cursor/rules/*.mdc` / `.github/instructions/*.md` adapters are RETIRED
   (a stamped leftover is "superseded" under `universal`, deleted with
   `--force`); the
@@ -1186,9 +1424,9 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `__nola.intents.*` factories declare the narrow tiers from `@nola-lang/core`
   so class internals (`run`, `spec`, `reviveValue`, `then`, `__nolaBrand`)
   never reach user completion: `Askable<T>` (raw extract/call intents —
-  `withRetry`/`withModel`/`withParams` only; not thenable, since bare await
-  throws NOLA3010, and no root-only knobs) and `Intent<T> extends Askable<T>,
-  PromiseLike<T>` (infer-function returns — adds `withTimeout`/`detached`).
+  `withRetry`/`withModel`/`withParams`/`withTimeout` only; not thenable, since
+  bare await throws NOLA3010, and no `detached`) and `Intent<T> extends
+  Askable<T>, PromiseLike<T>` (infer-function returns — adds `detached`).
   `Askable`'s T is deliberately phantom — do NOT add an anchor member, even
   symbol-keyed (TS shows symbol members in completion; the LSP e2e guards
   this); `ask` infers T from the type reference. `__nola.ask` takes

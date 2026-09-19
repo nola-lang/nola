@@ -27,10 +27,14 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 
 | Construct | Example | Page |
 | --- | --- | --- |
-| typed | `` ask ..`the ticket id`<string> `` | [Extractors](/docs/language/extractors/) |
-| untyped (free text, static `any`) | `` ask ..`think step by step` `` | [Extractors](/docs/language/extractors/) |
-| interpolation | `` ask ..`the person described in: ${text}`<Person> `` | [Extractors](/docs/language/extractors/#interpolation) |
+| typed | `` ask `the ticket id`<string> `` | [Extractors](/docs/language/extractors/) |
+| untyped (free text, static `any`) | `` ask `think step by step` `` | [Extractors](/docs/language/extractors/) |
+| interpolation | `` ask `the person described in: ${text}`<Person> `` | [Extractors](/docs/language/extractors/#interpolation) |
 | constructed, not yet resolved | `` export const nameIntent = ..`the user's full name`<string>; `` | [Extractors](/docs/language/extractors/#construction-anywhere-resolution-only-with-ask) |
+| the `..` spelling (required off the ask site) | `` const i = ..`x`<T>; fn(..`x`<T>) `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
+| a decision question: choice | `` ask ..choice`Which team?`<{ billing: "Payments"; sales: null }> `` | [Decision types](/docs/language/decision-types/#sugar) |
+| a decision question: scale | `` ask ..scale`How frustrated?`<["Calm", "Civil", "Angry"]> `` | [Decision types](/docs/language/decision-types/#sugar) |
+| a decision question: probability | `` ask ..prob`Is it urgent?` `` | [Decision types](/docs/language/decision-types/#sugar) |
 
 ## ask
 
@@ -38,7 +42,7 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 | --- | --- | --- |
 | resolve an askable | `const x = ask intent;` | [The ask operator](/docs/language/ask/) |
 | another infer function | `const r = ask otherFn(arg);` | [The ask operator](/docs/language/ask/) |
-| pin a provider | `` ask with fast ..`a rough summary`<string> `` | [The ask operator](/docs/language/ask/#ask-with-name) |
+| pin a provider | `` ask with fast `a rough summary`<string> `` | [The ask operator](/docs/language/ask/#ask-with-name) |
 | chain a method (precedence like `await`) | `` ask (..`x`<string>).withRetry(2) `` | [Intent methods](/docs/language/intent-methods/) |
 | from plain TS | `const v = await f("…");` — never bare-`await` a raw extractor | [The ask operator](/docs/language/ask/#ask-vs-await) |
 
@@ -55,14 +59,14 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 | Construct | Example | Page |
 | --- | --- | --- |
 | reshape the CONTEXT block | `` infer function f`${.default}\nRules: …`(.t: string) `` | [Prompt templates](/docs/language/prompt-templates/) |
-| reshape the TASK block | `` ask ..`ticket id, comply with ${.type}`<string> `` | [Prompt templates](/docs/language/prompt-templates/) |
+| reshape the TASK block | `` ask `ticket id, comply with ${.type}`<string> `` | [Prompt templates](/docs/language/prompt-templates/) |
 
 ## Intent methods
 
 | Method | On | Page |
 | --- | --- | --- |
-| `.withRetry(n)` · `.withModel(nameOrProvider)` · `.withParams({…})` | every intent | [Intent methods](/docs/language/intent-methods/) |
-| `.withTimeout(ms)` · `.detached()` | the intent an infer function returns | [Intent methods](/docs/language/intent-methods/) |
+| `.withRetry(n)` · `.withModel(nameOrProvider)` · `.withParams({…})` · `.withTimeout(ms)` | every intent | [Intent methods](/docs/language/intent-methods/) |
+| `.detached()` | the intent an infer function returns | [Intent methods](/docs/language/intent-methods/) |
 
 ## Imports
 
@@ -89,8 +93,8 @@ export const nameIntent = ..`the user's full name`<string>;
 
 export infer function triage`${.default}
 Rules: never invent ticket ids.`(.ticket: string, fallback: Severity) {
-  const person = ask ..`the person described in the ticket`<Person>;
-  const severity = ask with careful ..`the severity of the ticket`<Severity>;
+  const person = ask `the person described in the ticket`<Person>;
+  const severity = ask with careful `the severity of the ticket`<Severity>;
   const id = ask createTicket(..`a short ticket title for ${person.name}`<string>, 2);
   const name = ask nameIntent;
   return { person, severity: severity || fallback, id, name };
@@ -106,6 +110,6 @@ export async function createTicket(title: string, priority: number): Promise<str
 
 ## Not valid
 
-`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `const .x = …`, `..name` on a parameter, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/). Reserved by convention but not rejected: `__nola*` identifiers — the compiler emits names with that prefix, so shadowing one breaks the lowered code without a diagnostic.
+`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `var .x = …`, `..name` on a parameter, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/). Reserved by convention but not rejected: `__nola*` identifiers — the compiler emits names with that prefix, so shadowing one breaks the lowered code without a diagnostic.
 
 Next: [Intent API](/docs/reference/intent-api/)

@@ -35,8 +35,8 @@ export default defineConfig({
 ```tsi
 // summarize.tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast ..`a rough summary`<string>;
-  return ask with careful ..`a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`<string>;
+  return ask with careful `a polished summary of: ${draft}`<string>;
 }
 ```
 

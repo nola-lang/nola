@@ -24,17 +24,18 @@ The narrow tier: an intent resolvable ONLY through `ask` — what a raw `` ..`�
 | `withRetry(retries: number)` | `Askable<T>` | extra whole-ask attempts, flat, no backoff — unrelated to the provider-level `withRetry` combinator |
 | `withModel(model: ModelRef)` | `Askable<T>` | route this ask through a configured name or a provider object |
 | `withParams(params: ProviderParams)` | `Askable<T>` | wire-tuning knobs, shallow-merged over any params already on the intent |
+| `withTimeout(timeout: number)` | `Askable<T>` | bounds this intent's provider round trips, in ms, next to the invocation's own clock — whichever fires first; `0` sets none |
 
 ## Intent&lt;T&gt; extends Askable&lt;T&gt;, PromiseLike&lt;T&gt;
 
-What calling an infer function returns: lazy, thenable, and the only tier with root-only knobs (they act when the intent roots an invocation).
+What calling an infer function returns: lazy, thenable, and the only tier that opens a frame — so the only one with `detached()`.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `withRetry(retries: number)` | `Intent<T>` | as above |
 | `withModel(model: ModelRef)` | `Intent<T>` | as above |
 | `withParams(params: ProviderParams)` | `Intent<T>` | as above |
-| `withTimeout(timeout: number)` | `Intent<T>` | per-invocation timeout in ms when this intent roots the invocation; `0` disables |
+| `withTimeout(timeout: number)` | `Intent<T>` | the invocation's timeout in ms when this intent roots it (`0` disables); a bound of its own when asked from a body |
 | `detached()` | `Intent<T>` | resolve without inheriting the caller frame's context |
 | `then(…)` | — | `PromiseLike<T>`: `await` it from plain TypeScript |
 

@@ -16,6 +16,8 @@ export interface IntentInput {
 /** What one infer-function frame contributes. */
 export interface ScopeDescription {
   fn: string;
+  /** the module body's implicit scope */
+  module?: true;
   file?: string;
   instruction: string;
   args: readonly FunctionArg[];

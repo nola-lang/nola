@@ -23,6 +23,23 @@ const FIXTURES: Record<string, string> = {
     "",
   ].join("\n"),
   "module-level-intent.ts": ["export const nameIntent = ..`user name`<string>;", ""].join("\n"),
+  "decision-sugar.ts": [
+    "export infer function f(.t: string) {",
+    '  const d = ask ..choice`q`<{ a: "A"; b: null }>;',
+    "  const p = ask ..prob`q`;",
+    "  return { label: d.choice, p };",
+    "}",
+    "",
+  ].join("\n"),
+  "decision-types.ts": [
+    'type Triage = { department: Choice<{ billing: "Payments"; sales: null }>; mood: Scale<["Calm", "Angry"]>; urgent: Prob; priority: Choice<1 | 2 | 3> };',
+    "export infer function triage(.ticket: string) {",
+    "  const t = ask ..`triage`<Triage>;",
+    '  const p: number = t.priority.choice + t.priority.probabilities["1"];',
+    "  return `${t.department.choice}:${p}`;",
+    "}",
+    "",
+  ].join("\n"),
   "marker-template.ts": [
     "export infer function go`${.default}",
     "Args: ${.args.map(a => `${a.name}=${JSON.stringify(a.value)} (${a.type ?? \"?\"}) ${a.contextual}`)}",
@@ -112,6 +129,13 @@ const FIXTURES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "ask-timeout.ts": [
+    "export infer function slow(q: string) {",
+    "  const v = ask (..`v`<string>).withTimeout(5_000).withRetry(1);",
+    "  return v;",
+    "}",
+    "",
+  ].join("\n"),
   "type-values.ts": [
     "export type User = { id: string; tags?: string[] };",
     "export interface Box { w: number }",
@@ -146,6 +170,19 @@ describe("lowered output is tsc-clean under strict", () => {
     ].join("\n");
     const { code } = compileNola(source, "flow.tsi");
     expect(typecheckLowered({ "flow.ts": code })).toEqual([]);
+  });
+
+  it("inferred types flow through the implied extractor form too", () => {
+    const source = [
+      "export infer function f() {",
+      "  const id = ask `id`<string>;",
+      "  const upper: string = id;",
+      "  return upper;",
+      "}",
+      "",
+    ].join("\n");
+    const { code } = compileNola(source, "flow2.tsi");
+    expect(typecheckLowered({ "flow2.ts": code })).toEqual([]);
   });
 
   it("pruned contextual-param output is type-clean too", () => {

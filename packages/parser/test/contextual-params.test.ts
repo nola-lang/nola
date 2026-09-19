@@ -1,4 +1,4 @@
-import { type BaseNode, type NolaFunctionNode, type NolaParamNode, sliceSpan, walk } from "@nola-lang/ast";
+import { type BaseNode, type NolaFunctionNode, type NolaParamNode, type NolaVariableIdNode, sliceSpan, walk } from "@nola-lang/ast";
 import { parseNola } from "@nola-lang/parser";
 import { describe, expect, it } from "vitest";
 
@@ -124,35 +124,55 @@ describe("`.param` contextual parameters", () => {
     });
   });
 
-  // Contextual BINDINGS are the reason the marker is one dot (see spec
-  // 2026-08-16); the form itself is not implemented yet, so it must fail with
-  // the reserved-construct message, not a generic syntax error.
-  describe("`const .x` contextual bindings are reserved (NOLA1014)", () => {
-    for (const decl of ["const .bio = 1;", "let .bio = 1;", "var .bio;", "const ..bio = 1;"]) {
-      it(`\`${decl}\` → NOLA1014 in strict mode`, () => {
-        const { ast, diagnostics } = parseNola(`${decl}\n`, "x.tsi");
-        expect(ast).toBeNull();
-        expect(diagnostics[0]?.code).toBe("NOLA1014");
+  // Contextual BINDINGS (scope-bodies spec 2026-09-17 §2.2): `const .x` /
+  // `let .x` parse with the marker span on the id — the lowerer judges the
+  // position. `var` and patterns keep their reserved errors.
+  describe("`const .x` contextual bindings", () => {
+    const idOf = (ast: BaseNode, name: string) => {
+      let out: NolaVariableIdNode | undefined;
+      walk(ast, (n) => {
+        if (n.type === "Identifier" && (n as { name?: string }).name === name) out = n as NolaVariableIdNode;
+      });
+      return out;
+    };
+
+    for (const decl of ["const .bio = 1;", "let .bio = 1;", "export const .bio = 1;"]) {
+      it(`\`${decl}\` parses and marks the id contextual`, () => {
+        const src = `${decl}\n`;
+        const { ast, diagnostics } = parseNola(src, "x.tsi");
+        expect(diagnostics).toEqual([]);
+        const id = idOf(ast as BaseNode, "bio");
+        expect(id?.nolaContextual && sliceSpan(src, id.nolaContextual)).toBe(".");
+        expect(id?.nolaReservedMarker).toBeUndefined();
       });
     }
 
-    it("tolerant mode records NOLA1014, parses the declarator and marks the id", () => {
-      const src = "const .bio = 1;\n";
-      const { ast, diagnostics } = parseNola(src, "x.tsi", { tolerant: true });
-      expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1014"]);
-      let marker: { start: number; end: number } | undefined;
-      walk(ast as BaseNode, (n) => {
-        if (n.type === "Identifier" && (n as { name?: string }).name === "bio") {
-          marker = (n as { nolaReservedMarker?: { start: number; end: number } }).nolaReservedMarker;
-        }
-      });
-      expect(marker && sliceSpan(src, marker)).toBe(".");
-    });
-
     it("inside an infer function body too", () => {
       const src = "infer function f(.t: string) {\n  const .bio = ask ..`bio`<string>;\n  return bio;\n}\n";
-      const { diagnostics } = parseNola(src, "x.tsi", { tolerant: true });
+      const { ast, diagnostics } = parseNola(src, "x.tsi");
+      expect(diagnostics).toEqual([]);
+      expect(idOf(ast as BaseNode, "bio")?.nolaContextual).toBeDefined();
+    });
+
+    it("`var .x` stays reserved (NOLA1014); tolerant mode parks the span as before", () => {
+      expect(parseNola("var .bio;\n", "x.tsi").diagnostics[0]?.code).toBe("NOLA1014");
+      const src = "var .bio;\n";
+      const { ast, diagnostics } = parseNola(src, "x.tsi", { tolerant: true });
       expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1014"]);
+      const id = idOf(ast as BaseNode, "bio");
+      expect(id?.nolaReservedMarker && sliceSpan(src, id.nolaReservedMarker)).toBe(".");
+      expect(id?.nolaContextual).toBeUndefined();
+    });
+
+    it("`const ..x` is NOLA1013 and recovers as contextual", () => {
+      expect(parseNola("const ..bio = 1;\n", "x.tsi").diagnostics[0]?.code).toBe("NOLA1013");
+      const { ast, diagnostics } = parseNola("const ..bio = 1;\n", "x.tsi", { tolerant: true });
+      expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1013"]);
+      expect(idOf(ast as BaseNode, "bio")?.nolaContextual).toBeDefined();
+    });
+
+    it("a pattern after the dot is NOLA1011", () => {
+      expect(parseNola("const .{ a } = o;\n", "x.tsi").diagnostics[0]?.code).toBe("NOLA1011");
     });
   });
 });

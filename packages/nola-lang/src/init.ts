@@ -5,7 +5,7 @@ export interface InitOptions {
   add?: boolean;
   ide?: string;
   agents?: string;
-  /** --provider nola|openai|anthropic|google|none; undefined = ask interactively, none otherwise */
+  /** --provider nola|openai|anthropic|google|typesafe|none; undefined = ask interactively, none otherwise */
   provider?: string;
   /** --trial / --no-trial: shorthand for --provider nola / none */
   trial?: boolean;

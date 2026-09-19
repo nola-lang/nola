@@ -9,11 +9,15 @@ export interface InferenceScopeArg {
   contextual: boolean;
   /** only when contextual */
   value?: unknown;
+  /** true ⇔ a `.`-contextual BINDING visible at the ask site (scope-bodies spec §3.3), not a parameter */
+  local?: true;
 }
 
 /** The asking infer function's frame; `parent` is the caller frame's scope. */
 export interface InferenceScope {
   fn: string;
+  /** true ⇔ the module body's implicit `<module>` scope */
+  module?: true;
   /** display path of the defining .tsi; absent without a file root */
   file?: string;
   /** the marker text ("" when none) */

@@ -33,7 +33,7 @@ Infer functions are called from plain TypeScript, so ordinary `try`/`catch` arou
 export interface Person { name: string; age: number }
 
 export infer function extractPerson(.message: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 

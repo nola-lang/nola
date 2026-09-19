@@ -281,8 +281,22 @@ function validateMiddleware(source: string | undefined, raw: unknown): readonly 
 }
 
 function isModelShaped(value: unknown): value is LanguageModel {
-  const m = value as { name?: unknown; complete?: unknown } | null;
-  return !!m && typeof m === "object" && typeof m.name === "string" && typeof m.complete === "function";
+  const m = value as { name?: unknown; complete?: unknown; infer?: unknown } | null;
+  if (!m || typeof m !== "object" || typeof m.name !== "string") return false;
+  return typeof m.complete === "function" || typeof m.infer === "function";
+}
+
+const MODEL_SHAPES = "{ name: string, complete(req) } or { name: string, infer(req) }";
+
+/** The method name is the dialect (decision types spec 2026-09-18 §6.2): a model has one of the two, never both. */
+function assertOneDialect(source: string | undefined, value: LanguageModel, label: string): void {
+  const m = value as { complete?: unknown; infer?: unknown };
+  if (typeof m.complete === "function" && typeof m.infer === "function") {
+    fail(
+      source,
+      `${label} carries both complete(req) and infer(req) — a model implements one of complete(req) or infer(req), not both (the method name is the dialect).`,
+    );
+  }
 }
 
 /** The one string the slot takes: the alias of `nola.infer()`. */
@@ -309,11 +323,14 @@ function admitModelValue(source: string | undefined, value: unknown, label: stri
 function normalizeModelMap(source: string | undefined, raw: unknown): Record<string, ModelConfigEntry> {
   const bare = admitModelValue(source, raw, "`model`");
   if (isPlatformModel(bare)) return { default: bare };
-  if (isModelShaped(bare)) return { default: bare };
+  if (isModelShaped(bare)) {
+    assertOneDialect(source, bare, "`model`");
+    return { default: bare };
+  }
   if (bare === null || typeof bare !== "object" || Array.isArray(bare)) {
     fail(
       source,
-      "`model` must be a model (need { name: string, complete(req) } — a provider factory result, nola.infer() or its alias \"nola\"), or a map with at least a `default` entry.",
+      `\`model\` must be a model (need ${MODEL_SHAPES} — a provider factory result, nola.infer() or its alias "nola"), or a map with at least a \`default\` entry.`,
     );
   }
   const map = bare as Record<string, unknown>;
@@ -331,7 +348,8 @@ function normalizeModelMap(source: string | undefined, raw: unknown): Record<str
       out[name] = entry;
       continue;
     }
-    if (!isModelShaped(entry)) fail(source, `model.${name} is not a model (need { name: string, complete(req) }).`);
+    if (!isModelShaped(entry)) fail(source, `model.${name} is not a model (need ${MODEL_SHAPES}).`);
+    assertOneDialect(source, entry, `model.${name}`);
     out[name] = entry;
   }
   return out;

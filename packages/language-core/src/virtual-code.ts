@@ -13,6 +13,19 @@ function snapshotOf(text: string): IScriptSnapshot {
 }
 
 /**
+ * Last-good mappings describe the text the embedded code was lowered FROM,
+ * not the snapshot being edited, so every feature served through them is
+ * approximate. Completion, hover and navigation are asked for at a cursor
+ * and degrade gracefully; semantic tokens are painted over the WHOLE
+ * document and land on the wrong characters wherever the text has shifted
+ * (a type name over the middle of a prompt). Drop only those — the TextMate
+ * grammar keeps the file coloured until the parse recovers.
+ */
+function withoutSemanticTokens(mappings: CodeMapping[]): CodeMapping[] {
+  return mappings.map((m) => (m.data.semantic ? { ...m, data: { ...m.data, semantic: false } } : m));
+}
+
+/**
  * The Volar face of one .tsi document. The root carries the SOURCE snapshot
  * (languageId "nola"); the single embedded code is the lowered TypeScript.
  * The embeddedCodes list shape is the spec's open door for future
@@ -54,19 +67,23 @@ export class NolaVirtualCode implements VirtualCode {
   }
 
   /**
-   * Format-only identity self-mapping. It admits the root (source-text)
-   * document into Volar's formatting pass — the language server's nola service
-   * plugin formats the .tsi source directly, because TS-formatter indentation
-   * computed on the LOWERED text maps back wrong (infer bodies are nested one
-   * level deeper there). No other feature flag: everything else is served by
-   * the embedded TS code's mappings.
+   * Identity self-mapping of the root (source-text) document, admitting it
+   * into exactly two Volar passes. Formatting: the language server's nola
+   * service plugin formats the .tsi source directly, because TS-formatter
+   * indentation computed on the LOWERED text maps back wrong (infer bodies
+   * are nested one level deeper there). Diagnostics: nola-native errors carry
+   * SOURCE offsets, so the same plugin publishes them on this document as
+   * they are — never translated through the embedded mappings, which after a
+   * bailed parse describe an older text (an error past their extent was
+   * dropped). No other feature flag: everything else is served by the
+   * embedded TS code's mappings.
    */
   private rootMapping(): CodeMapping {
     return {
       sourceOffsets: [0],
       generatedOffsets: [0],
       lengths: [this.snapshot.getLength()],
-      data: { format: true },
+      data: { verification: true, format: true },
     };
   }
 
@@ -96,7 +113,7 @@ export class NolaVirtualCode implements VirtualCode {
         id: "ts",
         languageId: "typescript",
         snapshot: snapshotOf(this.lastGood.text),
-        mappings: this.lastGood.mappings,
+        mappings: withoutSemanticTokens(this.lastGood.mappings),
       };
     }
     // No last-good yet: raw source with a diagnostics-only whole-file mapping.

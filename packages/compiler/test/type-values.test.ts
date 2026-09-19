@@ -2,8 +2,10 @@ import { compileNola } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
 
 const INERT = "(undefined as never)";
+// On the SAME line as the declaration's end: lowering keeps the source's line
+// layout outside the appendix (the debugger binds raw .tsi lines as well as mapped ones).
 const VALUE = (name: string) =>
-  `\nexport const ${name} = __nola_type_${name}() as unknown as import("@nola-lang/runtime").TypeValueOf<typeof __nola_type_${name}, ${name}>;`;
+  ` export const ${name} = __nola_type_${name}() as unknown as import("@nola-lang/runtime").TypeValueOf<typeof __nola_type_${name}, ${name}>;`;
 
 describe("exported types become values (emit 14; phase-1 shape since emit 15)", () => {
   it("inserts the value right after the declaration and hoists ONE inert accessor in the appendix", () => {
@@ -16,7 +18,7 @@ describe("exported types become values (emit 14; phase-1 shape since emit 15)", 
     expect(code).toContain(`export interface Box { w: number }${VALUE("Box")}`);
     expect(code.match(/function __nola_type_User\(/g)).toHaveLength(1);
     expect(code).toContain(`function __nola_type_Box(): import("@nola-lang/runtime").InferType<unknown> { return ${INERT}; }`);
-    expect(code).toContain("__nola.useRuntime(16);");
+    expect(code).toContain("__nola.useRuntime(18);");
     expect(meta.mode).toBe("lowered");
     expect(meta.derivations.map((d) => [d.accessor, d.kind, d.name])).toEqual([
       ["__nola_type_User", "exported", "User"],

@@ -11,6 +11,8 @@ import { type CapturedError, capture, ensureBuilt } from "./helpers/ensure-built
 // throwaway copy of the example and runs `nola check`, proving the `.tsi`
 // types flow into plain TS (the annotations below fail to type-check if an
 // infer function's return ever degrades to `any` or loses a member).
+// triage-ticket is absent on purpose: it is the one-file shape (a top-level
+// ask in src/main.tsi) and exports no infer function to consume.
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "packages", "nola-lang", "dist", "main.js");
@@ -102,17 +104,6 @@ export async function typedConsumer(): Promise<string> {
   const query = await nextQuery("example question", []);
   const conclusion = await conclude("example question", [query]);
   return conclusion.answer; // typed as string across the .tsi boundary
-}
-`,
-  },
-  {
-    dir: "triage-ticket",
-    consumer: `import { type Priority, triageTicket } from "./triage.tsi";
-
-export async function typedConsumer(): Promise<Priority> {
-  const triage = await triageTicket("Charged twice, refund me now.");
-  // department narrows against the union; priority is the number literal union, not number
-  return triage.department === "billing" && triage.urgent ? triage.priority : 1;
 }
 `,
   },

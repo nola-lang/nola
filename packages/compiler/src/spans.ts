@@ -132,7 +132,7 @@ export class SpanRecorder {
     this.edits.push({ sourceStart: start, sourceEnd: end, text: "", side: 0, seq: this.seq++ });
   }
 
-  appendLeft(pos: number, text: string, options: { anchors?: EditAnchor[] } = {}): void {
+  appendLeft(pos: number, text: string, options: { anchors?: EditAnchor[]; broken?: boolean } = {}): void {
     this.s.appendLeft(pos, text);
     this.edits.push({ sourceStart: pos, sourceEnd: pos, text, side: 0, seq: this.seq++, ...options });
   }

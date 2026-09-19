@@ -20,7 +20,7 @@ An **intent** is a value that stands for an inference that has not run yet. It i
 ```tsi
 // summarize.tsi
 export infer function summarize(.text: string) {
-  return ask ..`a one-sentence summary`<string>;
+  return ask `a one-sentence summary`<string>;
 }
 ```
 
@@ -63,13 +63,13 @@ Three expressions produce intents, in two tiers:
 | Expression | Produces | Tier |
 | --- | --- | --- |
 | calling an infer function — `summarize(text)` | the function's result | `Intent<T>` |
-| an extractor — `` ..`instruction`<T> `` | a request to pull a `T` from context | `Askable<T>` |
+| an extractor — `` ask `instruction`<T> ``, or `` ..`instruction`<T> `` off the ask site | a request to pull a `T` from context | `Askable<T>` |
 | a call intent — `` fn`hint`(…) `` or a plain call with an extractor argument | a request to fill the arguments, then call `fn` | `Askable<T>` |
 
 | Tier | What it can do |
 | --- | --- |
-| `Askable<T>` | resolvable only through `ask`; carries `.withRetry(n)`, `.withModel(…)`, `.withParams({…})` |
-| `Intent<T>` extends `Askable<T>`, `PromiseLike<T>` | everything above, plus `.withTimeout(ms)`, `.detached()`, and `then` — so plain TypeScript can `await` it |
+| `Askable<T>` | resolvable only through `ask`; carries `.withRetry(n)`, `.withModel(…)`, `.withParams({…})`, `.withTimeout(ms)` |
+| `Intent<T>` extends `Askable<T>`, `PromiseLike<T>` | everything above, plus `.detached()` and `then` — so plain TypeScript can `await` it |
 
 The difference between the tiers is *scope*. An infer function's intent carries the function itself — its instruction, its file, its contextual parameters — so it can open an **invocation** on its own. An extractor or a call intent is only a request: it has no context of its own and borrows the invocation of the `ask` that resolves it. That is why only `Intent<T>` is thenable. See [Intent methods](/docs/language/intent-methods/) for the methods and [Intent API](/docs/reference/intent-api/) for the signatures.
 
@@ -156,7 +156,7 @@ export infer function tuned(.text: string) {
 | is eager — its work starts at creation | is lazy — its work starts at `ask`/`await` |
 | carries no settings | carries settings — provider, retries, params, timeout — that travel with the value and merge as you chain |
 | resolves the same wherever it is awaited | resolves *in the invocation that asks it*: the ask site lends its context, history and provider pin to the intent |
-| can be awaited anywhere | as an `Askable<T>`, can be resolved only by `ask` inside an infer function |
+| can be awaited anywhere | as an `Askable<T>`, can be resolved only by `ask` — inside an infer function or at the top of a module |
 
 The third row is the one to internalize. Context enters an intent at resolution, not construction — so an extractor built in one place and asked in another reads the context of the *asking* invocation:
 
@@ -174,6 +174,6 @@ export infer function headline(.text: string) {
 }
 ```
 
-Intents are ordinary values: store them, pass them, return them from helpers. Only `ask` is restricted to infer function bodies ([`NOLA2001`](/docs/reference/error-codes/#nola2001)); construction is legal anywhere.
+Intents are ordinary values: store them, pass them, return them from helpers. Only `ask` is position-restricted — an infer function body or the module body ([`NOLA2001`](/docs/reference/error-codes/#nola2001)); construction is legal anywhere.
 
 Next: [infer functions](/docs/language/infer-functions/)

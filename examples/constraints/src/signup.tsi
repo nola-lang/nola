@@ -12,5 +12,5 @@ export interface Signup {
 }
 
 export infer function parseSignup(.text: string) {
-  return ask ..`the signup form described in the text`<Signup>;
+  return ask `the signup form described in the text`<Signup>;
 }

@@ -17,7 +17,7 @@ describe("compileView (phase 1 since emit 15)", () => {
     const lines = r.code.split("\n");
     expect(lines[0]).toBe('export * from "./models.js";');
     expect(r.code).toContain('export type User = import("./models.js").User;');
-    expect(r.code).toContain("__nola.useRuntime(16);");
+    expect(r.code).toContain("__nola.useRuntime(18);");
     expect(r.code).toContain(
       'export const User = __nola_type_User() as unknown as import("@nola-lang/runtime").TypeValueOf<typeof __nola_type_User, User>;',
     );

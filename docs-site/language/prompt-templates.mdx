@@ -15,7 +15,7 @@ export type Ticket = { id: string; body: string };
 
 export infer function analyze`${.default}
 Rules: answer only from the arguments above; never invent ids.`(.ticket: Ticket) {
-  const id = ask ..`ticket id, comply with ${.type}`<string>;
+  const id = ask `ticket id, comply with ${.type}`<string>;
   return id;
 }
 ```
@@ -31,7 +31,7 @@ The rule is static and decided per literal:
 
 ## Function scope
 
-Available in an infer-function marker (`FunctionPromptScope`):
+Available in an infer-function marker — or its [body-instruction spelling](/docs/language/infer-functions/#the-body-instruction), and in the module body's first-statement literal (`FunctionPromptScope`):
 
 | Member | Meaning |
 | --- | --- |
@@ -55,7 +55,7 @@ ${.args.map((a) => `- ${a.name} (${a.type}): ${JSON.stringify(a.value)}`)}
 TASK
 ${.next}
 `(.ticket: string) {
-  return ask ..`the severity: low, medium or high`<"low" | "medium" | "high">;
+  return ask `the severity: low, medium or high`<"low" | "medium" | "high">;
 }
 ```
 

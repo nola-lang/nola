@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -29,7 +29,7 @@ function run(cmd: string[], cwd: string): Promise<string> {
 // OFFLINE — answers come from the committed replay ledger, no API key. This
 // doubles as a prompt-composition stability guard: wording changes re-key the
 // ledger and fail here until the template ledger is re-recorded.
-describe("scaffolded project", () => {
+describe("scaffolded project (feature-extraction, the default)", () => {
   let app: string;
 
   beforeAll(async () => {
@@ -40,28 +40,83 @@ describe("scaffolded project", () => {
     linkDeps(app);
   }, 600_000);
 
-  it("nola run works keylessly via the replay ledger", async () => {
-    const out = await run([NOLA, "run", "src/main.ts"], app);
+  it("is one .tsi file that is the program: nola run src/main.tsi works keylessly via the replay ledger", async () => {
+    expect(existsSync(join(app, "src", "main.tsi"))).toBe(true);
+    expect(existsSync(join(app, "src", "main.ts"))).toBe(false);
+    const pkg = JSON.parse(readFileSync(join(app, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("nola run src/main.tsi");
+    const out = await run([NOLA, "run", "src/main.tsi"], app);
     const lastLine = out.trim().split("\n").at(-1) as string;
+    // both asks answered from the ledger: the extraction, then the ask that reads the `.role` binding
     expect(JSON.parse(lastLine)).toEqual({
       name: "Alice Smith",
       age: 32,
       employer: "Acme Corp",
       job: "staff engineer",
+      seniority: "staff",
     });
   });
 
-  it("nola check passes", async () => {
+  it("nola check passes — and the ask results are TYPED (a spread of `person` needs an object type)", async () => {
+    // The template spreads `person` and reads `person.job`: an `unknown` result
+    // would be TS2698/TS18046. That is what guards tshost's realpath-aware
+    // resolution — under a linked install the runtime's own `@nola-lang/core`
+    // import resolves only through the link's real path.
     const out = await run([NOLA, "check"], app);
     expect(out).toContain("no errors");
   });
 
-  it("nola init lays down the identical starter", async () => {
+  it("nola build writes dist/src/main.tsi.js that runs under plain node", async () => {
+    await run([NOLA, "build"], app);
+    const out = await capture(process.execPath, [join(app, "dist", "src", "main.tsi.js")], { cwd: app });
+    expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toMatchObject({ name: "Alice Smith", seniority: "staff" });
+  });
+
+  it("nola init lays down the identical template", async () => {
     const dir = join(await mkdtemp(join(tmpdir(), "nola-init-e2e-")), "app2");
     await run([NOLA, "init", dir], ROOT);
+    for (const f of ["package.json", "nola.config.ts", "nola.replay.jsonl", ".gitignore", "src/main.tsi"]) {
+      expect(existsSync(join(dir, f)), f).toBe(true);
+    }
+    expect(existsSync(join(dir, "src", "main.ts"))).toBe(false);
+    // the editor setup and the agent skill are defaults, no flag needed; Claude Code reads the one copy through a link
+    for (const f of [".vscode/launch.json", ".vscode/extensions.json", ".agents/skills/nola/SKILL.md", ".claude/skills/nola/SKILL.md"]) {
+      expect(existsSync(join(dir, f)), f).toBe(true);
+    }
+    expect(lstatSync(join(dir, ".claude", "skills", "nola")).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+  });
+
+  it("function-calling: a top-level call intent over an async function in src/tickets.ts, replayed keylessly, checks clean", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "nola-function-calling-e2e-")), "app");
+    await run([CREATE, dir, "--template", "function-calling"], ROOT);
+    for (const f of ["nola.replay.jsonl", "src/main.tsi", "src/tickets.ts"]) expect(existsSync(join(dir, f)), f).toBe(true);
+    linkDeps(dir);
+    const out = await run([NOLA, "run", "src/main.tsi"], dir);
+    // the model filled both slots from the ledger; createTicket ran with them and its settled value is what `ask` yields
+    expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toEqual({
+      id: "T-1",
+      title: "Cannot log in before a customer demo",
+      priority: 1,
+    });
+    expect(await run([NOLA, "check"], dir)).toContain("no errors");
+  });
+
+  it("typescript-interop: the infer function in person.tsi, awaited from plain main.ts, replays keylessly and checks clean", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "nola-typescript-interop-e2e-")), "app");
+    await run([CREATE, dir, "--template", "typescript-interop"], ROOT);
     for (const f of ["package.json", "nola.config.ts", "nola.replay.jsonl", ".gitignore", "src/person.tsi", "src/main.ts"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
+    linkDeps(dir);
+    const out = await run([NOLA, "run", "src/main.ts"], dir);
+    expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toEqual({
+      name: "Alice Smith",
+      age: 32,
+      employer: "Acme Corp",
+      job: "staff engineer",
+    });
+    expect(await run([NOLA, "check"], dir)).toContain("no errors");
   });
 
   it("scaffolds the empty template and checks clean", async () => {
@@ -79,6 +134,7 @@ describe("scaffolded project", () => {
     for (const f of [".agents/skills/nola/SKILL.md", ".claude/skills/nola/SKILL.md", "AGENTS.md"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
+    expect(lstatSync(join(dir, ".claude", "skills", "nola")).isSymbolicLink()).toBe(true);
     // The retired per-agent adapters are gone: one skill directory serves every agent.
     expect(existsSync(join(dir, ".cursor"))).toBe(false);
     expect(existsSync(join(dir, ".github"))).toBe(false);
@@ -159,6 +215,7 @@ describe("scaffolded project", () => {
     expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(dir, ".agents", "skills", "nola", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, ".claude", "skills", "nola", "SKILL.md"))).toBe(true);
+    expect(lstatSync(join(dir, ".claude", "skills", "nola")).isSymbolicLink()).toBe(true);
     // idempotent second run: same version, so nothing is rewritten
     const again = await run([NOLA, "skill", "install", "--agents", "agents-md,claude,universal"], dir);
     expect(again).toContain("already exists");
@@ -274,7 +331,8 @@ describe("scaffolded project", () => {
 
       // 1. First scaffold: the machine's one anonymous trial — key in .env, account in config.json, NO credentials file.
       const dir = join(parent, "trial-app");
-      await capture(process.execPath, [CREATE, dir, "--trial"], { cwd: parent, env });
+      // typescript-interop: its ONE ask is what the stub API answers; the journey is about the key, not the template
+      await capture(process.execPath, [CREATE, dir, "--trial", "--template", "typescript-interop"], { cwd: parent, env });
       expect(readFileSync(join(dir, ".env"), "utf8")).toBe(`NOLA_API_KEY=${KEY}\n`);
       expect(readFileSync(join(dir, ".gitignore"), "utf8").split("\n")).toEqual(expect.arrayContaining([".env", ".env.*"]));
       expect(readFileSync(join(dir, "nola.config.ts"), "utf8")).toBe(

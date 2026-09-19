@@ -1,7 +1,8 @@
-import { type ConsoleTask, createDebugTask, NolaResolutionError } from "@nola-lang/core";
+import { type ConsoleTask, createDebugTask } from "@nola-lang/core";
 import type { Frame } from "../../runtime/index.js";
 import { Intent, type IntentExecutor, type IntentOptions } from "../intent.js";
 import type { InvocationContext } from "./invocation-context.js";
+import { runInvocation } from "./lifecycle.js";
 
 /**
  * The intent an infer function returns. Resolution mints one Frame per attempt
@@ -47,41 +48,10 @@ export class InvocationIntent<T = unknown> extends Intent<T, InvocationContext> 
       ? parent.child(this.inferContext, this.options)
       : this.runtime.openFrame(this.inferContext, this.options);
 
-    const lineage = parent ? { parentInvocationId: parent.invocationId } : {};
-    // Every frame announces itself — root or attached — so a console can name it before it ends.
-    frame.runtime.emitEvent("onInvocationStart", {
-      invocationId: frame.invocationId,
-      ...lineage,
-      spanPath: frame.spanPath(),
-      fn: frame.fnName(),
-      file: frame.sourceFile(),
-      detached: this.options.detached === true,
-    });
-
-    let failed = false;
-    try {
-      const value = await (this.debugTask ? this.debugTask.run(() => this.executor(frame)) : this.executor(frame));
-      frame.collapse(value);
-
-      return value;
-    } catch (error) {
-      failed = true;
-      if (error instanceof NolaResolutionError && !error.trace) {
-        error.trace = frame.toTrace();
-      }
-
-      throw error;
-    } finally {
-      // Stop the timeout clock (no-op unless this frame is a root).
-      frame.settle();
-      // Every frame ends; a root's trace is the whole tree, a child's its own subtree.
-      frame.runtime.emitEvent("onInvocationEnd", {
-        invocationId: frame.invocationId,
-        ...lineage,
-        status: failed ? "error" : "ok",
-        durationMs: Date.now() - frame.startedAt,
-        trace: frame.toTrace(),
-      });
-    }
+    return runInvocation(
+      frame,
+      (f) => (this.debugTask ? this.debugTask.run(() => this.executor(f)) : this.executor(f)),
+      this.options.detached === true,
+    );
   }
 }

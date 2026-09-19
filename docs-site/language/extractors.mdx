@@ -1,20 +1,20 @@
 ---
 title: Extractors
-description: The ..instruction<T> expression — typed vs untyped, ${} interpolation, where it can be built, and every TypeScript type that derives to a schema.
+description: The ask `instruction`<T> expression — typed vs untyped, ${} interpolation, the ..`instruction` spelling off the ask site, and which types derive to a schema.
 sidebar:
   order: 40
 ---
 
-An extractor is the request itself: instruction text in backticks plus an optional type argument. `ask` resolves it to a `T`.
+An extractor is the request itself: instruction text in backticks plus an optional type argument. Directly after `ask` the backticks alone are the extractor; anywhere else it is written with two leading dots, `` ..`…`<T> `` ([below](#two-spellings-one-construct)). `ask` resolves it to a `T`.
 
 ## Typed and untyped
 
 ```tsi
 // parse.tsi
 export infer function parse(.doc: string) {
-  const id = ask ..`the ticket id`<string>;             // typed
-  const count = ask ..`how many line items`<number>;
-  const free = ask ..`think step by step about the document`;  // untyped
+  const id = ask `the ticket id`<string>;             // typed
+  const count = ask `how many line items`<number>;
+  const free = ask `think step by step about the document`;  // untyped
   return { id, count, free };
 }
 ```
@@ -33,11 +33,31 @@ interface Person {
 }
 
 export infer function lookup(text: string) {
-  return ask ..`the person described in: ${text}`<Person>;
+  return ask `the person described in: ${text}`<Person>;
 }
 ```
 
 One exception: a hole that starts with a single dot — `${.type}` — is *not* a lexical value. It reads the extractor's prompt scope and turns the backticks into a prompt template. See [Prompt templates](/docs/language/prompt-templates/).
+
+## Two spellings, one construct
+
+Directly after `ask` (and after `ask with <name>`) the two dots are implied — `ask` already says a value is coming out of the model. Everywhere else the dots are required, because there a bare template literal is an ordinary string:
+
+```tsi
+// spellings.tsi
+declare function createTicket(title: string, priority: number): Promise<string>;
+
+export const nameIntent = ..`the user's full name`<string>;     // stored: dots required
+
+export infer function whoIsIt(.text: string) {
+  const name = ask `the user's full name`<string>;              // implied
+  const same = ask ..`the user's full name`<string>;            // still legal
+  const id = ask createTicket(..`a short title`<string>, 2);    // call-intent slot: dots required
+  return { name, same, id };
+}
+```
+
+Only a template literal that is the *first token* of the operand is claimed: `` ask (`x`) `` and `` ask tag`x` `` are plain expressions. The space is mandatory: `` ask`x` `` with the backtick glued to `ask` reads as a tagged template and is [`NOLA1017`](/docs/reference/error-codes/#nola1017). A typed template outside `ask` — `` f(`x`<string>) `` — is [`NOLA2014`](/docs/reference/error-codes/#nola2014). In both spellings a `<` right after the closing backtick always starts type arguments; parenthesize to compare.
 
 ## Construction anywhere, resolution only with ask
 
@@ -52,7 +72,7 @@ export infer function whoIsIt(.text: string) {
 }
 ```
 
-Only `ask` is position-restricted: it must sit directly inside an infer function body ([`NOLA2001`](/docs/reference/error-codes/#nola2001)). A raw extractor is never bare-`await`ed — it carries no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time.
+Only `ask` is position-restricted: it must sit directly inside an infer function body or directly in the module body ([`NOLA2001`](/docs/reference/error-codes/#nola2001)) — see [Where ask is legal](/docs/language/ask/#where-ask-is-legal). A raw extractor is never bare-`await`ed — it carries no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time.
 
 ## Derivable types
 
@@ -90,17 +110,17 @@ export type TreeNode = {
 };
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask ..`answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`<Conclusion>;
 }
 
 export infer function nextEvent(.calendar: string) {
-  const event = ask ..`the next event on the calendar`<CalendarEvent>;
+  const event = ask `the next event on the calendar`<CalendarEvent>;
   const when: Date = event.at;   // a Date, not a string
   return when;
 }
 
 export infer function parseTree(.input: string) {
-  return ask ..`the tree structure described in the input`<TreeNode>;
+  return ask `the tree structure described in the input`<TreeNode>;
 }
 ```
 
@@ -119,7 +139,7 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 
@@ -128,7 +148,7 @@ export infer function extractPerson(.text: string) {
 ```tsi
 // tally.tsi
 export infer function tally(.doc: string) {
-  const counts = ask ..`counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`<{ label: string; count: number }[]>;
   return new Map(counts.map((c) => [c.label, c.count]));
 }
 ```

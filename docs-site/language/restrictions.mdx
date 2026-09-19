@@ -24,7 +24,7 @@ export infer function read(.doc: string) {
 ```tsi
 // read.tsi — RIGHT
 export infer function read(.doc: string) {
-  const v = ask ..`the value`<string>;
+  const v = ask `the value`<string>;
   return v;
 }
 ```
@@ -40,7 +40,7 @@ The grammar is shaped to accept these; today each one is a clear error rather th
 | `infer` on a method, arrow function or function expression | plain parse error ([`NOLA1001`](/docs/reference/error-codes/#nola1001)) — `infer` is a keyword only before `function` at statement/export position |
 | `infer function*` (generator), an instruction marker on a class method or a bodiless `declare function` | [`NOLA1004`](/docs/reference/error-codes/#nola1004) — reserved |
 | `fn(..)` — the bare derive-all call | [`NOLA1004`](/docs/reference/error-codes/#nola1004) |
-| `const .x = …` — a contextual binding inside a body | [`NOLA1014`](/docs/reference/error-codes/#nola1014) |
+| `var .x = …` — a `var` contextual binding | [`NOLA1014`](/docs/reference/error-codes/#nola1014) — write `const .x` or `let .x` ([Contextual bindings](/docs/language/contextual-parameters/#contextual-bindings)) |
 | `.` on a destructuring pattern or a defaulted parameter | [`NOLA1011`](/docs/reference/error-codes/#nola1011) — use a plain identifier parameter |
 | an instruction marker on a plain function — `` function name`…`() `` | [`NOLA1007`](/docs/reference/error-codes/#nola1007) — only `infer function` takes one |
 
@@ -56,7 +56,7 @@ Further language features are deferred and are simply **parse errors** today (`N
 Things people assume are forbidden and are not:
 
 - `await` inside an infer function — legal, for any ordinary promise.
-- Constructing an extractor at module level — legal and inert; only `ask` is position-restricted.
+- Constructing an extractor at module level — legal and inert. Asking at module level — also legal: a top-level `ask` runs as its own `<module>` invocation (see [ask](/docs/language/ask/#at-module-level)).
 - Several contextual parameters on one function — legal; they compose into one block.
 - Calling one infer function from another with `ask otherFn(…)` — legal; that is how you compose them.
 

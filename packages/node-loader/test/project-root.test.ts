@@ -30,7 +30,7 @@ describe("transformNola sourceRoot", () => {
   it("bakes a project-root-relative path into the emitted code", async () => {
     const root = join(tmpdir(), "proj");
     const { code } = await transformNola(SRC, join(root, "src", "go.tsi"), { sourceRoot: root });
-    expect(code).toContain('__nola.context.file("src/go.tsi")');
+    expect(code).toContain('__nola.context.file("src/go.tsi", 18)');
     expect(code).not.toContain(root);
   });
 });

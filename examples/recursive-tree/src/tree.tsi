@@ -6,6 +6,6 @@ export type TreeNode = {
 };
 
 export infer function parseTree(input: string) {
-  const tree = ask ..`the tree structure described in: ${input}`<TreeNode>;
+  const tree = ask `the tree structure described in: ${input}`<TreeNode>;
   return tree;
 }

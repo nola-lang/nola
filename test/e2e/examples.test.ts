@@ -174,24 +174,25 @@ describe.each(EXAMPLES)("examples/$dir end-to-end", ({ dir, tsi, expected }) => 
 
 // triage-ticket ships with `model: typesafe()` — the vendor IS the example, so
 // there is no mock config to run offline. Build and check need no provider;
-// the run is gated on the key (the reverse of the OpenAI smoke below).
+// the run is gated on the key (the reverse of the OpenAI smoke below). It is
+// the one-file shape (a top-level ask in src/main.tsi, no plain-TS consumer).
 describe("examples/triage-ticket end-to-end (typesafe provider)", () => {
   const cwd = join(ROOT, "examples", "triage-ticket");
 
   it("nola build emits js + declarations into dist, never into src", { timeout: 120_000 }, async () => {
     await capture(process.execPath, [CLI, "build", ".", "--out", "dist"], { cwd });
-    expect(existsSync(join(cwd, "dist", "src", "triage.tsi.js"))).toBe(true);
-    expect(existsSync(join(cwd, "dist", "src", "triage.tsi.d.ts"))).toBe(true);
-    expect(existsSync(join(cwd, "src", "triage.d.tsi.ts"))).toBe(false);
+    expect(existsSync(join(cwd, "dist", "src", "main.tsi.js"))).toBe(true);
+    expect(existsSync(join(cwd, "dist", "src", "main.tsi.d.ts"))).toBe(true);
+    expect(existsSync(join(cwd, "src", "main.d.tsi.ts"))).toBe(false);
   });
 
-  it("nola check passes on the example (main.ts included — the vue-tsc role)", { timeout: 120_000 }, async () => {
+  it("nola check passes on the example", { timeout: 120_000 }, async () => {
     const stdout = await capture(process.execPath, [CLI, "check", "."], { cwd });
     expect(stdout).toContain("no errors");
   });
 
   it.skipIf(!process.env.TYPESAFE_API_KEY)("nola run triages the ticket through Jev", { timeout: 180_000 }, async () => {
-    const stdout = await capture(process.execPath, [CLI, "run", "src/main.ts"], { cwd });
+    const stdout = await capture(process.execPath, [CLI, "run", "src/main.tsi"], { cwd });
     const result = JSON.parse(stdout.trim()) as { department: string; urgent: boolean; priority: number; refundRequested: boolean };
     expect(["billing", "shipping", "account", "other"]).toContain(result.department);
     expect(typeof result.urgent).toBe("boolean");

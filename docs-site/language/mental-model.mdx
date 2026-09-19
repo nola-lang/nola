@@ -14,8 +14,8 @@ Everything you know about TypeScript applies inside a `.tsi` file. Nola adds `in
 ```tsi
 // analyze.tsi
 export infer function analyzeUserRequest(userId: string, .message: string) {
-  const ticketId = ask ..`ticket id mentioned in the message`<string>;
-  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  const ticketId = ask `ticket id mentioned in the message`<string>;
+  const isFraud = ask `does the message look fraudulent`<boolean>;
   return { userId, ticketId, isFraud };
 }
 ```
@@ -28,12 +28,12 @@ Calling an infer function runs nothing. It returns an `Intent<T>` — a lazy, th
 
 `ask` resolves any *askable* — an extractor, a call intent, or the intent another infer function returned — to its value. It has `await`'s precedence and sits in the same position in your code. Two rules follow:
 
-- `ask` is legal only directly inside an `infer function` body — not at module level, not inside a nested closure ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
+- `ask` is legal only directly inside an `infer function` body or directly in the module body — not inside a plain function or a nested closure ([`NOLA2001`](/docs/reference/error-codes/#nola2001)). A top-level `ask` runs as its own `<module>` invocation.
 - From plain TypeScript you do not `ask`; you `await` the intent an infer function returns. A raw extractor or call intent is never bare-`await`ed — it has no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010).
 
-## 4. One dot in, two dots out
+## 4. One dot in, `ask` out
 
-A parameter with one leading dot — `.message` — is a **contextual parameter**: its value flows *into* the model's context for every `ask` in that invocation. A plain parameter (`userId`) is an ordinary argument; the model sees only that it exists — its name in the signature — never its value. Two dots — `` ..`instruction` `` — is an **extractor**: a value comes *out* of the model. One dot in, two dots out.
+A parameter with one leading dot — `.message` — is a **contextual parameter**: its value flows *into* the model's context for every `ask` in that invocation. A plain parameter (`userId`) is an ordinary argument; the model sees only that it exists — its name in the signature — never its value. A template literal after `ask` — `` ask `instruction`<T> `` — is an **extractor**: a value comes *out* of the model. Where an extractor is built without `ask` directly in front of it — stored in a variable, passed to a [call intent](/docs/language/call-intents/) — it is spelled with two dots, `` ..`instruction`<T> ``, so it cannot be mistaken for a string.
 
 ## 5. Lowering: the JSX model
 
@@ -47,7 +47,7 @@ A parameter with one leading dot — `.message` — is a **contextual parameter*
 | **contextual parameter** | `.name: T` — a parameter whose value is shown to the model |
 | **intent** | the lazy value `ask` (or `await`, from plain TS) resolves — see [Intents](/docs/language/intent/) |
 | **askable** | anything `ask` accepts: an extractor, a call intent, an infer function's intent |
-| **extractor** | `` ..`instruction`<T> `` — a request to pull a `T` from context |
+| **extractor** | `` ask `instruction`<T> `` (`` ..`instruction`<T> `` off the ask site) — a request to pull a `T` from context |
 | **call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument — the model fills the arguments, then the function runs |
 | **instruction** | the backtick text you write (marker, extractor, call hint) |
 | **prompt** | the composed provider-facing text; you see it in receipts |

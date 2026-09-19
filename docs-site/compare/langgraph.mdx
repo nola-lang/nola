@@ -70,8 +70,8 @@ export type Triage = {
 };
 
 export infer function classifyMessage(.message: string) {
-  const triage = ask ..`triage the customer message`<Triage>;
-  const reply = ask ..`a reply for a ${triage.category} case`<string>;
+  const triage = ask `triage the customer message`<Triage>;
+  const reply = ask `a reply for a ${triage.category} case`<string>;
   return { ...triage, reply };
 }
 ```

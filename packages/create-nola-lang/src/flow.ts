@@ -6,7 +6,13 @@ import { addNola } from "./add.js";
 import { AGENT_IDS, AGENT_OPTIONS, type AgentId, defaultAgents, parseAgentsFlag, writeAgentSkills } from "./agents.js";
 import { type KeyGrant, NolaApiError, nolaApiUrl } from "./api.js";
 import { signIn } from "./auth.js";
-import { LINK_CHECKOUT_ENV, linkCheckoutFromEnv, linkCheckoutPackages } from "./checkout.js";
+import {
+  CHECKOUT_DIST_SKIP_GLOB,
+  LINK_CHECKOUT_ENV,
+  linkCheckoutFromEnv,
+  linkCheckoutPackages,
+  skipCheckoutDistInLaunch,
+} from "./checkout.js";
 import { type CommandSpec, defineCommand, type OptionSpec } from "./cli.js";
 import { readSession } from "./credentials.js";
 import { ExampleFetchError } from "./github.js";
@@ -18,8 +24,8 @@ import { nodeVersionWarning } from "./node-version.js";
 import { openBrowser } from "./open-url.js";
 import { detectPackageManager, type PackageManager, packageManagerCommands } from "./package-manager.js";
 import { isProviderId, PROVIDERS, type ProviderId, providerById, providerIds } from "./providers.js";
-import { TEMPLATES, type TemplateDef, templateByName, templateNames } from "./registry.js";
-import { ownVersion, scaffold } from "./scaffold.js";
+import { entryFile, exampleNames, featuredNames, TEMPLATES, type TemplateDef, templateByName, templateNames } from "./registry.js";
+import { ownVersion, scaffold, vendorEnvVar } from "./scaffold.js";
 import { applyTrial } from "./trial.js";
 
 export interface PrompterOption {
@@ -99,20 +105,29 @@ export type FlowOutcome =
   | { kind: "cancelled" };
 
 const DEFAULT_DIR = "nola-app";
-const DEFAULT_TEMPLATE = "starter";
+const DEFAULT_TEMPLATE = "feature-extraction";
 
 /*
  * The wizard, in order (spec 2026-08-12-interactive-init-design.md, reordered
  * 2026-09-03, provider select 2026-09-08): name → template → "Select an
  * inference provider" (Nola first — the free runs, or a key on the account —
- * then the vendors, then skip) → "Set up your editor and coding agents?"
- * (yes/no, default yes — the whole no is one Enter) → on yes, ONE grouped
- * checkbox list (editor + coding agents), then — once the files are on
- * disk — "Install dependencies and open VS Code?". Every question is
- * answered before anything is written; the nola key request runs after the
- * last question.
+ * then the vendors, then skip) → then — once the files are on disk —
+ * "Install dependencies and open VS Code?". The editor setup and the agent
+ * skill are written WITHOUT a question (2026-09-18; `--ide none` /
+ * `--agents …` override): the "Set up your Editor and Coding Agents?" gate
+ * and its grouped list are kept behind `SETUP_STEP_ASKED` should the step
+ * come back. Every question is answered before anything is written; the
+ * nola key request runs after the last question.
  */
 export const NAME_QUESTION = `Project name (press Enter to keep "${DEFAULT_DIR}"):`;
+/**
+ * The retired setup step (2026-09-18). false = the editor setup and the agent
+ * skill are defaults (`DEFAULT_IDE`, `defaultAgents`) and nothing is asked;
+ * flip to true to bring the gate + grouped list back exactly as they were.
+ */
+const SETUP_STEP_ASKED: boolean = false;
+/** The editor the scaffold sets up unless `--ide none` says otherwise. */
+const DEFAULT_IDE = "vscode";
 /** The yes/no gate in front of the setup list; narrowed when a flag already answered one half. */
 export const SETUP_QUESTION = "Set up your Editor and Coding Agents?";
 export const EDITOR_QUESTION = "Set up your Editor?";
@@ -125,18 +140,64 @@ const EDITOR_OPTIONS: PrompterOption[] = [
 ];
 
 function templateOption(t: TemplateDef): PrompterOption {
-  // a pinned template names its vendor in the row itself: `example: triage-ticket (typesafe.ai)`
+  // a pinned template names its vendor in the row itself: `triage-ticket (typesafe.ai)`
   const vendor = t.provider ? ` (${t.provider.label})` : "";
-  return { value: t.name, label: t.source === "example" ? `example: ${t.name}${vendor}` : `${t.name}${vendor}`, hint: t.label };
+  return { value: t.name, label: `${t.name}${vendor}`, hint: t.label };
+}
+
+/*
+ * The template step is TWO menus (clack's select has no sections): the first
+ * lists the first-menu templates — feature-extraction, function-calling,
+ * typescript-interop, triage-ticket (the featured example), empty — and one
+ * "More examples…" row; that row opens the remaining curated examples, with a
+ * Back row to return. `--template <name>` answers either level directly.
+ */
+export const TEMPLATE_QUESTION = "Select a template:";
+export const EXAMPLE_QUESTION = "Select an example:";
+/** the first menu's last row — opens the examples menu */
+export const MORE_EXAMPLES = "more-examples";
+/** the examples menu's last row — back to the first menu */
+export const BACK = "back";
+
+/** `"feature-extraction", "function-calling", …` — for the fetch-failure note. */
+const builtinNames = () =>
+  TEMPLATES.filter((t) => t.source === "builtin")
+    .map((t) => `"${t.name}"`)
+    .join(", ");
+
+/** The first menu: the builtin templates and the featured example in registry order, then the examples row. */
+export function templateMenu(): PrompterOption[] {
+  const featured = featuredNames().map((name) => templateOption(templateByName(name) as TemplateDef));
+  return [...featured, { value: MORE_EXAMPLES, label: "More examples…", hint: exampleNames().join(", ") }];
+}
+
+/** The second menu: the curated examples the first menu does not carry, in registry order, then Back. */
+export function exampleMenu(): PrompterOption[] {
+  const examples = exampleNames().map((name) => templateOption(templateByName(name) as TemplateDef));
+  return [...examples, { value: BACK, label: "← Back", hint: "the builtin templates" }];
+}
+
+/** Ask the two-level template menu until a template is chosen; null = cancelled. */
+async function selectTemplate(prompter: Prompter): Promise<string | null> {
+  for (;;) {
+    const choice = await prompter.select(TEMPLATE_QUESTION, templateMenu());
+    if (choice === null) return null;
+    if (choice !== MORE_EXAMPLES) return choice;
+    const example = await prompter.select(EXAMPLE_QUESTION, exampleMenu());
+    if (example === null) return null;
+    if (example !== BACK) return example;
+  }
 }
 
 /**
- * The setup step: a yes/no gate (default yes), then editor + coding agents in
- * one grouped checkbox list, VS Code and both skill copies preselected — so the
- * defaults are two Enters and the whole no is one. `--ide` / `--agents` each
- * fill their half — a group a flag already answered is not shown and the gate
- * narrows to the half that remains; a no leaves the asked halves at none.
- * null = cancelled. Non-interactive defaults: no editor, no agents.
+ * The editor + agents answer. Today (the step is retired): the flags, else the
+ * defaults — VS Code and both skill targets — interactive or not, so a scaffold
+ * carries `.vscode/` and the skill unless `--ide none` / `--agents none` opt
+ * out. With `SETUP_STEP_ASKED`: a yes/no gate (default yes), then editor +
+ * coding agents in one grouped checkbox list with the same defaults
+ * preselected; `--ide` / `--agents` each fill their half — a group a flag
+ * already answered is not shown and the gate narrows to the half that
+ * remains; a no leaves the asked halves at none. null = cancelled.
  */
 async function resolveSetup(
   input: FlowInput,
@@ -146,7 +207,7 @@ async function resolveSetup(
   const ide = input.ide === "vscode" || input.ide === "none" ? input.ide : undefined;
   const agents = input.agents !== undefined ? parseAgentsFlag(input.agents) : undefined;
   if (ide !== undefined && agents !== undefined) return { ide, agents };
-  if (!input.interactive) return { ide: ide ?? "none", agents: agents ?? [] };
+  if (!input.interactive || !SETUP_STEP_ASKED) return { ide: ide ?? DEFAULT_IDE, agents: agents ?? defaultAgents(dir) };
   const groups: PrompterGroup[] = [];
   const initial: string[] = [];
   if (ide === undefined) {
@@ -189,9 +250,26 @@ export function nolaHint(path: KeyPath): string {
   }
 }
 
-/** The provider menu with the nola row worded for this machine. */
-export function providerOptions(path: KeyPath): PrompterOption[] {
-  return PROVIDERS.map((p) => ({ value: p.id, label: p.label, hint: p.id === "nola" ? nolaHint(path) : p.hint }));
+/**
+ * The typesafe row's bracket: the vendor serves literal unions and booleans
+ * only, so for a template whose asks go further the hint says so by name
+ * (the template was chosen one question earlier); no template (add mode)
+ * gets the generic form; a template whose own config already names
+ * typesafe.ai needs no warning.
+ */
+function typesafeHint(base: string, template: string | undefined): string {
+  if (template === undefined) return `${base} (literal unions and booleans only)`;
+  if (templateByName(template)?.provider?.label === "typesafe.ai") return base;
+  return `${base} (does not support every construct in ${template}: literal unions and booleans only)`;
+}
+
+/** The provider menu with the nola row worded for this machine and the typesafe row for this template. */
+export function providerOptions(path: KeyPath, template?: string): PrompterOption[] {
+  return PROVIDERS.map((p) => ({
+    value: p.id,
+    label: p.label,
+    hint: p.id === "nola" ? nolaHint(path) : p.id === "typesafe" ? typesafeHint(p.hint, template) : p.hint,
+  }));
 }
 
 /** The provider a flag already chose: `--provider`, else the `--trial` / `--no-trial` shorthands; throws when they disagree. */
@@ -218,15 +296,16 @@ function flaggedProvider(input: FlowInput): ProviderId | undefined {
  * one Enter away, Ctrl+C cancels). The key itself is minted later, on the
  * stored session, after every question — nothing is consumed by a cancel.
  */
-async function resolveProvider(input: FlowInput, prompter: Prompter, pinned = false): Promise<ProviderId | null> {
+async function resolveProvider(input: FlowInput, prompter: Prompter, template?: string): Promise<ProviderId | null> {
   const flagged = flaggedProvider(input);
   if (flagged !== undefined) return flagged;
   // A template whose own config names its vendor (triage-ticket → typesafe())
   // is not asked: "none" keeps that config, and the outro names its env var.
+  const pinned = template !== undefined && templateByName(template)?.provider !== undefined;
   if (pinned || !input.interactive) return "none";
   const path = input.keyPath ?? { kind: "trial" };
   while (true) {
-    const choice = await prompter.select(PROVIDER_QUESTION, providerOptions(path));
+    const choice = await prompter.select(PROVIDER_QUESTION, providerOptions(path, template));
     if (choice === null) return null;
     if (!isProviderId(choice)) throw new Error(`unexpected provider choice "${choice}"`);
     if (choice === "nola" && path.kind === "sign-in" && input.signIn && !(await input.signIn())) continue;
@@ -239,9 +318,9 @@ async function resolveExtras(
   input: FlowInput,
   prompter: Prompter,
   dir: string,
-  pinnedProvider = false,
+  template?: string,
 ): Promise<{ provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[] } | null> {
-  const provider = await resolveProvider(input, prompter, pinnedProvider);
+  const provider = await resolveProvider(input, prompter, template);
   if (provider === null) return null;
   const setup = await resolveSetup(input, prompter, dir);
   return setup === null ? null : { provider, ...setup };
@@ -339,13 +418,13 @@ export async function resolveScaffoldOptions(input: FlowInput, prompter: Prompte
     if (!input.interactive) {
       template = DEFAULT_TEMPLATE;
     } else {
-      const choice = await prompter.select("Select a template:", TEMPLATES.map(templateOption));
+      const choice = await selectTemplate(prompter);
       if (choice === null) return { kind: "cancelled" };
       template = choice;
     }
   }
 
-  const extras = await resolveExtras(input, prompter, dir, templateByName(template)?.provider !== undefined);
+  const extras = await resolveExtras(input, prompter, dir, template);
   if (extras === null) return { kind: "cancelled" };
   return { kind: "scaffold", dir, template, force, ...extras };
 }
@@ -385,10 +464,16 @@ export interface RunFlowArgs {
  * `nola init`): parseArgs descriptors plus the help line each shows.
  */
 export const FLOW_OPTIONS = {
-  template: { type: "string", description: "template to scaffold (starter, empty, or a curated example)" },
+  template: {
+    type: "string",
+    description: "template to scaffold (feature-extraction, function-calling, typescript-interop, empty, or a curated example)",
+  },
   add: { type: "boolean", description: "add Nola to the existing project in [dir] instead of scaffolding" },
-  ide: { type: "string", description: "editor setup: vscode | none" },
-  agents: { type: "string", description: `agent skill files: ${AGENT_IDS.join(",")} | all | none` },
+  ide: { type: "string", description: "editor setup: vscode (the default) | none" },
+  agents: {
+    type: "string",
+    description: `agent skill files: ${AGENT_IDS.join(",")} | all | none (default: claude,universal)`,
+  },
   provider: {
     type: "string",
     description: `inference provider: ${providerIds().join(" | ")} (nola = 25 free runs; non-interactive default: none)`,
@@ -449,9 +534,7 @@ function nextSteps(
 ): string {
   const cmd = packageManagerCommands(pm);
   // a chosen vendor's env var, else the one the template's own config reads (a pinned template under "none")
-  const vendorEnv =
-    providerById(outcome.provider)?.envVar ??
-    (outcome.provider === "none" ? templateByName(outcome.template)?.provider?.envVar : undefined);
+  const vendorEnv = vendorEnvVar(outcome.template, outcome.provider);
   const startNote = grant
     ? grant.source === "trial"
       ? "25 free Nola runs — key in .env"
@@ -475,9 +558,6 @@ function nextSteps(
 /** How many trailing lines of a failed install's output the note shows. */
 const INSTALL_LOG_TAIL = 20;
 
-/** Every template's entry (builtin and curated examples alike) — what launch.json runs and VS Code opens. */
-const ENTRY_FILE = "src/main.ts";
-
 /** The last non-empty output line, colour codes stripped, trimmed to one spinner line. */
 export function lastOutputLine(output: string): string | undefined {
   const lines = stripVTControlCharacters(output).split(/\r?\n/);
@@ -488,24 +568,32 @@ export function lastOutputLine(output: string): string | undefined {
   return undefined;
 }
 
+/** The last question when VS Code's `code` command is on PATH… */
+export const INSTALL_OPEN_QUESTION = "Install dependencies and open VS Code?";
+/** …and when it is not (2026-09-18): the editor is neither promised nor opened. */
+export const INSTALL_QUESTION = "Install dependencies?";
+
 /**
- * The optional last step: "Install dependencies and open VS Code?". Offered
- * only when the scaffold is interactive AND an editor was chosen — the editor
- * step is what makes opening it meaningful. A yes runs the package manager's
- * install under a spinner (its output is captured, the latest line shown
- * beneath the title, the tail printed only on failure) and then opens the
- * project in VS Code; Ctrl+C here is a plain no (the project is already on
- * disk). Returns whether the install succeeded so the outro can drop that
- * line.
+ * The optional last step: "Install dependencies and open VS Code?" — or just
+ * "Install dependencies?" on a machine without VS Code's `code` command,
+ * which then opens nothing. Offered only when the scaffold is interactive AND
+ * an editor was chosen — the editor step is what makes opening it meaningful.
+ * A yes runs the package manager's install under a spinner (its output is
+ * captured, the latest line shown beneath the title, the tail printed only on
+ * failure) and then opens the project in VS Code; Ctrl+C here is a plain no
+ * (the project is already on disk). Returns whether the install succeeded so
+ * the outro can drop that line.
  */
 async function offerInstallAndOpen(
   dir: string,
+  entryPath: string,
   pm: PackageManager,
   prompter: Prompter,
   launcher: Launcher,
   linkCheckout: string | null,
 ): Promise<{ installed: boolean }> {
-  const yes = await prompter.confirm("Install dependencies and open VS Code?", true);
+  const vscode = launcher.hasVscode();
+  const yes = await prompter.confirm(vscode ? INSTALL_OPEN_QUESTION : INSTALL_QUESTION, true);
   if (!yes) return { installed: false };
   const cmd = packageManagerCommands(pm);
   const task = prompter.progress(`Installing dependencies (${cmd.install})`);
@@ -524,9 +612,13 @@ async function offerInstallAndOpen(
     // at that workspace build instead.
     if (linkCheckout !== null) {
       const linked = await linkCheckoutPackages(dir, linkCheckout);
+      // The linked runtime now lives outside node_modules, so the launch
+      // config must blackbox it too or F10 over the first ask runs to the end.
+      const skipped = await skipCheckoutDistInLaunch(dir);
       prompter.note(
         `${LINK_CHECKOUT_ENV}: linked ${linked.join(", ")} to ${join(linkCheckout, "packages")} — ` +
-        `a later ${cmd.install} restores the registry copies.`,
+        `a later ${cmd.install} restores the registry copies.` +
+        (skipped ? `\nAdded "${CHECKOUT_DIST_SKIP_GLOB}" to skipFiles in .vscode/launch.json so stepping stays in your code.` : ""),
       );
     }
   } else {
@@ -534,11 +626,13 @@ async function offerInstallAndOpen(
     const tail = stripVTControlCharacters(output).trim().split(/\r?\n/).slice(-INSTALL_LOG_TAIL).join("\n");
     prompter.note(`${tail ? `${tail}\n` : ""}Run ${cmd.install} yourself once the cause is fixed.`);
   }
+  if (!vscode) return { installed };
   // Land on the entry file, not an empty window: it opens with the next
   // steps (F5, breakpoints, the extension) as its first lines.
-  const entry = existsSync(join(dir, ENTRY_FILE)) ? ENTRY_FILE : undefined;
+  const entry = existsSync(join(dir, entryPath)) ? entryPath : undefined;
   const opened = await launcher.openVscode(dir, entry);
   if (opened === "not-found") {
+    // `code` was on PATH a moment ago and is gone now — rare, but say so.
     prompter.note(
       "VS Code's `code` command is not on PATH, so the folder was not opened. " +
       "In VS Code run \"Shell Command: Install 'code' command in PATH\" (macOS) or re-run the installer with \"Add to PATH\" (Windows), then open the folder from VS Code.",
@@ -698,7 +792,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       }
       let ideWrote: string[] = [];
       if (outcome.ide === "vscode") {
-        const ide = await writeVscodeSetup(outcome.dir);
+        const ide = await writeVscodeSetup(outcome.dir, entryFile(outcome.template));
         ideWrote = ide.wrote;
         for (const note of ide.skipped) prompter.note(note);
       }
@@ -710,7 +804,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       }
       const launch =
         interactive && outcome.ide !== "none"
-          ? await offerInstallAndOpen(outcome.dir, pm, prompter, opts.launcher ?? realLauncher, opts.linkCheckout ?? linkCheckoutFromEnv())
+          ? await offerInstallAndOpen(outcome.dir, entryFile(outcome.template), pm, prompter, opts.launcher ?? realLauncher, opts.linkCheckout ?? linkCheckoutFromEnv())
           : { installed: false };
       const message = nextSteps(
         { ...outcome, provider },
@@ -725,7 +819,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       return 0;
     } catch (err) {
       if (err instanceof ExampleFetchError && interactive) {
-        prompter.note(`${err.message}\nThe "starter" and "empty" templates work offline.`);
+        prompter.note(`${err.message}\nThe builtin templates (${builtinNames()}) work offline.`);
         input.dir = outcome.dir; // keep the chosen dir, re-pick the template
         input.template = undefined;
         continue;

@@ -219,6 +219,8 @@ export interface NolaExtractExpression extends BaseNode {
   /** cooked prompt text */
   prompt: string;
   typeArgs: TSTypeParameterInstantiationNode | null;
+  /** `..choice` / `..scale` / `..prob` (decision types spec §5): the sugar's primitive; absent on a plain extractor */
+  kind?: "choice" | "scale" | "prob";
   /**
    * Set by the parser's tolerant-mode recovery: the construct was broken and a
    * diagnostic was recorded, so the lowering replaces its span with an inert
@@ -291,11 +293,15 @@ export interface NolaParamNode extends BaseNode {
 
 /**
  * A `VariableDeclarator` id, plus the span of a `.`/`..` marker the parser
- * found before it. Contextual bindings (`const .x = …`) are reserved
- * (NOLA1014); the span exists only so tolerant lowering can drop the bytes.
+ * found before it: `nolaContextual` for a legal contextual binding (`const .x`
+ * / `let .x`), `nolaReservedMarker` for the reserved forms (`var .x`, a
+ * pattern — NOLA1014 / NOLA1011), which exists only so tolerant lowering can
+ * drop the bytes.
  */
 export interface NolaVariableIdNode extends BaseNode {
   name?: string;
+  /** `const .x` / `let .x` — the marker span of a contextual binding (scope-bodies spec §2.2) */
+  nolaContextual?: { start: number; end: number };
   nolaReservedMarker?: { start: number; end: number };
 }
 
@@ -322,6 +328,8 @@ export const Codes = {
   ContextualParamDoubleDot: "NOLA1013",
   ContextualBindingReserved: "NOLA1014",
   IncompleteScopeAccess: "NOLA1015",
+  UnknownExtractorKind: "NOLA1016",
+  AskTemplateNeedsSpace: "NOLA1017",
   AskOutsideNolaFunction: "NOLA2001",
   UnsupportedIntentType: "NOLA2002",
   NolaFnNotTopLevel: "NOLA2003",
@@ -333,6 +341,9 @@ export const Codes = {
   NolaConstructInMarker: "NOLA2010",
   TypeValueNameConflict: "NOLA2011",
   InvalidConstraint: "NOLA2012",
+  DuplicateInstruction: "NOLA2013",
+  ExtractorSigilRequired: "NOLA2014",
+  InvalidDecisionCriteria: "NOLA2015",
   // NOLA3xxx: runtime diagnostics
   EmitContractMismatch: "NOLA3001",
   DuplicateRuntimeConflict: "NOLA3002",
@@ -351,6 +362,7 @@ export const Codes = {
   LoaderHooksUnsupported: "NOLA3015",
   ValidationFailed: "NOLA3016",
   SchemaTargetUnsupported: "NOLA3017",
+  DecisionModelRequired: "NOLA3018",
   // NOLA4xxx: bundler-integration errors (build-time, raised by @nola-lang/unplugin and friends)
   TsiInClientBundle: "NOLA4001",
 } as const;

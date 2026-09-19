@@ -8,11 +8,13 @@ export type {
   AskStartEvent,
   AskTrace,
   AttemptRecord,
+  ChatModel,
   ClassicPrompt,
   InferenceCorrection,
   InferenceModel,
   InferenceScope,
   InferenceScopeArg,
+  InferModel,
   Intent,
   InvocationTrace,
   JsonSchema,
@@ -35,8 +37,12 @@ export type {
   ValidationIssue,
 } from "@nola-lang/core";
 export {
+  DECISION_MODEL,
+  findDecisionQuestions,
   formatIssues,
+  isDecisionModel,
   isInferenceModel,
+  isInferModel,
   NolaConfigError,
   NolaIntentError,
   NolaProviderError,
@@ -125,6 +131,7 @@ export {
 } from "./runtime/index.js";
 export { TERMINAL_TRACE, type TerminalTraceOptions, terminalTrace } from "./terminal-trace.js";
 export { TRACER_HOOK, type TracerOptions } from "./tracer.js";
+export type { Choice, ChoiceCriteria, ChoiceLabel, Prob, ProbCriteria, Scale, ScaleLevels } from "./types/decision.js";
 export { type InferType, inferTypes, type TypeValueOf, type UnsupportedType } from "./types/infer-type.js";
 export type {
   NolaStandardProps,

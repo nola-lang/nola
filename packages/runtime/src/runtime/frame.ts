@@ -7,12 +7,23 @@ import {
 } from "@nola-lang/core";
 import type { InferenceComposer } from "../ask/composer.js";
 import { DEFAULT_ASK_TIMEOUT_MS } from "../config.js";
-import type { InferContext } from "../infer-context/index.js";
+import type { AskLocals, InferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
 import { AskSpan, type AskSpanInit } from "./ask-span.js";
 import type { NolaRuntime } from "./nola-runtime.js";
 
 export type { HistoryRecord } from "@nola-lang/core";
+
+/**
+ * A one-shot abort clock. The timer is unref'd: an armed clock must not keep
+ * the process alive — live provider calls hold their own handles.
+ */
+export function timeoutClock(ms: number, message: string): { signal: AbortSignal; timer: ReturnType<typeof setTimeout> } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(message)), ms);
+  timer.unref?.();
+  return { signal: controller.signal, timer };
+}
 
 /**
  * The per-invocation activation record — the one dynamic entity resolution
@@ -30,8 +41,12 @@ export class Frame {
   readonly startedAt: number = Date.now();
   readonly history: HistoryRecord[] = [];
   private readonly children: Array<AskSpan | Frame> = [];
-  /** Root frames only — one controller per invocation; children read through `abortSignal`. */
-  readonly #abort?: { controller: AbortController; timer?: ReturnType<typeof setTimeout> };
+  /**
+   * A root always owns one (the invocation's clock); a child owns one only when
+   * its intent set a timeout of its own — every other child reads through
+   * `abortSignal` to the nearest owner.
+   */
+  readonly #abort?: { signal: AbortSignal; timer?: ReturnType<typeof setTimeout> };
 
   private constructor(
     readonly infer: InferContext,
@@ -40,19 +55,17 @@ export class Frame {
   ) {
     // Self-attach is the only way a child frame enters a parent's span tree.
     parent?.children.push(this);
-    if (!parent) {
-      const controller = new AbortController();
-      const timeoutMs = options.timeout ?? this.runtime.config?.ask.timeoutMs ?? DEFAULT_ASK_TIMEOUT_MS;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-        timer = setTimeout(
-          () => controller.abort(new Error(`Nola invocation timed out after ${timeoutMs}ms (IntentOptions.timeout / ask.timeoutMs)`)),
-          timeoutMs,
-        );
-        // Don't let an armed clock keep the process alive; live provider calls hold their own handles.
-        timer.unref?.();
-      }
-      this.#abort = { controller, timer };
+    // A callee's own timeout never loosens the caller's: it has no config default and 0 means "none of its own".
+    const timeoutMs = parent
+      ? (options.timeout ?? 0)
+      : (options.timeout ?? this.runtime.config?.ask.timeoutMs ?? DEFAULT_ASK_TIMEOUT_MS);
+    const armed = Number.isFinite(timeoutMs) && timeoutMs > 0;
+    if (!parent || armed) {
+      const clock = armed
+        ? timeoutClock(timeoutMs, `Nola invocation timed out after ${timeoutMs}ms (IntentOptions.timeout / ask.timeoutMs)`)
+        : undefined;
+      const own = clock?.signal ?? new AbortController().signal;
+      this.#abort = { signal: parent ? AbortSignal.any([parent.abortSignal, own]) : own, timer: clock?.timer };
     }
   }
 
@@ -71,14 +84,14 @@ export class Frame {
     return this.infer.runtime;
   }
 
-  /** The root invocation's signal — every provider call receives it. */
+  /** The invocation's signal — every provider call under this frame receives it. */
   get abortSignal(): AbortSignal {
-    if (this.#abort) return this.#abort.controller.signal;
+    if (this.#abort) return this.#abort.signal;
     // By construction a frame without #abort always has a parent.
     return (this.parent as Frame).abortSignal;
   }
 
-  /** Stop the root timeout clock — called when the invocation settles; no-op on child frames. */
+  /** Stop this frame's timeout clock — called when the invocation settles; no-op on a frame that owns none. */
   settle(): void {
     if (this.#abort?.timer !== undefined) clearTimeout(this.#abort.timer);
   }
@@ -120,10 +133,15 @@ export class Frame {
     return chain.flat();
   }
 
-  /** This frame's node describes its scope; the caller chain composes one level out. */
-  compose(composer: InferenceComposer): void {
-    this.infer.compose(composer);
-    this.parent?.compose(composer.outer());
+  /**
+   * This frame's node describes its scope — with the contextual bindings the
+   * ask site saw — and the caller chain composes one level out, each caller
+   * described with the bindings ITS call site saw (`ask fn()` carries them on
+   * the child frame's options).
+   */
+  compose(composer: InferenceComposer, locals?: AskLocals): void {
+    this.infer.compose(composer, locals);
+    this.parent?.compose(composer.outer(), this.options.locals);
   }
 
   /**

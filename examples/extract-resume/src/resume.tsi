@@ -15,5 +15,5 @@ export interface Resume {
 }
 
 export infer function extractResume(.message: string) {
-  return ask ..`the candidate's resume data`<Resume>;
+  return ask `the candidate's resume data`<Resume>;
 }

@@ -16,21 +16,36 @@ plain TS.
 ```tsi
 // plain
 infer function summarize(.text: string) {
-  return ask ..`a one-sentence summary`<string>;
+  return ask `a one-sentence summary`<string>;
 }
 
 // exported
 export infer function classify(.message: string) {
-  return ask ..`the category of the message`<string>;
+  return ask `the category of the message`<string>;
 }
 
 // with an instruction marker between the name and the parameter list
 export infer function triage`triage the ticket like a support lead`(.ticket: string) {
-  return ask ..`the severity: low, medium or high`<"low" | "medium" | "high">;
+  return ask `the severity: low, medium or high`<"low" | "medium" | "high">;
+}
+
+// the same instruction as the body's FIRST statement (a bare template literal)
+export infer function triage2(.ticket: string) {
+  `${.default}
+  Triage like a support lead. Escalate anything mentioning a refund.`
+  return ask `the severity: low, medium or high`<"low" | "medium" | "high">;
 }
 ```
 
 Rules:
+
+- The body instruction is the marker's second spelling — same meaning (prose =
+  instruction, `${.member}` = the function's prompt template), lexical holes
+  see the parameters. Marker + body instruction together is NOLA2013. A
+  template literal that is NOT the first statement is ordinary code.
+- The MODULE body takes the same first-statement literal (the `<module>`
+  scope's instruction / template) and `const .x` bindings — see "The `ask`
+  operator".
 
 - Top-level function declarations only. `infer` on a method, arrow function,
   or function expression is a "reserved for a future Nola version" error.
@@ -41,15 +56,19 @@ Rules:
   prompt TEMPLATE for the function's CONTEXT block (see "Prompt templates").
 - `export default infer function` does NOT parse. Export by name
   (`export infer function f(...)`) and let consumers import the name.
-- `ask` is legal only DIRECTLY inside an infer function body — not at module
-  level, not inside a nested closure (NOLA2001).
+- `ask` is legal only DIRECTLY inside an infer function body or DIRECTLY in
+  the module body — not inside a plain function or a nested closure
+  (NOLA2001). A top-level `ask` runs as its own `<module>` invocation (a root
+  frame: events, trace, timeout); `ask fn()` at the top chains `fn` under it,
+  `await fn()` does not. Importing such a module RUNS its asks — right for a
+  script, wrong for a library.
 - `await` IS legal inside the body, for ordinary promises (fetch, DB, any
   library):
 
 ```tsi
 export infer function enrich(.handle: string, fetchProfile: (h: string) => Promise<string>) {
   const profile = await fetchProfile(handle);       // ordinary promise
-  return ask ..`the person's job title from: ${profile}`<string>;
+  return ask `the person's job title from: ${profile}`<string>;
 }
 ```
 
@@ -67,7 +86,7 @@ interface User {
 }
 
 export infer function getUser(.message: string): Intent<User> {
-  const user = ask ..`the user described in the message`<User>;
+  const user = ask `the user described in the message`<User>;
   return user;
 }
 ```
@@ -81,20 +100,22 @@ Do NOT annotate it `Promise<T>`: `Intent<T>` is `PromiseLike<T>`, not a
 A parameter prefixed with ONE dot is a CONTEXT parameter: its name, type and
 runtime VALUE are composed into the prompt of every `ask` in that invocation.
 A plain parameter is an ordinary JS argument — its name and type reach the
-LLM, its value does not. Mnemonic: one dot IN (`.name`), two dots OUT
-(`` ..`prompt` ``). Writing `..name` on a parameter is NOLA1013.
+LLM, its value does not. Mnemonic: one dot IN (`.name`); a template after
+`ask` OUT — `` ..`prompt` `` spells the same request where `ask` is not
+directly in front of it. Writing `..name` on a parameter is NOLA1013.
 
 ```tsi
 export type Issue = { id: string; description: string };
 
 // `issue` is visible to the LLM; `fallback` is a normal JS value only.
 export infer function classifyIssue(.issue: Issue, fallback: string) {
-  const kind = ask ..`the kind of this issue`<string>;
+  const kind = ask `the kind of this issue`<string>;
   return kind || fallback;
 }
 ```
 
-- `.` is legal ONLY on infer-function parameters. On any other function it is
+- `.` is legal on infer-function parameters and on `const`/`let` bindings
+  directly in an infer body or the module body (below). Anywhere else it is
   NOLA1010.
 - A contextual parameter's TYPE must be derivable to an inference schema:
   whatever the TypeScript checker resolves to a JSON shape — scalars, `Date`,
@@ -106,22 +127,38 @@ export infer function classifyIssue(.issue: Issue, fallback: string) {
 
 ```tsi
 export infer function nextQuery(.question: string, .notes: string[]) {
-  return ask ..`the single best search query to advance the research`<string>;
+  return ask `the single best search query to advance the research`<string>;
 }
 ```
-- `const .x = …` (a contextual BINDING inside the body) is reserved for a
-  future Nola version — NOLA1014 today.
+- `const .x = …` / `let .x = …` is a contextual BINDING: context for every
+  `ask` after it in the same body (lexical — its block or an enclosing one;
+  never its own initializer). It renders after the parameters in the CONTEXT
+  block, reads its CURRENT value at the ask, derives an annotation like a
+  parameter (same `underivableContextType` policy), and travels to a callee
+  through `ask fn()`. At module level it gives the `<module>` scope its
+  CONTEXT block; it does NOT reach infer functions merely declared in the
+  file. `var .x` is NOLA1014; a pattern is NOLA1011.
 
-## Extractors — `` ..`instruction`<T> ``
+```tsi
+export infer function reply(.mail: string) {
+  const .tone = "brief, friendly";
+  const .customer: Customer = await loadCustomer(mail);
+  return ask `a reply to the mail`<string>;
+}
+```
+
+## Extractors — `` ask `instruction`<T> `` and `` ..`instruction`<T> ``
 
 An extractor is the request itself: instruction text in backticks plus an
-optional type argument.
+optional type argument. Directly after `ask` (and after `ask with <name>`)
+the backticks alone are the extractor; everywhere else it is written with two
+leading dots so it cannot be mistaken for a string.
 
 ```tsi
 export infer function parse(.doc: string) {
-  const id = ask ..`the ticket id`<string>;             // typed
-  const count = ask ..`how many line items`<number>;
-  const free = ask ..`think step by step about the document`;  // untyped
+  const id = ask `the ticket id`<string>;             // typed
+  const count = ask `how many line items`<number>;
+  const free = ask `think step by step about the document`;  // untyped
   return { id, count, free };
 }
 ```
@@ -139,13 +176,40 @@ interface Person {
 }
 
 export infer function lookup(text: string) {
-  return ask ..`the person described in: ${text}`<Person>;
+  return ask `the person described in: ${text}`<Person>;
 }
 ```
 
 - With no `<T>`, the extractor asks for free text: the wire schema is a plain
   string and the static TS type is `any`. Give every extractor an explicit
   `<T>` unless you deliberately want unconstrained prose.
+- The `..` is implied only directly after `ask`. Everywhere else it is
+  required: `` const i = ..`x`<T> ``, `` fn(..`x`<T>) ``, `` { a: ..`x`<T> } ``,
+  `` ask (..`x`<T>).withRetry(2) `` (parenthesized: the template is no longer
+  the operand's first token). A `` `x`<T> `` outside `ask` is NOLA2014.
+  `` ask ..`x`<T> `` is still legal and lowers identically. The SPACE is
+  mandatory: `` ask`x` `` (backtick glued to `ask`, or to the name after
+  `ask with`) is NOLA1017 — it reads as a tagged template.
+- DECISION TYPES (intrinsic, no import): `Choice<{ billing: "Payments";
+  sales: null }>` (or `Choice<"a" | "b">`, 2–255 labels; number labels too,
+  alone or mixed — `Choice<1 | 2 | 3>` / `Choice<{ 1: "Low"; 2: "High" }>` /
+  `Choice<1 | "other">`: a label written as a number comes back as the
+  number under `choice`, `probabilities` is always keyed by the label's
+  text, `probabilities["2"]`; `1 | "1"` share a text and are NOLA2015)
+  evaluates to
+  `{ choice, probabilities, confidence? }`; `Scale<["Calm", "Civil",
+  "Angry"]>` (2–10 ordered levels) to `{ score, probabilities, levels,
+  confidence? }` where `score` is the fractional expected level; `Prob` /
+  `Prob<{ true: "…"; false: "…" }>` to the probability of yes (a number).
+  The plain forms stay: a literal union is the label, `boolean` a yes/no cut
+  at 0.5. RULE: adding criteria changes what the property evaluates to. A
+  type containing a decision type needs a DECISION model (`typesafe()`,
+  `mockProvider(replies, { decisions: true })` in tests) — on a chat model it
+  is NOLA3018 before the network. Sugar, explicit sigil only: `` ask
+  ..choice`Which team?`<{ billing: "Payments"; sales: null }> ``, `` ask
+  ..scale`How bad?`<["low", "high"]> ``, `` ask ..prob`Urgent?` `` — each
+  lowers to `` ..`q`<Choice<…>> `` etc. and shares its identity; another
+  word after `..` is NOLA1016; malformed criteria are NOLA2015.
 - `<T>` accepts whatever resolves to a JSON shape: scalars, `Date`, arrays,
   tuples, object literals, aliases/interfaces (same file, another file, a
   package; `extends`, intersections, `Partial`/`Pick`/`Omit`, instantiated
@@ -162,7 +226,8 @@ export interface Conclusion {
 ```
 
 - An extractor may be CONSTRUCTED anywhere in a `.tsi` file, module level
-  included — construction needs no context. Only `ask` is position-restricted:
+  included — construction needs no context. Only `ask` is position-restricted
+  (infer body or module body):
 
 ```tsi
 export const nameIntent = ..`the user's full name`<string>;   // legal, inert
@@ -180,7 +245,7 @@ import { getUserById } from "./users.tsi";
 type User = { name: string };
 
 export infer function report(.text: string) {
-  const user = ask ..`the user named in the text`<User>;   // extractor
+  const user = ask `the user named in the text`<User>;   // extractor
   const record = ask getUserById(user.name);               // another infer function
   return record;
 }
@@ -190,8 +255,8 @@ export infer function report(.text: string) {
 
 ```tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast ..`a rough summary`<string>;
-  const final = ask with careful ..`a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`<string>;
+  const final = ask with careful `a polished summary of: ${draft}`<string>;
   return final;
 }
 ```
@@ -304,7 +369,7 @@ intent's prompt scope; every other hole is ordinary lexical JavaScript.
 ```tsi
 infer function analyze`${.default}
 Rules: answer only from the arguments above; never invent ids.`(.ticket: Ticket) {
-  const id = ask ..`ticket id, comply with ${.type}`<string>;
+  const id = ask `ticket id, comply with ${.type}`<string>;
   return id;
 }
 
@@ -360,7 +425,8 @@ export infer function tuned(.text: string) {
   const a = ask (..`the title`<string>).withRetry(2);
   const b = ask (..`the body`<string>).withModel("careful");
   const c = ask (..`a creative tagline`<string>).withParams({ temperature: 0.9, maxOutputTokens: 200 });
-  return { a, b, c };
+  const d = ask (..`a one-paragraph summary`<string>).withTimeout(10_000);
+  return { a, b, c, d };
 }
 ```
 
@@ -368,9 +434,13 @@ export infer function tuned(.text: string) {
 - `.withModel(nameOrProvider)` — the dynamic form of `ask with`.
 - `.withParams({ temperature, maxOutputTokens, providerOptions })` — wire knobs,
   merged per field with anything already set.
+- `.withTimeout(ms)` — bounds that intent's provider round trips. Inside a
+  body it sits next to the invocation's clock (whichever fires first; it can
+  tighten, never loosen; `0` sets none). On an intent that ROOTS an invocation
+  — an infer-function result awaited from plain TS — it replaces
+  `ask.timeoutMs` for that invocation.
 
-Two more exist ONLY on the `Intent` an infer function returns (they act when
-the intent roots an invocation), and are typically used from plain TS:
+`.detached()` exists ONLY on the `Intent` an infer function returns:
 
 ```ts
 import { extractPerson } from "./person.tsi";

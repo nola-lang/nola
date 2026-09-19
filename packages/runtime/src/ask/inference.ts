@@ -2,10 +2,15 @@ import { Codes } from "@nola-lang/ast";
 import {
   type AskContext,
   type AskResult,
+  type ChatModel,
+  findDecisionQuestions,
   fingerprintRequest,
   formatIssues,
   type InferenceModel,
+  type InferModel,
   type InferRequest,
+  isDecisionModel,
+  isInferModel,
   isPlatformModel,
   type LanguageModel,
   mergeProviderParams,
@@ -19,6 +24,7 @@ import {
 } from "@nola-lang/core";
 import type { InferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/index.js";
+import { timeoutClock } from "../runtime/frame.js";
 import type { AskSpan, Frame } from "../runtime/index.js";
 import { buildInferenceModel } from "./model-builder.js";
 import type { ValidationResult } from "./validate.js";
@@ -67,6 +73,7 @@ export abstract class Inference {
   // Per-ask state — assigned by infer() before the wire is touched; single-shot like Intent.
   protected span!: AskSpan;
   protected ctx!: AskContext;
+  private askTimer?: ReturnType<typeof setTimeout>;
 
   constructor(protected readonly task: InferenceTask) {
     // Server-only v0 backstop: bundler plugins refuse .tsi in client bundles at
@@ -139,6 +146,7 @@ export abstract class Inference {
       this.span.outcome = { ok: false, error: redactError(error) };
       throw error;
     } finally {
+      if (this.askTimer !== undefined) clearTimeout(this.askTimer);
       this.span.meta = this.ctx.meta;
       this.span.close();
       if (this.span.servedBy === "<unresolved>") this.span.servedBy = startProvider.name;
@@ -157,6 +165,7 @@ export abstract class Inference {
       context: this.task.context,
       site: this.site.toString(),
       ...(system !== undefined ? { system } : {}),
+      ...(this.task.options.locals !== undefined ? { locals: this.task.options.locals } : {}),
     });
   }
 
@@ -168,10 +177,25 @@ export abstract class Inference {
     this.span.effectivePrompt = this.span.originalPrompt;
     if (model.output.syntax === "json" && model.output.schema) this.span.schema = model.output.schema;
 
-    // One request has one shape — the method name is the dialect: a managed
-    // provider takes infer(InferRequest { model }); a classic provider takes
-    // complete(ProviderRequest) with the rendering.
-    const managed = isPlatformModel(provider);
+    // Decision types (spec 2026-09-18 §6.1): a chat model handed the answer
+    // schema would fabricate a distribution, so a decision ask needs a branded
+    // model — refused BEFORE the network, definitively.
+    const decisions = model.output.syntax === "json" ? findDecisionQuestions(model.output.schema) : [];
+    if (decisions.length > 0 && !isDecisionModel(provider)) {
+      const first = decisions[0] as { path: string; question: { kind: string } };
+      const kindName = { choice: "Choice", scale: "Scale", prob: "Prob" }[first.question.kind] ?? first.question.kind;
+      const where = first.path === "" ? "the output type" : `output property ${JSON.stringify(first.path)}`;
+      throw new NolaIntentError(
+        `${where} is a ${kindName}; model "${provider.name}" cannot answer decision questions — route the ask to a decision model (\`ask with <name>\`) or use the plain form (a literal union, or boolean).`,
+        Codes.DecisionModelRequired,
+      );
+    }
+
+    // One request has one shape — the METHOD NAME is the dialect (spec
+    // 2026-09-18 §6.2): `infer` takes InferRequest { model }, `complete` takes
+    // ProviderRequest with the rendering. Platform-only fields ride only the platform.
+    const managed = isInferModel(provider);
+    const platform = isPlatformModel(provider);
     const params = mergeProviderParams(this.frame.resolveParams(), this.task.options.params);
     // Deployment metadata for managed servers (per-project display/metering) — never the fingerprint.
     const project = this.runtime.config?.project;
@@ -184,7 +208,7 @@ export abstract class Inference {
         // The managed-mode inference profile (ask with <name>) — joins the fingerprint.
         ...(profile !== undefined ? { profile } : {}),
       };
-      if (managed) return { model: m, ...common, ...(project !== undefined ? { project } : {}) };
+      if (managed) return { model: m, ...common, ...(platform && project !== undefined ? { project } : {}) };
       return { payload: renderClassic(m), ...common };
     };
     let request = requestFor(model);
@@ -228,7 +252,10 @@ export abstract class Inference {
     return { model, value: result.value, servedBy: provider.name };
   };
 
-  private async callProvider(provider: LanguageModel | PlatformModel, request: InferRequest | ProviderRequest): Promise<string> {
+  private async callProvider(
+    provider: LanguageModel | InferModel | PlatformModel,
+    request: InferRequest | ProviderRequest,
+  ): Promise<string> {
     // Fail fast on an already-elapsed timeout even when the provider ignores the signal.
     request.signal?.throwIfAborted();
     const attempt = this.span.attempts.length + 1;
@@ -242,8 +269,8 @@ export abstract class Inference {
     });
     const { text, durationMs = NaN } =
       "model" in request
-        ? await (provider as unknown as PlatformModel).infer(request)
-        : await (provider as LanguageModel).complete(request);
+        ? await (provider as InferModel).infer(request)
+        : await (provider as ChatModel).complete(request);
     this.span.attempts.push({ attempt, provider: provider.name, durationMs });
     this.runtime.emitEvent("onProviderResponse", { askId: this.askId, attempt, provider: provider.name, text, durationMs });
     return text;
@@ -263,10 +290,23 @@ export abstract class Inference {
     this.runtime.emitEvent("onValidationFailed", { askId: this.askId, attempt, error, site: this.site });
   }
 
+  /**
+   * The signal this ask's provider calls receive: the invocation's, narrowed by
+   * the intent's own `.withTimeout(ms)` when it set one (0 = none of its own) —
+   * whichever fires first. The clock is stopped when the ask settles.
+   */
+  private armSignal(): AbortSignal {
+    const ms = this.task.options.timeout ?? 0;
+    if (!Number.isFinite(ms) || ms <= 0) return this.frame.abortSignal;
+    const clock = timeoutClock(ms, `Nola ask timed out after ${ms}ms (.withTimeout)`);
+    this.askTimer = clock.timer;
+    return AbortSignal.any([this.frame.abortSignal, clock.signal]);
+  }
+
   /** Runtime-owned fields are non-writable: assigning to them throws in ESM strict mode. */
   protected makeAskContext(init: { askId: string; site: Site; model: AskContext["model"] }): AskContext {
     const ctx = { model: init.model, meta: {} } as AskContext;
-    const owned = { askId: init.askId, site: init.site, abortSignal: this.frame.abortSignal };
+    const owned = { askId: init.askId, site: init.site, abortSignal: this.armSignal() };
     for (const [key, value] of Object.entries(owned)) {
       Object.defineProperty(ctx, key, { value, writable: false, enumerable: true });
     }

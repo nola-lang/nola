@@ -6,13 +6,14 @@ import { describe, expect, it } from "vitest";
 import { cmdInit } from "../src/init.js";
 
 describe("nola init", () => {
-  it("scaffolds the same starter as npm create nola-lang", async () => {
+  it("scaffolds the same default template (feature-extraction) as npm create nola-lang", async () => {
     const root = join(await mkdtemp(join(tmpdir(), "nola-init-")), "my-app");
     const code = await cmdInit(root, {});
     expect(code).toBe(0);
-    for (const f of ["package.json", "nola.config.ts", "nola.replay.jsonl", ".gitignore", "src/person.tsi", "src/main.ts"]) {
+    for (const f of ["package.json", "nola.config.ts", "nola.replay.jsonl", ".gitignore", "src/main.tsi"]) {
       expect(existsSync(join(root, f)), f).toBe(true);
     }
+    expect(existsSync(join(root, "src", "main.ts"))).toBe(false);
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     expect(pkg.name).toBe("my-app");
     expect(pkg.devDependencies["nola-lang"]).toBeDefined();

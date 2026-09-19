@@ -10,8 +10,8 @@ Nola is a **TypeScript superset**. Files end in `.tsi`, and everything you know 
 ```tsi
 // analyze.tsi
 export infer function analyzeUserRequest(userId: string, .message: string) {
-  const ticketId = ask ..`ticket id mentioned in the message`<string>;
-  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  const ticketId = ask `ticket id mentioned in the message`<string>;
+  const isFraud = ask `does the message look fraudulent`<boolean>;
   return { userId, ticketId, isFraud };
 }
 ```
@@ -33,7 +33,7 @@ const result = await analyzeUserRequest("user-1", "Ticket TCK-4711: customer rep
 - **`infer function`** declares an LLM-backed function. It lowers to an ordinary function that returns a lazy, thenable [`Intent<T>`](/docs/language/intent/); awaiting the result runs the inference.
   Parameters that start with a dot (`.message`) are **contextual**: their values are shown to the model. Plain parameters are ordinary values — the model sees their names, never their values. *One dot in, two dots out.*
 - **`ask`** resolves an intent the way `await` resolves a promise.
-  `` ask ..`instruction`<T> `` is an **extractor** — ask the model for a `T`. `` ask fn`hint`(...) `` is a **call intent** — the model fills the extractor-shaped arguments and the function runs. `ask with <provider> …` routes one ask through a named provider from `nola.config.ts`.
+  `` ask `instruction`<T> `` is an **extractor** — ask the model for a `T`. `` ask fn`hint`(...) `` is a **call intent** — the model fills the extractor-shaped arguments and the function runs. `ask with <provider> …` routes one ask through a named provider from `nola.config.ts`.
 
 ## Why a language, not a library
 

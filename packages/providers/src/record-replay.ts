@@ -1,8 +1,11 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { Codes } from "@nola-lang/ast";
-import type { InferRequest, LanguageModel, PlatformModel } from "@nola-lang/core";
+import type { ChatModel, InferRequest, LanguageModel, PlatformModel, ProviderRequest } from "@nola-lang/core";
 import {
+  DECISION_MODEL,
   fingerprintRequest,
+  isDecisionModel,
+  isInferModel,
   isPlatformModel,
   NolaConfigError,
   NolaProviderError,
@@ -26,9 +29,14 @@ export function record(
   inner: LanguageModel | PlatformModel,
   ledgerPath: string,
 ): LanguageModel | PlatformModel {
-  if (isPlatformModel(inner)) {
+  // the brands ride along: the platform's (its own rules) and the decision capability
+  const brands = {
+    ...(isPlatformModel(inner) ? { [PLATFORM_MODEL]: true as const } : {}),
+    ...(isDecisionModel(inner) ? { [DECISION_MODEL]: true as const } : {}),
+  };
+  if (isInferModel(inner)) {
     return {
-      [PLATFORM_MODEL]: true,
+      ...brands,
       name: `record(${inner.name})`,
       async infer(req: InferRequest) {
         const res = await inner.infer(req);
@@ -44,12 +52,14 @@ export function record(
         appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
         return res;
       },
-    };
+    } as unknown as PlatformModel;
   }
+  const chat = inner as ChatModel;
   return {
+    ...brands,
     name: `record(${inner.name})`,
-    async complete(req) {
-      const res = await inner.complete(req);
+    async complete(req: ProviderRequest) {
+      const res = await chat.complete(req);
       const entry = {
         fingerprint: fingerprintRequest(req),
         request: { payload: redactDeep(req.payload), ...(req.params ? { params: req.params } : {}) },
@@ -109,8 +119,10 @@ export function replay(ledgerPath: string): LanguageModel {
     else entries.set(e.fingerprint, [hit]);
   });
   return {
+    // a ledger serves whatever it holds — a replayed decision ask needs no live capability
+    ...{ [DECISION_MODEL]: true as const },
     name: "replay",
-    async complete(req) {
+    async complete(req: ProviderRequest) {
       const fingerprint = fingerprintRequest(req);
       const queue = entries.get(fingerprint);
       if (!queue || queue.length === 0) {

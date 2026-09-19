@@ -1,0 +1,99 @@
+---
+title: Decision types
+description: Choice, Scale and Prob — intrinsic answer types for decision models that return a label, a level or a probability with its distribution.
+sidebar:
+  order: 90
+---
+
+Some models are not chat models. A decision model such as typesafe.ai's Jev takes a piece of data and a set of typed questions, and answers every question with a calibrated probability distribution instead of generated text. Nola gives those questions three intrinsic types. They need no import in a `.tsi` file, like `number` and `boolean`:
+
+| Type | The question | What the property evaluates to |
+| --- | --- | --- |
+| `Choice<{ label: "description"; … }>` | one of a set of labelled options | `{ choice, probabilities, confidence? }` |
+| `Scale<["low", …, "high"]>` | a position on an ordered scale of 2 to 10 levels | `{ score, probabilities, levels, confidence? }` |
+| `Prob<{ true: "…"; false: "…" }>` or bare `Prob` | whether a statement holds | the probability of yes, `0` to `1` |
+
+The plain forms keep working exactly as before, and any model can answer them: a literal union is "pick a label", `boolean` is "yes or no". The rule is simple: **adding criteria to a question changes what the property evaluates to.** A plain union or `boolean` is "just decide"; a `Choice`, `Scale` or `Prob` is "give me the report".
+
+```tsi
+// main.tsi
+type Triage = {
+  /** Which team should handle this? */
+  department: Choice<{ billing: "Payments and refunds"; sales: "Pricing and upgrades" }>;
+  /** How frustrated is the customer? */
+  frustration: Scale<["Calm", "Frustrated but civil", "Angry"]>;
+  /** Does the message express urgency? */
+  urgent: Prob<{ true: "Explicit time pressure"; false: "No urgency expressed" }>;
+  /** Plain forms, unchanged — any model can answer them */
+  team: "billing" | "sales";
+  isUrgent: boolean;
+};
+
+const .ticket = "I was charged twice and nobody answers my emails. I want my money back NOW.";
+
+const t = ask `Evaluate this support ticket`<Triage>;
+
+console.log(t.department.choice, t.department.probabilities.billing, t.department.confidence);
+console.log(t.frustration.score, t.frustration.levels[Math.round(t.frustration.score)]);
+console.log(t.urgent > 0.8, t.team, t.isUrgent);
+```
+
+The JSDoc comment on a property is that question's instructions. The criteria — option descriptions, the ordered levels, what "true" and "false" mean — live in the type argument, so the question and its answer shape are one declaration.
+
+## The three types
+
+**`Choice`** takes a type literal whose members are string literals or `null` (`null` when the label speaks for itself), or a bare label union — `Choice<"a" | "b">`. Two to 255 labels. The answer carries the chosen label under `choice`, a probability for every label under `probabilities` (summing to 1) and, when the model reports one, a `confidence` between 0 and 1. Labels can be numbers as well as strings — `Choice<1 | 2 | 3>`, `Choice<{ 1: "Low"; 2: "High" }>`, or a mix such as `Choice<1 | "other">`. A label written as a number comes back as that number under `choice`, while `probabilities` is always keyed by the label's text (`probabilities["2"]`), as JSON keys are. Two labels with the same text, `1` and `"1"`, cannot be told apart on the wire: [`NOLA2015`](/docs/reference/error-codes/#nola2015).
+
+**`Scale`** takes a tuple of two to ten string literals, ordered from low to high. The answer's `score` is the probability-weighted level, a fractional number from 0 to `levels.length - 1`: a score of 1.3 means "mostly level 1, some weight on level 2". `probabilities` is an array in level order and `levels` is the tuple you wrote, so `levels[Math.round(score)]` is fully typed.
+
+**`Prob`** takes an optional `{ true: "…"; false: "…" }` literal describing both outcomes. The value is a plain number, the probability that the statement holds. There is no separate confidence: the distance from 0.5 is the certainty.
+
+Malformed criteria — a description that is not a literal, one label, eleven levels, a `Prob` argument with a third member — are [`NOLA2015`](/docs/reference/error-codes/#nola2015) at the type, whatever the site.
+
+## Which models can answer
+
+A chat model cannot measure probabilities. Handed the answer shape, it would invent a `confidence` that looks real, so an ask whose output type contains a `Choice`, `Scale` or `Prob` is refused before any request is sent unless the model it resolves to is a decision model: [`NOLA3018`](/docs/reference/error-codes/#nola3018). Today that is [`typesafe()`](/docs/reference/providers-api/#typesafe); `mockProvider(replies, { decisions: true })` stands in for one in tests, and a `replay()` ledger serves recorded decision asks offline. Route the decision asks to it by name and keep a chat model for everything else:
+
+```ts
+// nola.config.ts
+import { defineConfig } from "@nola-lang/runtime";
+import { openai, typesafe } from "@nola-lang/providers";
+
+export default defineConfig({
+  model: { default: openai("gpt-5-mini"), decision: typesafe() },
+});
+```
+
+```tsi
+// triage.tsi
+type Triage = { department: Choice<{ billing: "Payments"; sales: "Pricing" }> };
+const .ticket = "Charged twice for order #88.";
+const t = ask with decision `Evaluate this support ticket`<Triage>;
+console.log(t.department.choice);
+```
+
+`fallback([typesafe(), openai("…")])` counts as a decision model because one of its inners is, and skips the inners that are not on such an ask. The plain forms never trigger the check — a union or a `boolean` in the same type is answered by whichever model serves the ask.
+
+## The plain boolean rule
+
+When a decision model answers a plain `boolean`, the runtime has to pick a side: `true` only when the probability of yes is strictly above 0.5, so a coin flip is `false`. `typesafe({ threshold })` moves the line for a project, and `.withParams({ providerOptions: { threshold: 0.8 } })` for one ask. When the uncertainty matters to your code, ask for a `Prob` and decide yourself.
+
+## Sugar
+
+An extractor may name the primitive right after its sigil. Each form lowers to exactly the long-hand spelling and shares its identity:
+
+```tsi
+// sugar.tsi
+const .ticket = "Charged twice for order #88.";
+const dept = ask ..choice`Which team should handle this?`<{ billing: "Payments"; sales: "Pricing" }>;
+const mood = ask ..scale`How frustrated is the customer?`<["Calm", "Civil", "Angry"]>;
+const urgent = ask ..prob`Does the message express urgency?`;
+const urgentWith = ask ..prob`Does the message express urgency?`<{ true: "Time pressure"; false: "None" }>;
+console.log(dept.choice, mood.score, urgent, urgentWith);
+```
+
+The sugar needs the explicit `..`: directly after `ask`, `` choice`…` `` reads as a tagged template. Any other word in that slot is [`NOLA1016`](/docs/reference/error-codes/#nola1016); `..choice` or `..scale` without a type argument is [`NOLA2015`](/docs/reference/error-codes/#nola2015).
+
+## On the wire
+
+The schema Nola derives for a decision type is the answer object's structural schema plus an `x-nola-decision` keyword carrying the question — the kind, the criteria or the levels — which is what a decision provider reads. Validation checks the answer against that shape: the label must be one sent, the distribution must sum to 1, the score must lie on the scale. See [Schema derivation](/docs/reference/schema-derivation/#decision-types).

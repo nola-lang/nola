@@ -5,9 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Codes } from "@nola-lang/ast";
 import { viewSourceCandidates } from "@nola-lang/compiler";
 import { createDerivationService, type DerivationService } from "@nola-lang/derive";
-import { transform } from "esbuild";
 import { findProjectRoot } from "./project-root.js";
-import { NolaTransformError, transformNola } from "./transform.js";
+import { NolaTransformError, stripTypes, transformNola } from "./transform.js";
 
 // The hooks run in Node's module-hooks worker, which `register()` gives no project
 // context. Walk up for the root here, memoized per directory — a `.tsi` import graph
@@ -119,9 +118,7 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
     const view = serviceFor(file).deriveView(file);
     if (view.code === "" || view.diagnostics.length > 0) throw new NolaTransformError(view.diagnostics);
     // Plain TS with no meaningful original positions — strip types, skip the map.
-    // Async `transform` for the same worker-thread reason documented in transform.ts.
-    const js = await transform(view.code, { loader: "ts", format: "esm" });
-    return { format: "module", source: js.code, shortCircuit: true };
+    return { format: "module", source: stripTypes(view.code, file).code, shortCircuit: true };
   }
   if (!url.endsWith(".tsi")) return nextLoad(url, context);
   const file = fileURLToPath(url);

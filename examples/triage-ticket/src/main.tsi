@@ -1,0 +1,26 @@
+`You triage customer support tickets. Answer every question from the ticket text alone; never guess.`
+
+type Department = "billing" | "shipping" | "account" | "other";
+type Priority = 1 | 2 | 3;
+
+// On typesafe.ai's Jev every property becomes a typed question: a choice
+// question per literal union, a yes/no question per boolean. The JSDoc
+// comment is that question's instructions.
+interface Triage {
+  /** Which team owns this ticket? */
+  department: Department;
+  /** Does the customer express urgency? */
+  urgent: boolean;
+  /** 1 = low, 3 = high */
+  priority: Priority;
+  /** Is the customer asking for a refund? */
+  refundRequested: boolean;
+}
+
+// A `.` binding is context: the ask below sees the ticket text.
+const .ticket = "I was charged twice for order #88 and nobody has answered my emails for a week. I want my money back NOW.";
+
+// `ask` works at the top level: this file is the whole program.
+const triage = ask `triage the support ticket`<Triage>;
+
+console.log(JSON.stringify(triage));

@@ -16,5 +16,5 @@ export interface Invoice {
 }
 
 export infer function extractInvoice(.document: string) {
-  return ask ..`the invoice data from the document`<Invoice>;
+  return ask `the invoice data from the document`<Invoice>;
 }

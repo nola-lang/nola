@@ -51,8 +51,8 @@ The provider *name* is deliberately **not** part of the key: a ledger recorded b
 
 Edit a `.tsi` file, add an ask, or change a type, and you re-record: run once with `NOLA_RECORD=1`, commit the new ledger.
 
-## The starter's keyless first run
+## The scaffold's keyless first run
 
-`npm create nola` ships `nola.replay.jsonl` alongside `src/person.tsi` and a config whose `default` is `replay("./nola.replay.jsonl")` — so `npm start` works with no API key. The moment you change the example, the ledger no longer matches and replay fails loudly; switch the config to a live provider (the comment in the file shows how) or record a fresh ledger.
+`npm create nola` ships `nola.replay.jsonl` alongside the template's `.tsi` file (`src/main.tsi` for `feature-extraction` and `function-calling`, `src/person.tsi` for `typescript-interop`) and a config whose `default` is `replay("./nola.replay.jsonl")` — so `npm start` works with no API key. The moment you change the example, the ledger no longer matches and replay fails loudly; switch the config to a live provider (the comment in the file shows how) or record a fresh ledger.
 
 Next: [The nola CLI](/docs/tooling/cli/)

@@ -27,7 +27,7 @@ import { extractPerson } from "./person.js";      // WRONG — no such file
 export interface Person { name: string; age: number }
 
 export infer function extractPerson(.text: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 
@@ -83,7 +83,7 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 
@@ -93,7 +93,10 @@ Behind the scenes the compiler imports the type's value from `./models.tsi` — 
 // not-checked
 import type { Person } from "./models.js";        // RIGHT — the type, for a schema in a .tsi
 import { Person } from "./models.tsi";            // RIGHT — the type AND its InferType value
+import { Person } from "./models.js";             // WRONG — kept at run time as written; models.js exports no value named Person
 ```
+
+The `type` keyword is not optional for a type-only import from a plain module: like Node's own handling of `.ts` files, `nola run` strips types without rewriting imports, so a bare `import { Person }` stays a value import and fails when the module loads.
 
 ## tsconfig
 

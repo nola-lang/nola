@@ -39,7 +39,7 @@ describe("cmdCheck", () => {
 
   it("reports NOLA diagnostics before type checking", async () => {
     const dir = await mkdtemp(join(tmpdir(), "nola-check-nola-"));
-    await writeFile(join(dir, "top.tsi"), "const v = ask ..`v`;\n");
+    await writeFile(join(dir, "top.tsi"), "const f = async () => ask ..`v`;\n");
     const { errors } = await cmdCheck(dir);
     expect(errors.some((e) => e.includes("NOLA2001"))).toBe(true);
   });

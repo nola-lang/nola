@@ -18,58 +18,7 @@ function snap(text: string) {
 
 const BROKEN = "const p = ..5;\nconst ok = ..`y`<string>;\n";
 
-/** Fake just the context seams the plugin touches; the mapper is Volar's real one. */
-function makeContext(sourceUri: URI, root: NolaVirtualCode): LanguageServiceContext {
-  const embedded = root.embeddedCodes[0];
-  return {
-    decodeEmbeddedDocumentUri: (uri: URI) =>
-      uri.scheme === "volar-embedded" ? ([sourceUri, embedded.id] as [URI, string]) : undefined,
-    language: {
-      scripts: {
-        get: (id: URI) =>
-          id.toString() === sourceUri.toString()
-            ? { generated: { root, embeddedCodes: new Map([[embedded.id, embedded]]) } }
-            : undefined,
-      },
-      maps: {
-        get: () => defaultMapperFactory(embedded.mappings),
-      },
-    },
-  } as unknown as LanguageServiceContext;
-}
-
 describe("nolaServicePlugin", () => {
-  it("publishes nola-native diagnostics through the embedded document", () => {
-    const plugin = createNolaLanguagePlugin<URI>((uri) => uri.fsPath.replace(/\\/g, "/"));
-    const sourceUri = URI.file("/proj/a.tsi");
-    const root = plugin.createVirtualCode?.(sourceUri, "nola", snap(BROKEN), {} as never);
-    if (!(root instanceof NolaVirtualCode)) throw new Error("no virtual code");
-
-    const embeddedText = root.embeddedCodes[0].snapshot.getText(0, root.embeddedCodes[0].snapshot.getLength());
-    const instance = nolaServicePlugin.create(makeContext(sourceUri, root));
-    const document = {
-      uri: "volar-embedded://ts/a.tsi",
-      languageId: "typescript",
-      positionAt: (offset: number) => {
-        const before = embeddedText.slice(0, offset);
-        return { line: before.split("\n").length - 1, character: offset - (before.lastIndexOf("\n") + 1) };
-      },
-    } as never;
-    const diags = (instance.provideDiagnostics?.(document, {} as never) ?? []) as Array<{
-      code?: string | number;
-      source?: string;
-      severity?: number;
-      range: { start: { line: number; character: number } };
-    }>;
-    expect(diags.length).toBeGreaterThanOrEqual(1);
-    const d = diags.find((x) => x.code === "NOLA1005");
-    expect(d).toBeDefined();
-    expect(d?.source).toBe("nola");
-    expect(d?.severity).toBe(1);
-    expect(d?.range.start.line).toBe(0);
-    expect(d?.range.start.character).toBeGreaterThan(0);
-  });
-
   it("formats the .tsi source directly, leaving nola constructs untouched", async () => {
     const content = [
       "export infer function fmt(q: string) {",
@@ -125,5 +74,78 @@ describe("nolaServicePlugin", () => {
     const instance = nolaServicePlugin.create(context);
     const document = { uri: "file:///proj/a.ts", languageId: "typescript" } as never;
     expect(instance.provideDiagnostics?.(document, {} as never)).toBeUndefined();
+  });
+});
+
+// Volar runs diagnostics plugins against EVERY code of a script whose mappings
+// admit verification — the root (the .tsi source itself, id "root") included.
+// nola-native diagnostics carry SOURCE offsets, so the root document is where
+// they belong: an identity mapping, no translation, and no dependence on the
+// embedded mappings — which, after a bailed parse, describe an OLDER text
+// (the parse error sat past their extent and was dropped).
+describe("nolaServicePlugin: root-document diagnostics", () => {
+  const plugin = createNolaLanguagePlugin<URI>((uri) => uri.fsPath.replace(/\\/g, "/"));
+  const sourceUri = URI.file("/proj/a.tsi");
+
+  function contextFor(root: NolaVirtualCode): LanguageServiceContext {
+    const embedded = root.embeddedCodes[0];
+    const codes = new Map([
+      [root.id, root],
+      [embedded.id, embedded],
+    ]);
+    return {
+      decodeEmbeddedDocumentUri: (uri: URI) =>
+        uri.scheme === "volar-embedded" ? ([sourceUri, uri.authority] as [URI, string]) : undefined,
+      language: {
+        scripts: {
+          get: (id: URI) => (id.toString() === sourceUri.toString() ? { generated: { root, embeddedCodes: codes } } : undefined),
+        },
+        maps: { get: (code: { mappings: unknown[] }) => defaultMapperFactory(code.mappings as never) },
+      },
+    } as unknown as LanguageServiceContext;
+  }
+
+  function docFor(id: string, languageId: string, text: string) {
+    return {
+      uri: `volar-embedded://${id}/a.tsi`,
+      languageId,
+      positionAt: (offset: number) => {
+        const before = text.slice(0, offset);
+        return { line: before.split("\n").length - 1, character: offset - (before.lastIndexOf("\n") + 1) };
+      },
+    } as never;
+  }
+
+  type Diag = { code?: string | number; source?: string; range: { start: { line: number; character: number } } };
+
+  it("publishes parse diagnostics on the root document at source positions, and not on the embedded one", () => {
+    const root = plugin.createVirtualCode?.(sourceUri, "nola", snap(BROKEN), {} as never);
+    if (!(root instanceof NolaVirtualCode)) throw new Error("no virtual code");
+    const instance = nolaServicePlugin.create(contextFor(root));
+    const onRoot = (instance.provideDiagnostics?.(docFor("root", "nola", BROKEN), {} as never) ?? []) as Diag[];
+    const d = onRoot.find((x) => x.code === "NOLA1005");
+    expect(d).toBeDefined();
+    expect(d?.source).toBe("nola");
+    // NOLA1005 is raised at the token after the sigil
+    expect(d?.range.start).toEqual({ line: 0, character: BROKEN.indexOf("..5") + 2 });
+    const embeddedText = root.embeddedCodes[0].snapshot.getText(0, root.embeddedCodes[0].snapshot.getLength());
+    const onEmbedded = (instance.provideDiagnostics?.(docFor("ts", "typescript", embeddedText), {} as never) ?? []) as Diag[];
+    expect(onEmbedded.filter((x) => x.code === "NOLA1005")).toEqual([]);
+  });
+
+  it("a bailed snapshot still reports its parse error at the right place", () => {
+    const good = "const i = ..`x`<string>;\n";
+    const bails = "const i = ..`x`<string>;\nfoo(\n";
+    const root = plugin.createVirtualCode?.(sourceUri, "nola", snap(good), {} as never);
+    if (!(root instanceof NolaVirtualCode)) throw new Error("no virtual code");
+    const updated = plugin.updateVirtualCode?.(sourceUri, root, snap(bails), {} as never);
+    const current = updated instanceof NolaVirtualCode ? updated : root;
+    expect(current.stale).toBe(true);
+    const instance = nolaServicePlugin.create(contextFor(current));
+    const onRoot = (instance.provideDiagnostics?.(docFor("root", "nola", bails), {} as never) ?? []) as Diag[];
+    expect(onRoot.map((x) => x.code)).toEqual(["NOLA1001"]);
+    // the unclosed call is reported at the end of the file — past the extent
+    // of the last-good mappings, where the embedded route lost it
+    expect(onRoot[0]?.range.start).toEqual({ line: 2, character: 0 });
   });
 });

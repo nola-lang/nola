@@ -14,8 +14,9 @@ export {
   roundRobin,
   withRetry,
 } from "./combinators.js";
+export { callModel, isDecisionRequest, toClassic } from "./dialect.js";
 export { type GoogleOptions, google } from "./google.js";
-export { type MockRequest, mockProvider } from "./mock.js";
+export { type MockOptions, type MockRequest, mockProvider } from "./mock.js";
 export { type OpenAiOptions, openai } from "./openai.js";
 export { record, replay } from "./record-replay.js";
 export { type TypesafeOptions, typesafe } from "./typesafe.js";
@@ -32,3 +33,12 @@ export const providers = {
   typesafe,
   mock: mockProvider,
 } as const;
+export {
+  type DecisionPlan,
+  type DecisionWireQuestion,
+  type DecodeResult,
+  type Decoder,
+  type Instructions,
+  type PlanResult,
+  planFor,
+} from "./decisions.js";

@@ -10,9 +10,59 @@ import { withRecommendedGitignore } from "../src/scaffold.js";
 const tmp = () => mkdtemp(join(tmpdir(), "nola-scaffold-"));
 
 describe("scaffold", () => {
-  it("lays down the full starter into a new directory", async () => {
+  it("lays down feature-extraction (the default): ONE src/main.tsi that is the program, plus the ledger", async () => {
     const root = join(await tmp(), "my-app");
     const result = await scaffold(root);
+    expect(result.root).toBe(root);
+    expect(result.files).toEqual([
+      ".gitignore",
+      "README.md",
+      "nola.config.ts",
+      "nola.replay.jsonl",
+      "package.json",
+      "src/main.tsi",
+      "tsconfig.json",
+    ]);
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("nola run src/main.tsi");
+    const main = await readFile(join(root, "src/main.tsi"), "utf8");
+    expect(main).not.toContain("__NEXT_STEPS__");
+    // the three scope-body constructs the template exists to show
+    expect(main).toMatch(/^\/\/ Next steps/); // the comment leads; the instruction literal is still the first STATEMENT
+    expect(main).toContain("const .message =");
+    expect(main).toMatch(/^const \w+ = ask `/m); // a top-level ask in the implied-sigil spelling
+    expect(main).toContain("console.log(");
+    expect(main).not.toContain("infer function");
+  });
+
+  it("lays down function-calling: src/main.tsi with a call intent over an async function in src/tickets.ts", async () => {
+    const root = join(await tmp(), "fc");
+    const result = await scaffold(root, { template: "function-calling" });
+    expect(result.files).toEqual([
+      ".gitignore",
+      "README.md",
+      "nola.config.ts",
+      "nola.replay.jsonl",
+      "package.json",
+      "src/main.tsi",
+      "src/tickets.ts",
+      "tsconfig.json",
+    ]);
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("nola run src/main.tsi");
+    const main = await readFile(join(root, "src/main.tsi"), "utf8");
+    expect(main).not.toContain("__NEXT_STEPS__");
+    expect(main).toContain('import { createTicket } from "./tickets.js";');
+    expect(main).toContain("const .message =");
+    expect(main).toMatch(/^const \w+ = ask createTicket\(\.\./m);
+    expect(main).not.toContain("infer function");
+    const tickets = await readFile(join(root, "src/tickets.ts"), "utf8");
+    expect(tickets).toContain("export async function createTicket(");
+  });
+
+  it("lays down the full typescript-interop template into a new directory", async () => {
+    const root = join(await tmp(), "my-app");
+    const result = await scaffold(root, { template: "typescript-interop" });
     expect(result.root).toBe(root);
     for (const f of [
       "package.json",
@@ -43,24 +93,36 @@ describe("scaffold", () => {
     expect(readme).toContain("# my-app");
   });
 
-  it("renders the VS Code next steps into src/main.ts when the editor was chosen", async () => {
-    for (const template of ["starter", "empty"]) {
+  it("renders the VS Code next steps into the entry file when the editor was chosen", async () => {
+    const entries = {
+      "feature-extraction": "src/main.tsi",
+      "function-calling": "src/main.tsi",
+      "typescript-interop": "src/main.ts",
+      empty: "src/main.ts",
+    };
+    const breakpointIn = {
+      "feature-extraction": "the `ask` line below",
+      "function-calling": "the `ask` line below",
+      "typescript-interop": "src/person.tsi",
+      empty: "your .tsi file",
+    };
+    for (const [template, entry] of Object.entries(entries)) {
       const root = join(await tmp(), template);
       await scaffold(root, { template, ide: "vscode" });
-      const main = await readFile(join(root, "src/main.ts"), "utf8");
+      const main = await readFile(join(root, entry), "utf8");
       expect(main, template).not.toContain("__NEXT_STEPS__");
       expect(main, template).toMatch(/^\/\/ Next steps in VS Code/);
       expect(main, template).toContain("F5");
       expect(main, template).toContain("breakpoint");
       expect(main, template).toContain("recommended");
-      expect(main, template).toContain(template === "starter" ? "src/person.tsi" : ".tsi");
+      expect(main, template).toContain(breakpointIn[template as keyof typeof breakpointIn]);
     }
   });
 
-  it("renders editor-neutral next steps into src/main.ts without an editor", async () => {
+  it("renders editor-neutral next steps into the entry file without an editor", async () => {
     const root = join(await tmp(), "plain");
     await scaffold(root);
-    const main = await readFile(join(root, "src/main.ts"), "utf8");
+    const main = await readFile(join(root, "src/main.tsi"), "utf8");
     expect(main).not.toContain("__NEXT_STEPS__");
     expect(main).toMatch(/^\/\/ Next steps/);
     expect(main).not.toContain("F5");
@@ -129,7 +191,7 @@ describe("scaffold", () => {
   });
 
   it("lists valid names in the unknown-template error", async () => {
-    await expect(scaffold(join(await tmp(), "x"), { template: "nope" })).rejects.toThrow(/starter.*empty.*extract-resume/s);
+    await expect(scaffold(join(await tmp(), "x"), { template: "nope" })).rejects.toThrow(/feature-extraction.*function-calling.*typescript-interop.*empty.*extract-resume/s);
   });
 
   it("force-clears a non-empty directory", async () => {

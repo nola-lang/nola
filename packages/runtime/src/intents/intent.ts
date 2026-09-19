@@ -6,23 +6,32 @@ import {
   mergeProviderParams,NolaIntentError, 
   type ProviderParams
 } from "@nola-lang/core";
-import type { InferContext } from "../infer-context/index.js";
+import type { AskLocals, InferContext } from "../infer-context/index.js";
 import { Frame, type NolaRuntime, nolaRuntime } from "../runtime/index.js";
 
 export interface IntentOptions {
   retries?: number;
   model?: ModelRef;
   /**
-   * Per-invocation timeout in ms, armed when this intent roots the invocation:
-   * the root frame's AbortController fires when it elapses and every provider
-   * call in the invocation receives the signal. 0 disables. Defaults to
-   * config ask.timeoutMs.
+   * Bounds this intent's execution, in ms. On an intent that roots an
+   * invocation it is the root clock (default: config ask.timeoutMs; 0
+   * disables) and every provider call in the invocation receives the signal.
+   * On anything asked from a body — an extractor, a call intent, a callee
+   * invocation — it is a bound of its own, combined with the invocation's
+   * signal, whichever fires first; 0 sets none.
    */
   timeout?: number;
   /** wire-tuning knobs; resolved per-field along the frame chain, nearest frame wins */
   params?: ProviderParams;
   /** resolve without inheriting the caller frame's context (InvocationIntent only) */
   detached?: boolean;
+  /**
+   * The ask site's visible contextual bindings (`const .x`), set by `ask`
+   * itself — never by user code. On an extract/call intent they describe the
+   * scope the ask runs on; on a callee invocation, the caller scope as seen
+   * from that call site.
+   */
+  locals?: AskLocals;
 }
 
 export type IntentExecutor<T> = (frame: Frame) => Promise<T>;
@@ -48,6 +57,11 @@ export abstract class Intent<T = unknown, TContext extends InferContext = InferC
     protected readonly inferContext?: TContext,
     protected readonly options: IntentOptions = {},
   ) { }
+
+  /** The intent's own `.withTimeout(ms)`, when it set one — the module-body ask path roots its frame with it. */
+  get timeout(): number | undefined {
+    return this.options.timeout;
+  }
 
   /** The owning runtime — through the construction scope when there is one. */
   protected get runtime(): NolaRuntime {
@@ -78,6 +92,11 @@ export abstract class Intent<T = unknown, TContext extends InferContext = InferC
 
   withTimeout(timeout: number): Intent<T> {
     return this.clone({ timeout });
+  }
+
+  /** @internal the ask path attaches the site's contextual bindings (scope-bodies spec §3.3). */
+  withLocals(locals: AskLocals): Intent<T> {
+    return this.clone({ locals });
   }
 
   withParams(params: ProviderParams): Intent<T> {

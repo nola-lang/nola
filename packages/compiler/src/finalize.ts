@@ -40,10 +40,11 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
       out += accessorDecl(req.accessor, a.expr, req.kind === "context");
       continue;
     }
-    if (a.code === Codes.ViewUnavailable || a.code === Codes.InvalidConstraint) {
+    if (a.code === Codes.ViewUnavailable || a.code === Codes.InvalidConstraint || a.code === Codes.InvalidDecisionCriteria) {
       // a dangling `.tsi` view import (the module the type lives in does not
-      // exist) or a malformed JSDoc constraint tag is an error at every kind
-      // of site — an authoring mistake, never a policy question
+      // exist), a malformed JSDoc constraint tag or malformed decision criteria
+      // (NOLA2015) is an error at every kind of site — an authoring mistake,
+      // never a policy question
       diagnostics.push(diag(a.code, a.reason, req, file));
       out += req.kind === "context" ? accessorDecl(req.accessor, "undefined", true) : accessorDecl(req.accessor, "__nola.types.string()");
       continue;

@@ -10,7 +10,7 @@ import {
   renderTaskFormat,
   scopeChain,
 } from "@nola-lang/core";
-import type { InferContext } from "../infer-context/infer-context.js";
+import type { AskLocals, InferContext } from "../infer-context/infer-context.js";
 import type { Frame } from "../runtime/frame.js";
 import { asCarrier, type InferType, TypeCarrier } from "../types/infer-type.js";
 import type { InferenceComposer, IntentComposer, IntentInput, ScopeComposer, ScopeDescription } from "./composer.js";
@@ -86,6 +86,7 @@ export class ModelBuilder extends LevelComposer {
     const outerToInner = [...described].reverse();
     const scopes: InferenceScope[] = outerToInner.map((d) => ({
       fn: d.fn,
+      ...(d.module ? { module: true as const } : {}),
       ...(d.file !== undefined ? { file: d.file } : {}),
       instruction: d.instruction,
       args: d.args.map((a) => {
@@ -102,6 +103,7 @@ export class ModelBuilder extends LevelComposer {
           ...(a.type ? { type: asCarrier(a.type).toNativeType() } : {}),
           contextual: a.contextual,
           ...(json !== undefined ? { value: JSON.parse(json) } : {}),
+          ...(a.local ? { local: true as const } : {}),
         };
       }),
     }));
@@ -219,10 +221,20 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/** Compose one ask's model: the ask-site node first (the intent), then the frame chain (scopes). */
-export function buildInferenceModel(init: { frame: Frame; context: InferContext; site: string; system?: string }): InferenceModel {
+/**
+ * Compose one ask's model: the ask-site node first (the intent), then the
+ * frame chain (scopes). `locals` are the ask site's visible contextual
+ * bindings — they describe the asking frame's scope.
+ */
+export function buildInferenceModel(init: {
+  frame: Frame;
+  context: InferContext;
+  site: string;
+  system?: string;
+  locals?: AskLocals;
+}): InferenceModel {
   const builder = new ModelBuilder({ site: init.site, ...(init.system !== undefined ? { system: init.system } : {}) });
   init.context.compose(builder);
-  init.frame.compose(builder);
+  init.frame.compose(builder, init.locals);
   return builder.build();
 }

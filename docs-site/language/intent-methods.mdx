@@ -1,6 +1,6 @@
 ---
 title: Intent methods
-description: .withRetry, .withModel and .withParams on every intent; .withTimeout and .detached on an infer function's result. Clone semantics, single-shot resolution.
+description: .withRetry, .withModel, .withParams and .withTimeout on every intent; .detached on an infer function's result. Clone semantics, single-shot resolution.
 sidebar:
   order: 80
 ---
@@ -9,8 +9,8 @@ Every intent carries a few fluent methods. Which ones depends on the tier:
 
 | Tier | What it is | Methods |
 | --- | --- | --- |
-| `Askable<T>` | a raw extractor or call intent — resolvable only through `ask` | `.withRetry(n)` · `.withModel(nameOrProvider)` · `.withParams({…})` |
-| `Intent<T>` | what calling an infer function returns — also `PromiseLike<T>` | the three above, plus `.withTimeout(ms)` · `.detached()` |
+| `Askable<T>` | a raw extractor or call intent — resolvable only through `ask` | `.withRetry(n)` · `.withModel(nameOrProvider)` · `.withParams({…})` · `.withTimeout(ms)` |
+| `Intent<T>` | what calling an infer function returns — also `PromiseLike<T>` | the four above, plus `.detached()` |
 
 ## On any intent
 
@@ -20,24 +20,26 @@ export infer function tuned(.text: string) {
   const a = ask (..`the title`<string>).withRetry(2);
   const b = ask (..`the body`<string>).withModel("careful");
   const c = ask (..`a creative tagline`<string>).withParams({ temperature: 0.9, maxOutputTokens: 200 });
-  return { a, b, c };
+  const d = ask (..`a one-paragraph summary`<string>).withTimeout(10_000);
+  return { a, b, c, d };
 }
 ```
 
 - **`.withRetry(n)`** — `n` extra whole-ask attempts, flat, no backoff. Unrelated to the provider-level `withRetry` combinator, which retries the wire call — see [Resilience](/docs/config/resilience/). On a call intent the callee runs again on every attempt, so only use it on idempotent targets.
 - **`.withModel(nameOrModel)`** — the dynamic form of `ask with`; accepts a configured name or a `LanguageModel` object.
 - **`.withParams({ temperature, maxOutputTokens, providerOptions })`** — wire knobs, shallow-merged per field over anything already set on the intent; `providerOptions` merges per key. Params are part of the ask fingerprint, so two asks that differ only in params never share a replay entry — see [Record and replay](/docs/config/record-and-replay/).
+- **`.withTimeout(ms)`** — bounds that intent's provider round trips. On an ask inside a body it is a bound of its own next to the invocation's clock — whichever fires first wins, so it can tighten the invocation's timeout but never loosen it; `0` sets none. On an intent that roots an invocation (below) it *is* the invocation's clock.
 
 ## On the intent an infer function returns
 
-`.withTimeout()` acts when the intent *roots* an invocation, which is why it is typically used from plain TypeScript; `.detached()` does the opposite job — it matters only when the intent is asked from **inside another infer function**, where it would otherwise inherit the caller's frame (from plain TypeScript there is no parent frame, so it is a no-op there):
+From plain TypeScript the intent *roots* an invocation, so `.withTimeout()` there replaces the configured invocation timeout; `.detached()` does the opposite job — it matters only when the intent is asked from **inside another infer function**, where it would otherwise inherit the caller's frame (from plain TypeScript there is no parent frame, so it is a no-op there):
 
 ```tsi
 // person.tsi
 export interface Person { name: string; age: number }
 
 export infer function extractPerson(.message: string) {
-  return ask ..`the person described in the text`<Person>;
+  return ask `the person described in the text`<Person>;
 }
 ```
 
@@ -57,12 +59,12 @@ import { extractPerson } from "./person.tsi";
 export infer function brief(.text: string, .audience: string) {
   // extractPerson runs with its own context only — brief's .text/.audience are not composed into its prompts
   const person = ask extractPerson(text).detached();
-  const intro = ask ..`a one-line introduction of the person for this audience`<string>;
+  const intro = ask `a one-line introduction of the person for this audience`<string>;
   return { person, intro };
 }
 ```
 
-- **`.withTimeout(ms)`** — the per-invocation timeout when this intent roots the invocation; overrides `ask.timeoutMs` from the config; `0` disables. It bounds provider round trips only — see [Ask options](/docs/config/ask-options/).
+- **`.withTimeout(ms)`** on a rooting intent — the per-invocation timeout; overrides `ask.timeoutMs` from the config; `0` disables. Asked from inside another infer function, the same call bounds just that callee. It bounds provider round trips only — see [Ask options](/docs/config/ask-options/).
 - **`.detached()`** — resolve without inheriting the caller frame's context. Useful when one infer function asks another and you do *not* want the caller's contextual parameters composed into the callee's prompts.
 
 ## Clone semantics

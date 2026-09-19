@@ -1,8 +1,8 @@
-import { isPlatformModel } from "@nola-lang/core";
+import { isInferModel, isPlatformModel } from "@nola-lang/core";
 import * as pkg from "@nola-lang/providers";
 import { mockProvider, openai, providers, typesafe } from "@nola-lang/providers";
 import { describe, expect, it } from "vitest";
-import { requestOf } from "./helpers/model.js";
+import { modelOf, requestOf } from "./helpers/model.js";
 
 // @nola-lang/providers is the home for everything bring-your-own: vendor
 // factories, the namespace map, resilience combinators, record/replay
@@ -31,9 +31,16 @@ describe("@nola-lang/providers surface", () => {
       return new Response(JSON.stringify({ answers: { value: { type: "noul", noul: 1 } } }));
     }) as typeof globalThis.fetch;
     // `typesafe("jev-3")` has no fetch slot; the same shorthand goes through the options form for the wire check.
-    await providers.typesafe({ model: "jev-3", apiKey: "k", fetch: fn }).complete(requestOf({ schema: { type: "boolean" } }));
+    const p = providers.typesafe({ model: "jev-3", apiKey: "k", fetch: fn });
+    if (!isInferModel(p)) throw new Error("typesafe is an infer-dialect model");
+    await p.infer({ model: modelOf({ schema: { type: "boolean" } }) });
     expect(body?.model).toBe("jev-3");
     expect(typesafe("jev-3").name).toBe("typesafe");
+  });
+
+  it("mockProvider takes options; the frozen factory names are unchanged", () => {
+    const m = mockProvider(["x"], { decisions: true });
+    expect(m.name).toBe("mock");
   });
 
   it("does not export nola() — the native provider lives in @nola-lang/runtime, no alias here", () => {

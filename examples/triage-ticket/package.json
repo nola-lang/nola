@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "nola run src/main.ts",
+    "start": "nola run src/main.tsi",
     "build": "nola build",
     "check": "nola check"
   },

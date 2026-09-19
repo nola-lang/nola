@@ -36,6 +36,9 @@ const FIXTURES: Record<string, string> = {
     'declare function tool(a: string): Promise<number>;\ninfer function go() {\n  return ask tool``("x");\n}\n',
   sigilLessCallIntent:
     'declare function tool(a: string, b: number): Promise<number>;\ninfer function go() {\n  return ask tool(..`x`<string>, 2);\n}\n',
+  // implied sigil: the extractor prefix is an insert at the template start, coalesced with `ask `
+  impliedExtract: "infer function go() {\n  return ask `get a name`<string>;\n}\n",
+  impliedExtractModule: "const n = ask with fast `hi`;\n",
   // emit 14: the value insert after an exported type is a zero-source-length replaced span
   typeValues: "export type P = { x: number };\nexport const s = P.toJsonSchema();\n",
 };

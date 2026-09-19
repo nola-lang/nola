@@ -5,11 +5,11 @@ sidebar:
   order: 0
 ---
 
-The repository ships twelve standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key, except `triage-ticket`, whose config names the vendor it demonstrates.
+The repository ships twelve standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key, except `triage-ticket`, which is one `src/main.tsi` with a top-level `ask` and whose config names the vendor it demonstrates.
 
 | Example | Demonstrates | Scaffold |
 | --- | --- | --- |
-| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app` (the starter is this example on a committed replay ledger instead of the mock) |
+| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app -- --template typescript-interop` (the `typescript-interop` template is this example on a committed replay ledger instead of the mock; the default `extraction` template is the same extraction as one top-level `.tsi` script) |
 | [extract-resume](/docs/examples/extract-resume/) | Nested arrays of objects, JSDoc schema descriptions | `npm create nola my-app -- --template extract-resume` |
 | [extract-invoice](https://github.com/nola-lang/nola/tree/main/examples/extract-invoice) | Same-file type references, optional fields | `npm create nola my-app -- --template extract-invoice` |
 | [classify-message](/docs/examples/classify-message/) | Closed label sets: union alias, string enum, inline union | `npm create nola my-app -- --template classify-message` |
@@ -19,8 +19,8 @@ The repository ships twelve standalone example projects, each built around one c
 | [cross-file-types](https://github.com/nola-lang/nola/tree/main/examples/cross-file-types) | A type imported from another file (a view of plain TypeScript), self-recursive; `schema.ts` prints its JSON Schema | — |
 | [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
 | [prompt-template](https://github.com/nola-lang/nola/tree/main/examples/prompt-template) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor | — |
-| [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` |
-| [triage-ticket](/docs/examples/triage-ticket/) | Ticket triage on typesafe.ai's Jev: literal unions and booleans as typed questions | `npm create nola my-app -- --template triage-ticket` (skips the provider question; needs `TYPESAFE_API_KEY`) |
+| [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` (the `function-calling` template is this feature as one top-level `.tsi` script) |
+| [triage-ticket](/docs/examples/triage-ticket/) | Ticket triage on typesafe.ai's Jev as one top-level `.tsi` script: literal unions and booleans as typed questions | `npm create nola my-app -- --template triage-ticket` (on the first template menu; skips the provider question; needs `TYPESAFE_API_KEY`) |
 
 ## Running an example
 

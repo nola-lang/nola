@@ -84,4 +84,14 @@ describe("ask with <identifier> (provider alias)", () => {
     expect(ast).toBeNull();
     expect(diagnostics[0]?.code).toBe("NOLA1009");
   });
+
+  it("`ask with <name>` followed by a bare template is an extractor", () => {
+    const src = "const s = ask with fast `a rough summary`<string>;\n";
+    const { ast, diagnostics } = parseNola(src, "x.tsi");
+    expect(diagnostics).toEqual([]);
+    const [a] = asks(ast as BaseNode);
+    expect(a?.provider?.name).toBe("fast");
+    expect(a?.argument.type).toBe("NolaExtractExpression");
+    expect(sliceSpan(src, a as NolaAskExpression)).toBe("ask with fast `a rough summary`<string>");
+  });
 });

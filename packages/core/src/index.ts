@@ -1,7 +1,19 @@
 import type { InferenceModel } from "./inference-model.js";
-import type { PlatformModel } from "./platform-model.js";
+import type { InferRequest, PlatformModel } from "./platform-model.js";
 import type { ProviderPayload } from "./provider-dialect.js";
 import type { ClassicPrompt } from "./render-classic.js";
+
+/**
+ * The decision question behind a schema node (decision types spec
+ * 2026-09-18): what a decision provider asks instead of "produce this JSON".
+ * Rides `x-nola-decision` on the node's structural schema; joins the ask
+ * fingerprint like any schema content.
+ */
+export type DecisionQuestion =
+  /** `numeric`: the labels (by text) that are number literals — `Choice<1 | 2>`, `Choice<1 | "a">`; the answer's `choice` is the number for those */
+  | { kind: "choice"; criteria: Record<string, string | null>; numeric?: readonly string[] }
+  | { kind: "scale"; levels: readonly string[] }
+  | { kind: "prob"; criteria?: { true: string; false: string } };
 
 export type JsonSchema =
   | {
@@ -18,6 +30,8 @@ export type JsonSchema =
   }
   | {
       type: "number" | "integer";
+      /** a numeric-label Choice's `choice` member */
+      enum?: number[];
       minimum?: number;
       maximum?: number;
       exclusiveMinimum?: number;
@@ -25,8 +39,9 @@ export type JsonSchema =
       multipleOf?: number;
       description?: string;
       $defs?: Record<string, JsonSchema>;
+      "x-nola-decision"?: DecisionQuestion;
     }
-  | { type: "boolean"; description?: string; $defs?: Record<string, JsonSchema> }
+  | { type: "boolean"; description?: string; $defs?: Record<string, JsonSchema>; "x-nola-decision"?: DecisionQuestion }
   | {
       type: "array";
       items: JsonSchema;
@@ -43,6 +58,7 @@ export type JsonSchema =
     additionalProperties: false | JsonSchema;
     description?: string;
     $defs?: Record<string, JsonSchema>;
+    "x-nola-decision"?: DecisionQuestion;
   }
   | { $ref: string; description?: string; $defs?: Record<string, JsonSchema> }
   // emit 15 (checker-backed derivation): unions, literals, tuples, records
@@ -132,15 +148,30 @@ export class Site {
  * from `@format`, `@minimum`, `@minItems`, … tags); the schema carries the
  * keywords and validation enforces them. An emit-15 carrier has no
  * `constrain` method.
+ *
+ * Emit 17: scope bodies — `ask` is legal in the module body, which lowers to
+ * `__nola.ask(X, __nola_module_ctx())`: the second argument is a Frame OR the
+ * module scope node (`__nola_file_ctx().module({...})`, a new appendix
+ * accessor), and the runtime opens the `<module>` frame. The file accessor
+ * passes the contract — `__nola.context.file(path, 17)` — because a module-body
+ * ask runs before the EOF `useRuntime` statement. An emit-16 runtime has no
+ * `.module` and treats the scope node as a frame.
+ *
+ * Emit 18: decision types — `__nola.types.choice / scale / prob` (the answer
+ * shapes of a `Choice` / `Scale` / `Prob` site) and the appendix
+ * `import type { Choice, Scale, Prob } from "@nola-lang/runtime"` for the
+ * intrinsic names a file uses. An emit-17 runtime has no choice/scale/prob keys.
+ * Same emit (unreleased, 2026-09-19): `choice(criteria, { numeric: ["1"] })`
+ * lists the labels written as number literals — `Choice<1 | 2>`, `Choice<1 | "a">`.
  */
-export const NOLA_EMIT = 16;
+export const NOLA_EMIT = 18;
 
 /**
  * The narrow public tier: an intent resolvable ONLY through `ask` — what a
  * raw `..` extractor or call intent is. Not thenable (bare await/run on one
  * throws NOLA3010 at runtime, so the type does not offer it) and no
- * root-only knobs (timeout/detached act when an intent roots an invocation,
- * which these never do). The fluent methods clone.
+ * `detached` (a stack-frame opt-out, which these never open). The fluent
+ * methods clone.
  *
  * T is deliberately phantom — it appears only in the fluent returns, so
  * differently-parameterized Askables collapse structurally. Any member that
@@ -155,6 +186,8 @@ export interface Askable<T = unknown> {
   withModel(model: ModelRef): Askable<T>;
   /** wire-tuning knobs, shallow-merged over any params already on the intent */
   withParams(params: ProviderParams): Askable<T>;
+  /** bounds this intent's execution, in ms — never loosens the invocation's own clock; 0 sets none */
+  withTimeout(timeout: number): Askable<T>;
 }
 
 /**
@@ -169,7 +202,7 @@ export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
   withRetry(retries: number): Intent<T>;
   /** pin the model: an instance, or the name of a `model` map entry */
   withModel(model: ModelRef): Intent<T>;
-  /** per-invocation timeout in ms when this intent roots the invocation; 0 disables */
+  /** the invocation's timeout in ms: the root clock when this intent roots it, a bound of its own when asked from a body; 0 disables */
   withTimeout(timeout: number): Intent<T>;
   /** wire-tuning knobs, shallow-merged over any params already on the intent */
   withParams(params: ProviderParams): Intent<T>;
@@ -261,10 +294,29 @@ export type ProviderResponse = {
   durationMs?: number;
 };
 
-/** A configured model instance — what a provider factory returns and what the config's `model` slot holds. */
-export interface LanguageModel {
+/**
+ * The two provider dialects (decision types spec 2026-09-18 §6.2, relaxing
+ * config v2's "the platform model is the only infer-dialect model"): the
+ * METHOD NAME is the dialect. `complete` receives the classic rendering,
+ * `infer` receives the canonical InferenceModel. Any provider may implement
+ * either; a model carrying both is a config error (NOLA3003).
+ */
+export interface ChatModel {
   name: string;
   complete(req: ProviderRequest): Promise<ProviderResponse>;
+}
+
+export interface InferModel {
+  name: string;
+  infer(req: InferRequest): Promise<ProviderResponse>;
+}
+
+/** A configured model instance — what a provider factory returns and what the config's `model` slot holds. */
+export type LanguageModel = ChatModel | InferModel;
+
+/** The infer dialect, by method presence (no brand). */
+export function isInferModel(value: unknown): value is InferModel {
+  return !!value && typeof value === "object" && typeof (value as { infer?: unknown }).infer === "function";
 }
 
 /** A model pin: an instance, or the name of a `model` map entry. */
@@ -569,6 +621,7 @@ export interface HistoryRecord {
 }
 
 export { type ConsoleTask, createDebugTask } from "./debug-task.js";
+export { DECISION_MODEL, type DecisionSite, findDecisionQuestions, isDecisionModel } from "./decision-model.js";
 export {
   NolaConfigError,
   NolaIntentError,

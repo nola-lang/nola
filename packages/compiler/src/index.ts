@@ -1,6 +1,7 @@
 export type { SourceMap } from "magic-string";
 export { RUNTIME_AMBIENT_STUB } from "./ambient-stub.js";
 export { compileNola } from "./compile.js";
+export { collectDecisionTypeUses, DECISION_TYPE_NAMES, type DecisionTypeName } from "./decision-imports.js";
 export { finalizeDerivations } from "./finalize.js";
 export { displayPathFor } from "./path.js";
 export {

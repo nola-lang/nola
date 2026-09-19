@@ -25,6 +25,8 @@ import { create as createTypeScriptServices } from "volar-service-typescript";
 import type { URI } from "vscode-uri";
 import { createNolaServicePlugin } from "./nola-service.js";
 
+const WATCHED_EXTENSIONS = ["tsi", "ts", "cts", "mts", "tsx", "js", "cjs", "mjs", "jsx", "json"];
+
 const connection = createConnection();
 const server = createServer(connection);
 
@@ -63,5 +65,15 @@ connection.onInitialize((params) => {
   );
 });
 
-connection.onInitialized(server.initialized);
+connection.onInitialized(() => {
+  server.initialized();
+  // Volar re-parses a tsconfig's file list only on a watched-file event, and
+  // it registers no watcher of its own: without this a .tsi created on disk
+  // after startup (the Explorer's new file, `code x.tsi`) is missing from
+  // the tsconfig project's roots, lands in the INFERRED project (module
+  // CommonJS, target ES2020) and a top-level ask reports TS1378 until the
+  // window is reloaded. VS Code turns the registration into file watchers;
+  // .json covers tsconfig.json itself, which Volar reacts to the same way.
+  void server.fileWatcher.watchFiles([`**/*.{${WATCHED_EXTENSIONS.join(",")}}`]);
+});
 connection.onShutdown(server.shutdown);

@@ -56,6 +56,10 @@ Rules:
 - **Aliases.** Tags on `type Id = string` live with `Id`; a property `id: Id` may add its own. Tags on an `interface` or `class` declaration itself are not constraints and are ignored, as are unrelated JSDoc tags (`@see`, `@deprecated`, `@param`).
 - **Dialects.** `~standard.jsonSchema` renders the keywords for every target; OpenAPI 3.0 gets `exclusiveMinimum: true` beside `minimum`, and a constrained recursive reference is wrapped in `allOf` where the dialect ignores siblings of `$ref`.
 
+## Decision types
+
+`Choice<{ … }>`, `Scale<[ … ]>` and `Prob<{ … }>` ([Decision types](/docs/language/decision-types/)) derive to their own carrier nodes. The walk reads the criteria off the resolved type, so they survive `Partial`, `Pick`, `Omit` and generic instantiation. The schema is the answer object's structural shape plus an `x-nola-decision` keyword carrying the question — `{ kind: "choice", criteria }`, `{ kind: "scale", levels }` or `{ kind: "prob", criteria? }` — which decision providers read and every dialect passes through. Validation checks the answer: the label must be one sent, the distribution must sum to 1 within `1e-6`, the score must lie within `0 … levels.length - 1`, a probability within `0 … 1`; the runtime fills `levels` into a scale answer. Malformed criteria are [`NOLA2015`](/docs/reference/error-codes/#nola2015) at every kind of site; a JSDoc constraint tag on a `Prob` is [`NOLA2012`](/docs/reference/error-codes/#nola2012).
+
 ## Not derivable
 
 `Map`, `Set`, `Promise`, `RegExp`, functions and methods, `symbol`, `bigint`, `unknown`, `any`, `never`, tuple rest elements, number index signatures, and a generic type used without arguments (`Box<T>` as declared — instantiate it). An extractor over one of these is [`NOLA2002`](/docs/reference/error-codes/#nola2002); a `.param` follows the [contextual-parameter policy](/docs/language/contextual-parameters/#when-a-type-is-not-derivable); an exported type becomes an `UnsupportedType` value whose use is a compile-time error carrying the reason.

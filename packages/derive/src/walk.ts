@@ -2,6 +2,7 @@ import { accessorNameFor, moduleIdFor, posixDirname, posixRelative, viewSpecifie
 import { sha256Hex } from "@nola-lang/core";
 import type ts from "typescript";
 import { assertApplicable, constraintKindOf, parseConstraintTags } from "./constraints.js";
+import { decisionExpr } from "./decision.js";
 import { TS } from "./ts.js";
 
 /** A `.tsi` value import the walk reached: `import { <importedName> as __nola_type_<localBinding> } from "<specifier>"`. */
@@ -51,6 +52,8 @@ const norm = (p: string): string => p.replace(/\\/g, "/");
 /** A named type a ref points at: its declared name, declaration file, and symbol (for alias-level constraint tags). */
 type Named = { name: string; file: string; symbol: ts.Symbol };
 const IDENT = /^[A-Za-z_$][\w$]*$/;
+/** Authoring errors: thrown under prune too, never dropped as "underivable". */
+const AUTHORING_CODES = new Set(["NOLA2012", "NOLA2015"]);
 
 /**
  * The checker walk (spec §4.1): resolve the type at `node` and emit the
@@ -240,6 +243,10 @@ class Walker {
       const named = this.namedTarget(type);
       if (named) return this.ref(named, type);
     }
+    // decision types (spec 2026-09-18): recognized on the resolved type by their
+    // phantom member — after the named-ref step, so `department: Dept` stays a ref
+    const decision = decisionExpr(type, checker, owner);
+    if (decision !== undefined) return decision;
     const nominal = this.nominalName(type);
     if (checker.isTupleType(type)) {
       const target = (type as ts.TypeReference).target as ts.TupleType;
@@ -279,7 +286,7 @@ class Walker {
         parts.push(`${IDENT.test(prop.name) ? prop.name : JSON.stringify(prop.name)}: ${expr}`);
       } catch (e) {
         // prune drops underivable members, never a malformed constraint tag (an authoring error)
-        if (this.ctx.lossy && e instanceof DerivationError && e.code !== "NOLA2012") continue;
+        if (this.ctx.lossy && e instanceof DerivationError && !AUTHORING_CODES.has(e.code ?? "")) continue;
         throw e;
       }
     }

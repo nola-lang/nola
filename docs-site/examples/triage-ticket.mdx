@@ -5,14 +5,16 @@ sidebar:
   order: 50
 ---
 
-Ticket triage on typesafe.ai's Jev, a model that is not a chat model. Its API answers typed questions about a state — which option? is this true? — with calibrated probabilities, so the `typesafe()` provider serves exactly the asks whose output type it can express: a **string literal union** (`Department`) becomes a choice question with one option per value, a **number literal union** (`Priority`) a choice question decoded back to the number, a **boolean** (`urgent`, `refundRequested`) a yes/no question that is `true` at probability ≥ 0.5, and a **flat object** of those (`Triage`) one request with one question per property. The JSDoc comment on each property is that question's instructions.
+Ticket triage on typesafe.ai's Jev, a model that is not a chat model, as one `.tsi` file that is the whole program: a first-line [body instruction](/docs/language/infer-functions/#the-body-instruction), a `const .ticket` [contextual binding](/docs/language/contextual-parameters/#contextual-bindings) and a [top-level `ask`](/docs/language/ask/#at-module-level). Jev's API answers typed questions about a state — which option? is this true? — with calibrated probabilities, so the `typesafe()` provider serves exactly the asks whose output type it can express: a **string literal union** (`Department`) becomes a choice question with one option per value, a **number literal union** (`Priority`) a choice question decoded back to the number, a **boolean** (`urgent`, `refundRequested`) a yes/no question that is `true` at probability ≥ 0.5, and a **flat object** of those (`Triage`) one request with one question per property. The JSDoc comment on each property is that question's instructions.
 
 ```tsi
-// src/triage.tsi
-export type Department = "billing" | "shipping" | "account" | "other";
-export type Priority = 1 | 2 | 3;
+// src/main.tsi
+`You triage customer support tickets. Answer every question from the ticket text alone; never guess.`
 
-export interface Triage {
+type Department = "billing" | "shipping" | "account" | "other";
+type Priority = 1 | 2 | 3;
+
+interface Triage {
   /** Which team owns this ticket? */
   department: Department;
   /** Does the customer express urgency? */
@@ -23,9 +25,12 @@ export interface Triage {
   refundRequested: boolean;
 }
 
-export infer function triageTicket(.ticket: string) {
-  return ask ..`triage the support ticket`<Triage>;
-}
+// A `.` binding is context: the ask below sees the ticket text.
+const .ticket = "I was charged twice for order #88 and nobody has answered my emails for a week. I want my money back NOW.";
+
+const triage = ask `triage the support ticket`<Triage>;
+
+console.log(JSON.stringify(triage));
 ```
 
 Free text, numbers, arrays and nested objects are not served: the provider fails before the network with an error naming the property, so a mixed project pairs it with a general model through `fallback([typesafe(), openai("gpt-5-mini")])` — see [Providers API](/docs/reference/providers-api/#typesafe).
@@ -35,11 +40,11 @@ Free text, numbers, arrays and nested objects are not served: the provider fails
 This is the one example whose committed config names a live vendor (`model: typesafe()`), because the vendor is the point. Put `TYPESAFE_API_KEY=…` in `.env` first.
 
 ```sh
-npx nola-lang run src/main.ts                      # needs TYPESAFE_API_KEY
+npx nola-lang run src/main.tsi                     # needs TYPESAFE_API_KEY
 # offline: edit nola.config.ts to the mockProvider line in its comment
 ```
 
-**Scaffold:** `npm create nola my-app -- --template triage-ticket` — the scaffolder skips the *Select an inference provider:* question for this template and its next steps say to set the key.
+**Scaffold:** `npm create nola my-app -- --template triage-ticket` — it is on the first template menu (right before `empty`); the scaffolder skips the *Select an inference provider:* question for this template and its next steps say to set the key.
 **Source:** [examples/triage-ticket](https://github.com/nola-lang/nola/tree/main/examples/triage-ticket) on GitHub.
 
 Next: [Introduction](/docs/) — back to the start.

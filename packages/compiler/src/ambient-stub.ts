@@ -10,6 +10,7 @@ export interface Askable<T = unknown> {
   withRetry(retries: number): Askable<T>;
   withModel(model: string): Askable<T>;
   withParams(params: Record<string, unknown>): Askable<T>;
+  withTimeout(timeout: number): Askable<T>;
 }
 export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
   withRetry(retries: number): Intent<T>;
@@ -62,7 +63,12 @@ export interface FileInferContext extends InferContext {
   func(init: {
     fn: string; instruction?: string; template?: (scope: FunctionPromptScope) => string;
     args?: Array<{ name: string; type?: InferType<unknown>; contextual?: boolean; value?: unknown }>;
+    locals?: Array<{ name: string; type?: InferType<unknown> }>;
   }): InvocationContext;
+  module(init: { instruction?: string; template?: (scope: FunctionPromptScope) => string; locals?: Array<{ name: string; type?: InferType<unknown> }> }): ModuleContext;
+}
+export interface ModuleContext extends InferContext {
+  readonly __nolaModuleScope: true;
 }
 export interface Frame {
   readonly infer: InferContext;
@@ -71,6 +77,21 @@ export interface UnsupportedType<Reason extends string = string> {
   readonly __nolaTypeUnsupported: Reason;
 }
 export type TypeValueOf<Accessor, T> = Accessor extends () => UnsupportedType<infer R> ? UnsupportedType<R> : InferType<T>;
+export type ChoiceCriteria = Record<string, string | null>;
+export type ChoiceLabel<C> = C extends string | number ? C : keyof C & (string | number);
+export type Choice<C extends ChoiceCriteria | string | number> = {
+  readonly choice: ChoiceLabel<C>;
+  readonly probabilities: Readonly<Record<\`\${ChoiceLabel<C>}\`, number>>;
+  readonly confidence?: number;
+  readonly __nola_choice?: C;
+};
+export type ScaleLevels = readonly [string, string, ...string[]];
+export type Scale<L extends ScaleLevels> = {
+  readonly score: number; readonly probabilities: readonly number[]; readonly levels: L;
+  readonly confidence?: number; readonly __nola_scale?: L;
+};
+export type ProbCriteria = { readonly true: string; readonly false: string };
+export type Prob<C extends ProbCriteria = never> = number & { readonly __nola_prob?: C };
 export declare const __nola: {
   intents: {
     Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: InvocationContext): Intent<T>;
@@ -92,14 +113,17 @@ export declare const __nola: {
     record<T>(value: InferType<T>): TypeCarrier<Record<string, T>>;
     nullable<T>(t: InferType<T>): TypeCarrier<T | null>;
     union(members: InferType<unknown>[]): TypeCarrier<unknown>;
+    choice(criteria: Record<string, string | null>, options?: { readonly numeric?: readonly string[] }): TypeCarrier<Record<string, unknown>>;
+    scale(levels: readonly string[]): TypeCarrier<Record<string, unknown>>;
+    prob(criteria?: { true: string; false: string }): TypeCarrier<number>;
     optional<T>(t: InferType<T>): TypeCarrier<T | undefined>;
     ref<T = unknown>(name: string, resolve: () => InferType<T> | (() => InferType<T>)): TypeCarrier<T>;
     unsupported<R extends string>(reason: R): UnsupportedType<R>;
   };
   context: {
-    file(file: string): FileInferContext;
+    file(file: string, emit?: number): FileInferContext;
   };
-  ask<T>(value: Askable<T>, ctx: Frame, provider?: string): Promise<T>;
+  ask<T>(value: Askable<T>, scope: Frame | ModuleContext, provider?: string, locals?: Record<string, unknown>): Promise<T>;
   fmt(value: unknown): string;
   tpl(strings: TemplateStringsArray, ...values: unknown[]): string;
   useRuntime(v: number): void;

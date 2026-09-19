@@ -15,14 +15,14 @@ export interface ScaffoldResult {
 
 export interface ScaffoldOptions {
   name?: string;
-  /** template name; default "starter" */
+  /** template name; default "feature-extraction" */
   template?: string;
   /** remove existing files in a non-empty target first (set only after an interactive confirm) */
   force?: boolean;
   /**
    * The inference provider chosen in the wizard; default "none" (the
    * template's own config). Any live provider replaces `nola.config.ts` with
-   * that provider's config, skips the starter's replay ledger, and renders
+   * that provider's config, skips the offline templates' replay ledger, and renders
    * the matching README notes.
    */
   provider?: ProviderId;
@@ -43,6 +43,25 @@ export function providerConfigUrl(provider: Exclude<ProviderId, "none">): URL {
   return new URL(`../templates/_providers/${provider}.config.ts`, import.meta.url);
 }
 
+/**
+ * The env var a scaffold's config reads: the chosen vendor's, else — under
+ * "none" — the one the template's own config names (a pinned template such
+ * as triage-ticket). Undefined for nola (the trial key lands in `.env`
+ * itself) and for an offline scaffold.
+ */
+export function vendorEnvVar(template: string, provider: ProviderId): string | undefined {
+  return providerById(provider)?.envVar ?? (provider === "none" ? templateByName(template)?.provider?.envVar : undefined);
+}
+
+/**
+ * The `.env.example` a vendor scaffold gets: the key's slot, to copy to
+ * `.env` and fill in. `.env.example` is the one env file the recommended
+ * `.gitignore` keeps trackable (`!.env.example`), so it can be committed.
+ */
+export function envExample(envVar: string): string {
+  return `# Copy to .env and fill in — \`nola run\` applies .env before evaluating nola.config.ts.\n${envVar}=\n`;
+}
+
 /** _gitignore ships underscored (npm pack strips nested .gitignore files). */
 const RENAMES: Record<string, string> = { _gitignore: ".gitignore" };
 
@@ -60,21 +79,26 @@ export async function withRecommendedGitignore(files: Map<string, string>): Prom
 }
 
 /** Files whose __NAME__/__VERSION__, README-note and __NEXT_STEPS__ placeholders are substituted. */
-const SUBSTITUTED = new Set(["package.json", "README.md", "main.ts"]);
+const SUBSTITUTED = new Set(["package.json", "README.md", "main.ts", "main.tsi"]);
 
 /**
- * The comment that opens src/main.ts — the file the scaffold lands the user
- * on (VS Code opens it as the active editor), so it carries the first three
- * things to do. The VS Code variant only ships with the editor step's
- * .vscode files, which are what make F5 and the extension prompt real.
+ * The comment that opens the entry file (src/main.ts, or the `.tsi` entry
+ * of a one-file template) — the file the scaffold lands the user on (VS Code opens it
+ * as the active editor), so it carries the first three things to do. The VS
+ * Code variant only ships with the editor step's .vscode files, which are
+ * what make F5 and the extension prompt real.
  */
 export function nextStepsComment(ide: "vscode" | "none", template: string): string {
   if (ide === "vscode") {
-    const breakpointIn = template === "starter" ? "src/person.tsi" : "your .tsi file";
+    const breakpointIn = templateByName(template)?.entry
+      ? "on the `ask` line below"
+      : template === "typescript-interop"
+        ? "in src/person.tsi"
+        : "in your .tsi file";
     return [
       "// Next steps in VS Code:",
       "//   1. Press F5 to run this file (.vscode/launch.json is already set up).",
-      `//   2. Set a breakpoint in ${breakpointIn} and press F5 again to step through the ask.`,
+      `//   2. Set a breakpoint ${breakpointIn} and press F5 again to step through the ask.`,
       '//   3. Install the recommended "Nola" extension when VS Code offers it — IntelliSense,',
       "//      go to definition and diagnostics inside .tsi files.",
     ].join("\n");
@@ -86,16 +110,16 @@ export function nextStepsComment(ide: "vscode" | "none", template: string): stri
   ].join("\n");
 }
 
-/** Starter files that only make sense for the offline (replay) configuration. */
+/** Template files that only make sense for the offline (replay) configuration. */
 const OFFLINE_ONLY = new Set(["nola.replay.jsonl"]);
 
 const README_NOTES = {
   offline: {
     START_NOTE: "works offline, no API key needed",
     PROVIDER_NOTE:
-      "The starter runs offline: `nola.config.ts` replays answers from the committed\n" +
+      "This project runs offline: `nola.config.ts` replays answers from the committed\n" +
       "`nola.replay.jsonl` ledger. The ledger is keyed by the exact prompt, so once\n" +
-      "you edit `src/person.tsi` or add your own asks, switch the config to a real\n" +
+      "you edit the `.tsi` file or add your own asks, switch the config to a real\n" +
       "model (see the comment in `nola.config.ts`): `model: \"nola\"` with a key from\n" +
       "`npx nola-lang key` (25 free runs), or your own provider and its key.",
   },
@@ -121,8 +145,8 @@ function readmeNotes(provider: ProviderId): ReadmeNotes {
     START_NOTE: `set ${def.envVar} in .env first`,
     PROVIDER_NOTE:
       `\`nola.config.ts\` sets \`model: ${def.model}\` — ${def.label} serves inference with the key it reads\n` +
-      `from \`${def.envVar}\`. Put \`${def.envVar}=…\` in \`.env\` (git-ignored; \`nola run\` applies it) before the\n` +
-      "first `npm start`, or switch models in `nola.config.ts`.",
+      `from \`${def.envVar}\`. Copy \`.env.example\` to \`.env\` (git-ignored; \`nola run\` applies it) and fill in\n` +
+      `\`${def.envVar}\` before the first \`npm start\`, or switch models in \`nola.config.ts\`.`,
   };
 }
 
@@ -147,12 +171,14 @@ async function prepareTarget(absRoot: string, force: boolean): Promise<void> {
 export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): Promise<ScaffoldResult> {
   const root = targetDir;
   const absRoot = resolve(targetDir);
-  const template = opts.template ?? "starter";
+  const template = opts.template ?? "feature-extraction";
   const def = templateByName(template);
   if (!def) throw new Error(`unknown template "${template}" (valid: ${templateNames().join(", ")})`);
   await prepareTarget(absRoot, opts.force ?? false);
   const name = opts.name ?? basename(absRoot);
   const version = await ownVersion();
+
+  const envVar = vendorEnvVar(template, opts.provider ?? "none");
 
   if (def.source === "example") {
     const dev = await devExamplesDir();
@@ -161,6 +187,7 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
     );
     const manifest = exampleFiles.get("package.json");
     if (manifest) exampleFiles.set("package.json", rewriteExamplePackageJson(manifest, { name, version }));
+    if (envVar !== undefined && !exampleFiles.has(".env.example")) exampleFiles.set(".env.example", envExample(envVar));
     for (const [relPath, content] of exampleFiles) {
       const target = join(absRoot, relPath);
       await mkdir(join(target, ".."), { recursive: true });
@@ -208,6 +235,10 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
   if (!files.includes(".gitignore")) {
     await writeFile(join(absRoot, ".gitignore"), await readFile(GITIGNORE_URL, "utf8"));
     files.push(".gitignore");
+  }
+  if (envVar !== undefined) {
+    await writeFile(join(absRoot, ".env.example"), envExample(envVar));
+    files.push(".env.example");
   }
   return { root, files: files.sort() };
 }

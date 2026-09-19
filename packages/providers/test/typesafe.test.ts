@@ -1,8 +1,8 @@
-import type { JsonSchema } from "@nola-lang/core";
-import { NolaProviderError, SYSTEM_PREAMBLE } from "@nola-lang/core";
+import type { InferenceScope, InferRequest, JsonSchema } from "@nola-lang/core";
+import { isDecisionModel, isInferModel, NolaProviderError } from "@nola-lang/core";
 import { describe, expect, it } from "vitest";
 import { typesafe } from "../src/typesafe.js";
-import { requestOf } from "./helpers/model.js";
+import { modelOf } from "./helpers/model.js";
 
 type FetchArgs = { url: string; init: RequestInit };
 
@@ -21,26 +21,58 @@ const answersReply = (answers: Record<string, unknown>) => ({
   body: { model: "jev-latest", answers, usage: { input_tokens: 10, output_tokens: 2 } },
 });
 
-const bodyOf = (call: FetchArgs | undefined) =>
-  JSON.parse(String(call?.init.body)) as { model: string; state: string; questions: Record<string, unknown> };
+type Body = { model: string; state: unknown; questions: Record<string, unknown> };
+const bodyOf = (call: FetchArgs | undefined) => JSON.parse(String(call?.init.body)) as Body;
+const req = (init: Parameters<typeof modelOf>[0], extra: Partial<InferRequest> = {}): InferRequest => ({
+  model: modelOf(init),
+  ...extra,
+});
+const bool = { type: "boolean" } as const;
 
+const provider = (options: Parameters<typeof typesafe>[0]) => {
+  const p = typesafe(options);
+  if (!isInferModel(p)) throw new Error("typesafe is an infer-dialect model");
+  return p;
+};
+
+const unit: JsonSchema = { type: "number", minimum: 0, maximum: 1 };
 const triage: JsonSchema = {
   type: "object",
   properties: {
     department: { type: "string", enum: ["billing", "shipping"], description: "Which team owns this?" },
     urgent: { type: "boolean" },
     priority: { anyOf: [{ const: 1 }, { const: 2 }] },
+    mood: {
+      type: "object",
+      properties: {
+        score: { type: "number", minimum: 0, maximum: 1 },
+        probabilities: { type: "array", items: unit, minItems: 2, maxItems: 2 },
+        levels: { type: "array", prefixItems: [{ const: "Calm" }, { const: "Angry" }], items: false, minItems: 2, maxItems: 2 },
+        confidence: unit,
+      },
+      required: ["score", "probabilities"],
+      additionalProperties: false,
+      description: "How frustrated?",
+      "x-nola-decision": { kind: "scale", levels: ["Calm", "Angry"] },
+    },
   },
   required: ["department", "urgent"],
   additionalProperties: false,
 };
+const scope: InferenceScope = {
+  fn: "triage",
+  instruction: "You triage tickets.",
+  args: [{ name: "ticket", contextual: true, value: "charged twice" }],
+};
 
 describe("typesafe provider — wire", () => {
-  it("posts to /v1/systemone with bearer auth and the default model", async () => {
+  it("is an infer-dialect decision model; posts to /v1/systemone with bearer auth and the default model", async () => {
     const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.9 } }));
     const p = typesafe({ apiKey: "k", fetch: fn });
     expect(p.name).toBe("typesafe");
-    const { text } = await p.complete(requestOf({ schema: { type: "boolean" } }));
+    expect(isInferModel(p)).toBe(true);
+    expect(isDecisionModel(p)).toBe(true);
+    const { text } = await provider({ apiKey: "k", fetch: fn }).infer(req({ schema: bool }));
     expect(text).toBe("true");
     expect(calls[0]?.url).toBe("https://api.typesafe.ai/v1/systemone");
     const headers = new Headers(calls[0]?.init.headers);
@@ -52,45 +84,82 @@ describe("typesafe provider — wire", () => {
 
   it("a bare string is the model; baseUrl trailing slash is trimmed", async () => {
     const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.1 } }));
-    await typesafe({ apiKey: "k", fetch: fn, model: "jev-2", baseUrl: "https://example.test/" }).complete(
-      requestOf({ schema: { type: "boolean" } }),
-    );
+    await provider({ apiKey: "k", fetch: fn, model: "jev-2", baseUrl: "https://example.test/" }).infer(req({ schema: bool }));
     expect(calls[0]?.url).toBe("https://example.test/v1/systemone");
     expect(bodyOf(calls[0]).model).toBe("jev-2");
-    // the string shorthand has no fetch slot, so only its name is checked here; the surface test pins the model it sets
     expect(typesafe("jev-3").name).toBe("typesafe");
   });
 
-  it("state is the system text and the first user turn verbatim; the questions are the plan", async () => {
+  it("state is the contextual values; questions carry the structured instructions and every kind decodes", async () => {
     const { fn, calls } = fakeFetch(() =>
       answersReply({
         department: { type: "choice", choice: "billing", probabilities: { billing: 0.8, shipping: 0.2 }, confidence: 0.8 },
         urgent: { type: "noul", noul: 0.7 },
         priority: { type: "choice", choice: "2", probabilities: { "1": 0.3, "2": 0.7 }, confidence: 0.7 },
+        mood: {
+          type: "score",
+          score: 0.6,
+          probabilities: { "0": 0.4, "1": 0.6 },
+          legend: { "0": "Calm", "1": "Angry" },
+          confidence: 0.5,
+        },
       }),
     );
-    const req = requestOf({ system: "house rules", instruction: "Triage this ticket", schema: triage });
-    const { text } = await typesafe({ apiKey: "k", fetch: fn }).complete(req);
-    expect(JSON.parse(text)).toEqual({ department: "billing", urgent: true, priority: 2 });
+    const { text } = await provider({ apiKey: "k", fetch: fn }).infer(
+      req({ system: "house rules", instruction: "Triage this ticket", schema: triage, scope }),
+    );
+    expect(JSON.parse(text)).toEqual({
+      department: "billing",
+      urgent: true,
+      priority: 2,
+      mood: { score: 0.6, probabilities: [0.4, 0.6], levels: ["Calm", "Angry"], confidence: 0.5 },
+    });
     const body = bodyOf(calls[0]);
-    expect(body.state).toBe(`${req.payload.system}\n\n${req.payload.messages[0]?.content}`);
-    expect(body.state).toContain(SYSTEM_PREAMBLE);
-    expect(body.state).toContain("house rules");
-    expect(body.state).toContain("Triage this ticket");
+    expect(body.state).toEqual({ ticket: "charged twice" });
+    const context = "house rules\n\nYou triage tickets.\n\nTriage this ticket";
     expect(body.questions).toEqual({
-      department: { type: "choice", instructions: "Which team owns this?", criteria: { billing: "billing", shipping: "shipping" } },
-      urgent: { type: "noul", instructions: 'Determine "urgent".' },
-      priority: { type: "choice", instructions: 'Determine "priority".', criteria: { "1": "1", "2": "2" } },
+      department: {
+        type: "choice",
+        instructions: { context, question: "Which team owns this?" },
+        criteria: { billing: null, shipping: null },
+      },
+      urgent: { type: "noul", instructions: { context, question: 'Determine "urgent".' } },
+      priority: {
+        type: "choice",
+        instructions: { context, question: 'Determine "priority".' },
+        criteria: { "1": null, "2": null },
+      },
+      mood: { type: "score", instructions: { context, question: "How frustrated?" }, criteria: ["Calm", "Angry"] },
     });
   });
 
-  it("a correction turn is ignored: state is still the first user turn", async () => {
+  it("no contextual value: the ask text is the state and the questions carry no repeated context", async () => {
     const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.9 } }));
-    const req = requestOf({ schema: { type: "boolean" }, correction: { response: "bad", error: "oops" } });
-    await typesafe({ apiKey: "k", fetch: fn }).complete(req);
-    expect(req.payload.messages).toHaveLength(3);
-    expect(bodyOf(calls[0]).state).not.toContain("oops");
-    expect(bodyOf(calls[0]).state).toContain(req.payload.messages[0]?.content ?? "!");
+    await provider({ apiKey: "k", fetch: fn }).infer(req({ instruction: "Is it urgent?", schema: bool }));
+    expect(bodyOf(calls[0]).state).toBe("Is it urgent?");
+    expect(bodyOf(calls[0]).questions.value).toEqual({
+      type: "noul",
+      instructions: "Determine the value the request asks for.",
+    });
+  });
+
+  it("a correction turn is ignored: the same state is sent again", async () => {
+    const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.9 } }));
+    await provider({ apiKey: "k", fetch: fn }).infer(
+      req({ instruction: "q", schema: bool, correction: { response: "bad", error: "oops" } }),
+    );
+    expect(bodyOf(calls[0]).state).toBe("q");
+    expect(JSON.stringify(bodyOf(calls[0]))).not.toContain("oops");
+  });
+
+  it("threshold: the factory option, overridden per ask by params.providerOptions.threshold", async () => {
+    const { fn } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.7 } }));
+    const strict = provider({ apiKey: "k", fetch: fn, threshold: 0.8 });
+    expect((await strict.infer(req({ schema: bool }))).text).toBe("false");
+    expect((await strict.infer(req({ schema: bool }, { params: { providerOptions: { threshold: 0.6 } } }))).text).toBe(
+      "true",
+    );
+    expect((await provider({ apiKey: "k", fetch: fn }).infer(req({ schema: bool }))).text).toBe("true");
   });
 
   it("forwards the abort signal", async () => {
@@ -100,7 +169,7 @@ describe("typesafe provider — wire", () => {
       return new Response(JSON.stringify({ answers: { value: { type: "noul", noul: 1 } } }));
     }) as typeof globalThis.fetch;
     const controller = new AbortController();
-    await typesafe({ apiKey: "k", fetch: fn }).complete({ ...requestOf({ schema: { type: "boolean" } }), signal: controller.signal });
+    await provider({ apiKey: "k", fetch: fn }).infer(req({ schema: bool }, { signal: controller.signal }));
     expect(seen).toBe(controller.signal);
   });
 });
@@ -110,7 +179,7 @@ describe("typesafe provider — keys", () => {
     process.env.NOLA_TEST_TS_KEY = "k-123";
     try {
       const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 1 } }));
-      await typesafe({ apiKeyEnv: "NOLA_TEST_TS_KEY", fetch: fn }).complete(requestOf({ schema: { type: "boolean" } }));
+      await provider({ apiKeyEnv: "NOLA_TEST_TS_KEY", fetch: fn }).infer(req({ schema: bool }));
       expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer k-123");
     } finally {
       delete process.env.NOLA_TEST_TS_KEY;
@@ -120,8 +189,9 @@ describe("typesafe provider — keys", () => {
   it("missing key: names the env var, points at nola.config.ts, is definitive, and never fetches", async () => {
     delete process.env.NOLA_TEST_TS_MISSING;
     const { fn, calls } = fakeFetch(() => answersReply({}));
-    const p = typesafe({ apiKeyEnv: "NOLA_TEST_TS_MISSING", fetch: fn });
-    const err = (await p.complete(requestOf({ schema: { type: "boolean" } })).catch((e: unknown) => e)) as NolaProviderError;
+    const err = (await provider({ apiKeyEnv: "NOLA_TEST_TS_MISSING", fetch: fn })
+      .infer(req({ schema: bool }))
+      .catch((e: unknown) => e)) as NolaProviderError;
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.message).toMatch(/NOLA_TEST_TS_MISSING/);
     expect(err.message).toMatch(/nola\.config\.ts/);
@@ -132,23 +202,25 @@ describe("typesafe provider — keys", () => {
 });
 
 describe("typesafe provider — errors", () => {
+  const failure = (fn: typeof globalThis.fetch, init: Parameters<typeof modelOf>[0]) =>
+    provider({ apiKey: "k", fetch: fn })
+      .infer(req(init))
+      .catch((e: unknown) => e) as Promise<NolaProviderError>;
+
   it("an unsupported output type fails definitively before any fetch, naming the path", async () => {
     const { fn, calls } = fakeFetch(() => answersReply({}));
-    const p = typesafe({ apiKey: "k", fetch: fn });
-    const err = (await p.complete(requestOf({ schema: { type: "string" } })).catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: { type: "string" } });
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.definitive).toBe(true);
     expect(err.message).toBe(
-      "TypeSafe cannot serve this ask: the output type is a free-form string; typesafe() serves only literal unions and booleans",
+      "TypeSafe cannot serve this ask: the output type is a free-form string; typesafe() serves Choice, Scale and Prob, literal unions and booleans",
     );
     expect(calls).toHaveLength(0);
   });
 
   it("free text (no schema) is unsupported too", async () => {
     const { fn, calls } = fakeFetch(() => answersReply({}));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: null }))
-      .catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: null });
     expect(err.definitive).toBe(true);
     expect(err.message).toMatch(/no output schema/);
     expect(calls).toHaveLength(0);
@@ -156,9 +228,7 @@ describe("typesafe provider — errors", () => {
 
   it("non-2xx carries status, the body excerpt, and Retry-After", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: { error: "slow down" }, headers: { "retry-after": "2" } }));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: { type: "boolean" } }))
-      .catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: bool });
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.status).toBe(429);
     expect(err.retryAfterMs).toBe(2000);
@@ -169,37 +239,30 @@ describe("typesafe provider — errors", () => {
 
   it("a 2xx missing an answer is definitive", async () => {
     const { fn } = fakeFetch(() => answersReply({}));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: { type: "boolean" } }))
-      .catch((e: unknown) => e)) as NolaProviderError;
-    expect(err).toBeInstanceOf(NolaProviderError);
+    const err = await failure(fn, { schema: bool });
     expect(err.definitive).toBe(true);
     expect(err.message).toBe('TypeSafe reply is malformed: answer "value" is missing from the reply');
   });
 
   it("a 2xx choosing a foreign label is definitive", async () => {
     const { fn } = fakeFetch(() => answersReply({ value: { type: "choice", choice: "nope" } }));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: { type: "string", enum: ["a", "b"] } }))
-      .catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: { type: "string", enum: ["a", "b"] } });
     expect(err.definitive).toBe(true);
-    expect(err.message).toBe('TypeSafe reply is malformed: answer "value" chose "nope", which is not one of the options sent');
+    expect(err.message).toBe(
+      'TypeSafe reply is malformed: answer "value" chose "nope", which is not one of the options sent',
+    );
   });
 
   it("a 2xx with no answers object is definitive", async () => {
     const { fn } = fakeFetch(() => ({ body: { model: "jev-latest" } }));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: { type: "boolean" } }))
-      .catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: bool });
     expect(err.definitive).toBe(true);
     expect(err.message).toBe("TypeSafe reply is malformed: no answers object");
   });
 
   it("a non-JSON 2xx body is definitive", async () => {
     const { fn } = fakeFetch(() => ({ body: "<html>" }));
-    const err = (await typesafe({ apiKey: "k", fetch: fn })
-      .complete(requestOf({ schema: { type: "boolean" } }))
-      .catch((e: unknown) => e)) as NolaProviderError;
+    const err = await failure(fn, { schema: bool });
     expect(err.definitive).toBe(true);
     expect(err.message).toMatch(/^TypeSafe reply is not JSON/);
   });

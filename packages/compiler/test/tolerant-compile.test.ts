@@ -89,13 +89,13 @@ describe("compileNola tolerant mode", () => {
 
   // Reserved contextual bindings: strict mode never reaches the lowerer
   // (raise throws), tolerant mode must not leave the dot in generated TS.
-  describe("reserved `const .x` bindings", () => {
+  describe("reserved `var .x` bindings", () => {
     it("lower to a plain declaration under a `broken` span", () => {
-      const src = "infer function go(.t: string) {\n  const .bio = ask ..`bio`<string>;\n  return bio;\n}\n";
+      const src = "infer function go(.t: string) {\n  var .bio = ask ..`bio`<string>;\n  return bio;\n}\n";
       const r = compileNola(src, "t.tsi", { tolerant: true });
       expect(r.meta.mode).toBe("lowered");
       expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA1014"]);
-      expect(r.code).toContain("const bio = ");
+      expect(r.code).toContain("var bio = ");
       expect(r.code).not.toContain(".bio");
       expect(typecheckLowered({ "t.ts": r.code })).toEqual([]);
       const broken = r.meta.spans.filter((s) => s.kind === "broken");
@@ -165,5 +165,31 @@ describe("dangling member access in tolerant mode", () => {
     const tsDiags = typecheckLowered({ "t.ts": r.code });
     expect(tsDiags).toHaveLength(1);
     expect(tsDiags[0]).toMatch(/Identifier expected/);
+  });
+});
+
+// `ask `p`;<T>` — the `;` slipped in before the type args. Babel's TS mixin
+// reads `<T>` as a type assertion whose operand is missing at EOF; the parser
+// recovers it into the placeholder (see the parser's tolerant tests), which
+// here must lower to the inert expression under a ZERO-LENGTH broken span —
+// there are no source bytes to overwrite. Bailing instead served stale
+// last-good mappings against the edited text: semantic tokens painted the
+// wrong characters and the parse error was dropped.
+describe("expression expected at end of file", () => {
+  it("lowers the missing operand of a trailing `<T>` to the inert placeholder", () => {
+    const src = "type T = { a: string }\nconst r = ask `p`;<T>\n\n";
+    const r = compileNola(src, "t.tsi", { tolerant: true });
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(r.code).toContain(";<T>(undefined as never)\n\n");
+    expect(typecheckLowered({ "t.ts": r.code })).toEqual([]);
+    const broken = r.meta.spans.filter((s) => s.kind === "broken");
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatchObject({ sourceStart: src.indexOf("<T>") + 3, sourceEnd: src.indexOf("<T>") + 3 });
+  });
+
+  it("strict mode bails to source", () => {
+    const r = compileNola("const r = ask `p`;<T>\n", "t.tsi");
+    expect(r.meta.mode).toBe("bailed");
   });
 });

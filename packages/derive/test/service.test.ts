@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compileNola, finalizeDerivations } from "@nola-lang/compiler";
 import { describe, expect, it } from "vitest";
 import { createDerivationService } from "../src/service.js";
@@ -164,6 +165,65 @@ describe("DerivationService", () => {
     const { done } = lowerAndDerive(root, "src/t.tsi", src);
     expect(done.code).toContain(
       "{ return __nola.types.object({ a: __nola.types.string(), b: __nola.types.optional(__nola.types.array(__nola.types.number())) }); }",
+    );
+  });
+
+  it("malformed decision criteria are NOLA2015 at the extract and context sites under every policy", () => {
+    const repo = fileURLToPath(new URL("../../..", import.meta.url)).replace(/\\/g, "/").replace(/\/$/, "");
+    // a temp project cannot resolve @nola-lang/runtime: map it to the type module itself
+    const tsconfig = JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        target: "ES2022",
+        allowArbitraryExtensions: true,
+        skipLibCheck: true,
+        baseUrl: ".",
+        paths: { "@nola-lang/runtime": [`${repo}/packages/runtime/src/types/decision.ts`] },
+      },
+      include: ["src"],
+    });
+    const src = "type Bad = Choice<{ only: null }>;\ninfer function f(.d: Bad) {\n  return ask ..`x`<Bad>;\n}\n";
+    for (const policy of ["error", "prune", "omit"] as const) {
+      const root = project({ "tsconfig.json": tsconfig, "src/main.tsi": src });
+      const { done } = lowerAndDerive(root, "src/main.tsi", src, policy);
+      expect(done.diagnostics.map((d) => [d.code, d.message])).toEqual([
+        ["NOLA2015", "Bad: Choice needs 2 to 255 labels, got 1"],
+        ["NOLA2015", "Bad: Choice needs 2 to 255 labels, got 1"],
+      ]);
+      expect(done.code).not.toContain("unsupported(");
+    }
+  });
+
+  it("the ..choice / ..scale sugar derives the wrapped type at its padded lowered range", () => {
+    const repo = fileURLToPath(new URL("../../..", import.meta.url)).replace(/\\/g, "/").replace(/\/$/, "");
+    const tsconfig = JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        target: "ES2022",
+        allowArbitraryExtensions: true,
+        skipLibCheck: true,
+        baseUrl: ".",
+        paths: { "@nola-lang/runtime": [`${repo}/packages/runtime/src/types/decision.ts`] },
+      },
+      include: ["src"],
+    });
+    const src = [
+      'const d = ..choice`Which team?`<{ billing: "Payments"; sales: null }>;',
+      'const s = ..scale`How bad?`<["low", "high"]>;',
+      "",
+    ].join("\n");
+    const root = project({ "tsconfig.json": tsconfig, "src/main.tsi": src });
+    const { done } = lowerAndDerive(root, "src/main.tsi", src);
+    expect(done.diagnostics).toEqual([]);
+    expect(done.code).toContain(
+      'function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> { return __nola.types.choice({"billing":"Payments","sales":null}); }',
+    );
+    expect(done.code).toContain(
+      'function __nola_type_$2(): import("@nola-lang/runtime").InferType<unknown> { return __nola.types.scale(["low","high"]); }',
     );
   });
 });

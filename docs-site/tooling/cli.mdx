@@ -10,7 +10,7 @@ The `nola` binary ships in the `nola-lang` package (a devDependency). Run it as 
 `npx nola-lang <command>` runs the `nola-lang` installed in the project (its bin is the local `node_modules/.bin/nola`); outside such a project `npx` downloads `nola-lang` on the fly. Do not shorten it to `npx nola`: outside a project that resolves an unrelated npm package that happens to be named `nola`. To scaffold from nothing use `npm create nola`.
 
 ```sh
-nola init [dir] [--template <t>|--add] [--provider <id>] [--ide vscode] [--agents <list>]
+nola init [dir] [--template <t>|--add] [--provider <id>] [--ide vscode|none] [--agents <list>]
 nola build [dir] [--out <dir>]
 nola run <entry>
 nola check [dir]
@@ -26,18 +26,18 @@ nola account
 ## nola init
 
 ```sh
-nola init [dir] [--template <name> | --add] [--provider nola|openai|anthropic|google|none] [--ide vscode] [--agents claude,cursor,copilot,agents-md]
+nola init [dir] [--template <name> | --add] [--provider nola|openai|anthropic|google|typesafe|none] [--ide vscode|none] [--agents claude,universal,agents-md|all|none]
 ```
 
 Scaffolds a new project or retrofits an existing one — the same interactive flow as `npm create nola`.
 
 | Flag | Effect |
 | --- | --- |
-| `--template <name>` | `starter` (default), `empty`, or a curated example (`extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`, `file-ticket`, `triage-ticket`). `triage-ticket` ships with `model: typesafe()`, so the provider question is skipped for it and the outro says to set `TYPESAFE_API_KEY` |
+| `--template <name>` | `feature-extraction` (default: one `.tsi` file with a top-level `ask` that extracts typed data, runs offline), `function-calling` (one `.tsi` file with a top-level `ask` that calls an async function from a `.ts` file next to it, runs offline), `typescript-interop` (an `infer function` imported from plain TypeScript, runs offline), `triage-ticket` (one `.tsi` file with a top-level `ask` on typesafe.ai's non-chat model; ships with `model: typesafe()`, so the provider question is skipped for it and the outro says to set `TYPESAFE_API_KEY`), `empty`, or a curated example (`file-ticket`, `extract-resume`, `extract-invoice`, `classify-message`, `chain-of-thought`, `research-notes`). Interactively the first menu shows those five, one per feature, and a *More examples…* row that opens the examples |
 | `--add` | retrofit the project in `dir` (writes `nola.config.ts`, merges the packages into `package.json`) — see [Add Nola to an existing project](/docs/start/add-to-existing-project/); contradictory with `--template` |
-| `--ide vscode` | write `.vscode/launch.json` and `.vscode/extensions.json` |
-| `--agents <list>` | write the agent skill files into the project (see `nola skill install`) |
-| `--provider <id>` | the inference provider, otherwise asked right after the template (*Select an inference provider:*, Nola highlighted). `nola` takes a Nola API key: the machine's one anonymous trial (25 free runs), written as `NOLA_API_KEY` to `.env`, `.gitignore` guarded, `model: "nola"` configured; once this machine has used its trial the Nola row reads *Trial key already issued. Get another? Enter to sign in.* — Enter on it opens the browser at that moment (the same flow as `nola login`), before the remaining questions, and the key is minted on your account afterwards (a failed sign-in shows the menu again); when you are already signed in the row says so. `openai`, `anthropic`, `google` write that vendor's config (`openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")`) and leave the key to you (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` in `.env`). `none` keeps the template's own config (the starter runs offline). Non-interactively the default is `none`, and a used machine without a stored sign-in gets no key and a pointer to `nola login`. |
+| `--ide vscode\|none` | the editor setup — `.vscode/launch.json` and `.vscode/extensions.json` — is written by default; `none` skips it |
+| `--agents <list>` | which agent skill files to write (see `nola skill install`); the default is `claude,universal`, `none` skips them |
+| `--provider <id>` | the inference provider, otherwise asked right after the template (*Select an inference provider:*, *nola: dev* highlighted). `nola` takes a Nola API key: the machine's one anonymous trial (25 free runs), written as `NOLA_API_KEY` to `.env`, `.gitignore` guarded, `model: "nola"` configured; once this machine has used its trial the *nola: dev* row reads *Trial key already issued. Get another? Enter to sign in.* — Enter on it opens the browser at that moment (the same flow as `nola login`), before the remaining questions, and the key is minted on your account afterwards (a failed sign-in shows the menu again); when you are already signed in the row says so. `openai`, `anthropic`, `google`, `typesafe` write that vendor's config (`openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")`, `typesafe()`) and leave the key to you — a `.env.example` holds that variable's slot (`OPENAI_API_KEY=`, `ANTHROPIC_API_KEY=`, `GEMINI_API_KEY=`, `TYPESAFE_API_KEY=`) to copy to `.env`; the typesafe.ai row is offered for every template with a bracket naming the caveat — *does not support every construct in &lt;template&gt;: literal unions and booleans only* — because `typesafe()` fails before the network on any other output type. `none` keeps the template's own config (the builtin templates run offline from their replay ledgers). Non-interactively the default is `none`, and a used machine without a stored sign-in gets no key and a pointer to `nola login`. |
 | `--trial` / `--no-trial` | shorthand for `--provider nola` / `--provider none` |
 
 ## nola build
@@ -90,11 +90,11 @@ Writes the Nola skill into the project so your coding assistant can read it. The
 
 | Target | Files written |
 | --- | --- |
-| `claude` | `.claude/skills/nola/` — the whole skill directory (`SKILL.md` + `references/`), verbatim; the only directory Claude Code reads |
+| `claude` | `.claude/skills/nola/` — the only directory Claude Code reads: a relative symlink to `.agents/skills/nola/` when `universal` is written too, so the content exists once; a real copy when `claude` is chosen alone |
 | `universal` | `.agents/skills/nola/` — the same directory at the open Agent Skills location, which Cursor, GitHub Copilot, Codex, Gemini CLI and most other agents read |
 | `agents-md` | `AGENTS.md` — the skill body inline, for agents that read only `AGENTS.md` |
 
-Interactively (no `--agents`) `claude` and `universal` are preselected; non-interactive runs must pass `--agents`. Each copy is classified on its own: one written by the same version is left alone; one stamped by an older version is reported as stale and replaced only with `--force` — run `nola skill install --force` after upgrading `nola-lang`. With `universal`, a stamped `.cursor/rules/nola.mdc` or `.github/instructions/nola.instructions.md` left by an earlier Nola is reported as superseded and removed by `--force`; files Nola did not write are never touched. The scaffold and `--add` offer the same step.
+Interactively (no `--agents`) `claude` and `universal` are preselected; non-interactive runs must pass `--agents`. The scaffold and `--add` write those two without asking (`--agents` overrides). Each copy is classified on its own: one written by the same version is left alone; one stamped by an older version is reported as stale and replaced only with `--force` — run `nola skill install --force` after upgrading `nola-lang`. With `universal`, a stamped `.cursor/rules/nola.mdc` or `.github/instructions/nola.instructions.md` left by an earlier Nola is reported as superseded and removed by `--force`; files Nola did not write are never touched. The Claude Code link survives a git checkout on macOS and Linux; a Windows checkout without symlink support (`core.symlinks` off) leaves a plain file in its place, which `nola skill install` turns back into a link — creating one on Windows needs Developer Mode or an elevated shell, and when that is not available a copy is written instead, with a note.
 
 The skill directory is the standard Agent Skills format, so the community CLI produces the same layout from Nola's public repository — `npx skills add nola-lang/nola` — or, in a project that already has `nola-lang` installed, from `node_modules`: `npx skills experimental_sync`. Those copies carry no version stamp; `nola skill install` reports them as not generated by Nola and leaves them alone.
 

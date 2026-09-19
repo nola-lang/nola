@@ -21,7 +21,7 @@ export default defineConfig({
 ```
 
 - `ask.timeoutMs` is the default **per-invocation** timeout (60 000 ms when unset). It is the root frame's abort signal: when it elapses, every provider call in that invocation receives the signal. `0` disables it.
-- `.withTimeout(ms)` on the intent an infer function returns overrides it for that invocation — see [Intent methods](/docs/language/intent-methods/).
+- `.withTimeout(ms)` on the intent an infer function returns overrides it for that invocation. On a single ask inside a body — `ask (..`…`<T>).withTimeout(ms)` — it bounds just that ask, next to the invocation's clock: whichever fires first wins. See [Intent methods](/docs/language/intent-methods/).
 - The timeout bounds **provider round trips only**. Once a call intent's arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
 
 ## Params

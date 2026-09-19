@@ -67,8 +67,8 @@ Because the callee runs *inside* the ask, `.withRetry(n)` on a call intent re-in
 import { createTicket } from "./tickets.js";
 
 export infer function fileTicketOnce(.request: string) {
-  const title = ask ..`a short ticket title for the request`<string>;
-  const priority = ask ..`priority 1-5, where 1 is most urgent`<number>;
+  const title = ask `a short ticket title for the request`<string>;
+  const priority = ask `priority 1-5, where 1 is most urgent`<number>;
   return await createTicket(title, priority);   // plain await — runs exactly once
 }
 ```

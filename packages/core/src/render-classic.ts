@@ -47,10 +47,15 @@ export function scopeChain(model: Pick<InferenceModel, "scope">): InferenceScope
  * contextual values stay JSON-quoted except long/multiline strings, which
  * read as real text in a tagged block.
  */
-export function renderScopeBlock(scope: Pick<InferenceScope, "fn" | "file" | "instruction" | "args">, nested: boolean): string {
-  const { fn, file, instruction, args } = scope;
-  const signature = `${fn}(${args.map((a) => a.name).join(", ")})`;
-  const header = `CONTEXT — inside ${signature}${file === undefined ? "" : `, ${file}`}${nested ? ", called from the context above" : ""}`;
+export function renderScopeBlock(
+  scope: Pick<InferenceScope, "fn" | "file" | "instruction" | "args" | "module">,
+  nested: boolean,
+): string {
+  const { fn, file, instruction, args, module } = scope;
+  // Contextual bindings are listed with the arguments but are not part of the signature.
+  const signature = `${fn}(${args.filter((a) => !a.local).map((a) => a.name).join(", ")})`;
+  const where = module ? `module${file === undefined ? "" : ` ${file}`}` : `inside ${signature}${file === undefined ? "" : `, ${file}`}`;
+  const header = `CONTEXT — ${where}${nested ? ", called from the context above" : ""}`;
   const lines: string[] = [header];
   if (instruction) lines.push(`Purpose: ${instruction}`);
   if (args.length > 0) {

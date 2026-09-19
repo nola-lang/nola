@@ -5,7 +5,7 @@
 // The server uses PUSH diagnostics (volar-service-typescript declares
 // interFileDependencies, which disables Volar's pull-diagnostics mode), so
 // tests collect textDocument/publishDiagnostics notifications.
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type LanguageServerHandle, startLanguageServer } from "@volar/test-utils";
@@ -53,6 +53,10 @@ function positionOf(text: string, needle: string, offsetInNeedle = 0): { line: n
 
 let server: LanguageServerHandle;
 const published = new Map<string, LspDiagnostic[]>();
+// Dynamic registrations the server asks the client for (VS Code turns a
+// DidChangeWatchedFiles registration into FileSystemWatchers).
+const watcherGlobs: string[] = [];
+const FRESH_PATH = join(FIXTURE, "src", "fresh-on-disk.tsi");
 
 /**
  * A completion request as VS Code sends it when the user types a ".": trigger
@@ -88,15 +92,54 @@ beforeAll(async () => {
       published.set(decodeURIComponent(params.uri).toLowerCase(), params.diagnostics);
     },
   );
-  await server.initialize(pathToFileURL(FIXTURE).href, { typescript: { tsdk: TSDK } });
+  server.connection.onRequest(
+    "client/registerCapability",
+    (params: { registrations: { method: string; registerOptions?: { watchers?: { globPattern: string }[] } }[] }) => {
+      for (const r of params.registrations) {
+        if (r.method === "workspace/didChangeWatchedFiles") {
+          for (const w of r.registerOptions?.watchers ?? []) watcherGlobs.push(String(w.globPattern));
+        }
+      }
+      return null;
+    },
+  );
+  // What VS Code's client advertises: the server may register file watchers.
+  await server.initialize(
+    pathToFileURL(FIXTURE).href,
+    { typescript: { tsdk: TSDK } },
+    { workspace: { didChangeWatchedFiles: { dynamicRegistration: true } } },
+  );
 }, 400_000);
 
 afterAll(async () => {
   await server?.shutdown();
   server?.process.kill();
+  rmSync(FRESH_PATH, { force: true });
 });
 
 describe("LSP over examples/cross-file-types", () => {
+  it("a .tsi created on disk after startup joins the tsconfig project (no TS1378 on a top-level ask)", async () => {
+    // Volar re-parses a tsconfig's file list only on a watched-file event.
+    // A file the user creates in the Explorer exists on disk before it is
+    // opened, so the unsaved-document path never re-parses either: without
+    // a registered watcher for *.tsi the file lands in Volar's INFERRED
+    // project (module CommonJS, target ES2020) and a top-level ask reports
+    // TS1378 until the window is reloaded.
+    // The tsconfig project must already exist (its file list was parsed
+    // BEFORE the new file), as it does in a running editor.
+    const warm = await server.openTextDocument(REPORT_PATH, "nola");
+    await waitForDiagnostics(warm.uri, () => true);
+    const content = ["const n: number = \"x\";", "const a = ask `hello`<string>;", "console.log(a, n);", ""].join("\n");
+    writeFileSync(FRESH_PATH, content);
+    const uri = pathToFileURL(FRESH_PATH).href;
+    await server.connection.sendNotification("workspace/didChangeWatchedFiles", { changes: [{ uri, type: 1 }] });
+    await server.openTextDocument(FRESH_PATH, "nola");
+    // 2322 proves the TS semantic pass ran on this document.
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 2322));
+    expect(diags.map((d) => d.code)).not.toContain(1378);
+    expect(watcherGlobs.some((g) => g.includes("tsi"))).toBe(true);
+  });
+
   it("maps a TS type error into .tsi coordinates", async () => {
     const content = [
       "export infer function go(q: string) {",
@@ -118,6 +161,22 @@ describe("LSP over examples/cross-file-types", () => {
     const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.source === "nola" && x.code === "NOLA1005"));
     const nola = diags.find((d) => d.source === "nola" && d.code === "NOLA1005");
     expect(nola).toBeDefined();
+  });
+
+  // `ask `p`;<T>` — the `;` slipped in before the type args, leaving a `<T>`
+  // type assertion with no operand at the end of the file. This used to bail
+  // the whole parse: the editor served last-good output whose mappings no
+  // longer matched the text (semantic tokens painted a type name over the
+  // middle of the prompt) and the parse error, sitting past those mappings'
+  // extent, was never published. Now the parser recovers a missing
+  // expression and the error is reported on the ask line, right after `>`.
+  it("reports an expression missing at the end of the file on the line it belongs to", async () => {
+    const content = "type T = { a: string }\nconst r = ask `p`;<T>\n\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "eof.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.source === "nola" && x.code === "NOLA1001"));
+    const nola = diags.find((d) => d.source === "nola" && d.code === "NOLA1001");
+    expect(nola?.range.start).toEqual(positionOf(content, "<T>", 3));
   });
 
   it("hover inside .tsi shows the inferred Person type", async () => {
@@ -281,8 +340,9 @@ describe("LSP over examples/cross-file-types", () => {
     expect(labels).toContain("withRetry");
     expect(labels).toContain("withModel");
     expect(labels).toContain("withParams");
-    // internals and root-only knobs must not leak into the narrow tier
-    for (const internal of ["__nolaBrand", "then", "run", "spec", "reviveValue", "withTimeout", "detached"]) {
+    expect(labels).toContain("withTimeout");
+    // internals and the stack-frame opt-out must not leak into the narrow tier
+    for (const internal of ["__nolaBrand", "then", "run", "spec", "reviveValue", "detached"]) {
       expect(labels).not.toContain(internal);
     }
     // the phantom type anchor must not surface as a bracket completion either

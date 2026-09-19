@@ -34,19 +34,23 @@ export default defineConfig({
 | `baseUrl` | `string` | ✓ (any Chat-Completions dialect) | ✓ | ✓ | ✓ |
 | `fetch` | `typeof fetch` | ✓ | ✓ | ✓ | ✓ |
 | `maxOutputTokens` | `number` | — | ✓ | — | — |
+| `threshold` | `number` — plain `boolean` is `true` strictly above it | — | — | — | default `0.5` |
 
 Keys are read lazily at the first request. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`, `TypesafeOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.typesafe`, `providers.mock`.
 
 ## typesafe
 
-`typesafe()` talks to typesafe.ai's System One API (model Jev), which is not a chat model: it answers typed questions about a state with calibrated probabilities. The factory maps an ask's output type onto those questions, so it serves exactly these output types:
+`typesafe()` talks to typesafe.ai's System One API (model Jev), which is not a chat model: it answers typed questions about a JSON state with calibrated probabilities. It is a **decision model** — the one that answers the [decision types](/docs/language/decision-types/) — and it receives the ask's structured form rather than a rendered prompt: the contextual values (`.params` and `const .x` bindings) travel as the `state`, and every property becomes one question whose instructions are the property's JSDoc comment plus the ask's instruction as shared context. It serves exactly these output types:
 
-- a string literal union or enum (`"billing" | "shipping"`) — one choice question, one option per value
+- `Choice<{ … }>` — a choice question with the descriptions as criteria; the answer object comes back as is
+- `Scale<[ … ]>` — a score question over the ordered levels; `score`, the distribution re-keyed to an array, `levels`, `confidence`
+- `Prob` / `Prob<{ true; false }>` — a yes/no question; the probability of yes
+- a string literal union or enum (`"billing" | "shipping"`) — a choice question, the label alone
 - a number literal union (`1 | 2 | 3`) — a choice question, decoded back to the number
-- `boolean` — a yes/no question, `true` at probability ≥ 0.5
+- `boolean` — a yes/no question, `true` when the probability of yes is strictly above `threshold` (default `0.5`)
 - a flat object whose properties are all of the above — one request, one question per property
 
-Anything else — free-form strings, `Date`, numbers with or without bounds, arrays, nested objects, nullable unions — fails before the network with a definitive error naming the property. Pair it with a general model through `fallback` so those asks escalate:
+Anything else — free-form strings, `Date`, unbounded numbers, arrays, nested objects, nullable unions — fails before the network with a definitive error naming the property. Pair it with a general model through `fallback` so those asks escalate, or route decision asks to it by name:
 
 ```ts
 import { defineConfig } from "@nola-lang/runtime";
@@ -60,7 +64,7 @@ export default defineConfig({
 });
 ```
 
-The system text and the rendered request travel as the state; the output type becomes the questions; the winning labels come back as the value. Probabilities and confidence are not surfaced yet, and `.withParams()` knobs have no equivalent on this wire and are ignored.
+With no contextual value in scope, the ask's instruction text is the state. A correction turn has nothing to say to this wire, so a rejected reply is re-asked from the same state. Of the `.withParams()` knobs only `providerOptions.threshold` has a meaning here (the plain-boolean cut-off for that ask); the rest are ignored.
 
 ## nola
 

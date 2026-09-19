@@ -54,7 +54,10 @@ export function derivationDiagnostics(
   answers.forEach((a, i) => {
     const req = derivations[i];
     if (a.ok || !req || req.kind === "exported") return;
-    if (req.kind === "context" && req.policy !== "error" && a.code !== "NOLA2007") return;
+    // authoring errors (a dangling view import, a malformed constraint tag or decision
+    // criteria) surface at a context site under every policy, as in finalizeDerivations
+    const authoring = a.code === "NOLA2007" || a.code === "NOLA2012" || a.code === "NOLA2015";
+    if (req.kind === "context" && req.policy !== "error" && !authoring) return;
     out.push({
       code: a.code ?? (req.kind === "extract" ? "NOLA2002" : "NOLA2008"),
       message: a.reason,

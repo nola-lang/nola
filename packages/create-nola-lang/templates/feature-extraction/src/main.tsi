@@ -1,0 +1,22 @@
+__NEXT_STEPS__
+
+`You read short professional bios. Answer from the text alone; never invent facts.`
+
+interface Person {
+  name: string;
+  age: number;
+  employer: string;
+  job: string;
+}
+
+// A `.` binding is context: every ask below sees its value.
+const .message = "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.";
+
+// `ask` works at the top level: this file is the whole program, nothing to declare or call first.
+const person = ask `the person described in the text`<Person>;
+
+// A binding declared after an ask is visible to the asks that follow, so one answer feeds the next.
+const .role = person.job;
+const seniority = ask `the seniority level the role implies`<"junior" | "mid" | "senior" | "staff">;
+
+console.log(JSON.stringify({ ...person, seniority }));

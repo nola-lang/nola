@@ -9,6 +9,8 @@ import type { PackageManager } from "./package-manager.js";
  * calls; tests inject a recorder, the CLI uses `realLauncher`.
  */
 export interface Launcher {
+  /** Is VS Code's `code` command on PATH? Checked BEFORE the question, so a machine without VS Code is never offered it. */
+  hasVscode(): boolean;
   /**
    * `<pm> install` in the project dir. Its output (stdout + stderr, as it
    * arrives) goes to `onOutput` instead of the terminal, so the flow can keep
@@ -96,6 +98,7 @@ export function installArgs(pm: PackageManager): string[] {
 }
 
 export const realLauncher: Launcher = {
+  hasVscode: () => findOnPath("code") !== undefined,
   install: (pm, dir, onOutput) => run(pm, installArgs(pm), dir, onOutput),
   async openVscode(dir, entry) {
     const code = findOnPath("code");

@@ -70,10 +70,10 @@ Everything below is highlighted, type-checked and completable in `.tsi` files.
 | **Contextual parameter** | `.name: T` | The argument's value joins the prompt of every `ask` in the invocation. Plain parameters contribute name and type only. *One dot in, two dots out.* |
 | **Extractor** | `` ..`instruction`<T> `` | A request to pull a `T` from context. Supports `${}` interpolation; may be constructed anywhere; resolved with `ask`. Untyped (`` ..`instruction` ``) yields free text. |
 | **`ask` operator** | `ask <intent>` | Resolves an intent the way `await` resolves a promise — same precedence. Legal only directly inside an infer function body; `ask` is a reserved word in `.tsi`. |
-| **Provider routing** | `ask with <name> <intent>` | Resolves one ask through a named provider from `nola.config.ts` (static identifier; `.withProvider()` is the dynamic form). |
+| **Model routing** | `ask with <name> <intent>` | Resolves one ask through a named model from `nola.config.ts` (static identifier; `.withModel()` is the dynamic form). |
 | **Call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument, `` fn(..`x`<T>, …) `` | The model fills the extractor-shaped arguments, then the function is called; async results are awaited. Only the hint form carries instruction text. |
 | **Prompt template** | `${.member}` inside any instruction literal | Reads the intent's prompt scope (`.default`, `.next`, `.type`, `.args`, …); the literal then replaces that intent's built-in prompt block. |
-| **Intent methods** | `.withRetry(n)` · `.withProvider()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. The last two exist only on the `Intent` an infer function returns. |
+| **Intent methods** | `.withRetry(n)` · `.withModel()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. `.detached()` exists only on the `Intent` an infer function returns. |
 
 Typed extractors derive a JSON Schema at compile time from `string`, `number`,
 `boolean`, `Date`, arrays, inline object literals, string-literal unions and

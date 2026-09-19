@@ -7,6 +7,6 @@ export infer function triage`${.default}
 Rules: answer only from the arguments above; never invent ids.`(.ticket: string) {
   // An extractor template: `${.type}` is the target's native type text
   // ("string" here). The JSON response rules are appended automatically.
-  const id = ask ..`ticket id, comply with ${.type}`<string>;
+  const id = ask `ticket id, comply with ${.type}`<string>;
   return id;
 }

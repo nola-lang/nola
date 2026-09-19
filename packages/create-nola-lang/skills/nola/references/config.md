@@ -42,11 +42,18 @@ export default defineConfig({
 `apiKeyEnv` (default `"OPENAI_API_KEY"`), `baseUrl` and `fetch`.
 
 `typesafe()` (typesafe.ai's Jev, reads `TYPESAFE_API_KEY`, model defaults to
-`jev-latest`) is NOT a chat model: it serves only asks whose output type is a
-string or number literal union, a boolean, or a flat object of those, and
-fails definitively before the network on anything else. Use it behind
-`fallback([typesafe(), openai({ model: "gpt-5-mini" })])` so other asks
-escalate to a general model. Never scaffold it as the only model.
+`jev-latest`) is NOT a chat model: it is the DECISION model that answers the
+intrinsic `Choice<{…}>` / `Scale<[…]>` / `Prob` types (see syntax.md) beside
+the plain forms — a string or number literal union, a boolean, or a flat object
+of those — and fails definitively before the network on anything else. The
+contextual values (`.params`, `const .x`) travel as its JSON state and each
+property's JSDoc is that question's instructions. An ask whose type contains a
+`Choice` / `Scale` / `Prob` on a chat model is NOLA3018 before the network, so
+route those by name (`model: { default: openai(…), decision: typesafe() }` +
+`ask with decision`), or use `fallback([typesafe(), openai({ model:
+"gpt-5-mini" })])` so plain asks escalate. `threshold` (default 0.5, or
+`.withParams({ providerOptions: { threshold } })` per ask) is the plain-boolean
+cut-off: `true` strictly above it. Never scaffold it as the only model.
 
 `nola` is a NAMESPACE, not a function (`nola({})` is a type error).
 The platform model is written as the STRING `"nola"` — the Nola platform
@@ -78,9 +85,11 @@ is implied — traces go to a Nola console only when `telemetry` lists its
 URL (or `nola.tracer()`).
 
 `npm create nola` asks *Select an inference provider:* right after the
-template — Nola (25 free runs) first, then OpenAI / Anthropic / Gemini, then
-skip — and for Nola writes this config plus the key into `.env` (a vendor gets
-its own config, key left to the user); in an existing project `npx nola-lang
+template — `nola: dev` (25 free hosted runs, no API key, suited for dev experiments) first, then OpenAI / Anthropic / Gemini /
+typesafe.ai (its row brackets the caveat: literal unions and booleans only), then
+skip — and for `nola: dev` writes this config plus the key into `.env` (a vendor gets
+its own config and a `.env.example` with the key's empty slot, e.g. `OPENAI_API_KEY=`,
+to copy to `.env`; the key itself is left to the user); in an existing project `npx nola-lang
 key` mints one (and `npx nola-lang init --add --provider nola` does that plus
 the config and deps).
 A machine gets one anonymous trial; later projects sign in
@@ -115,8 +124,8 @@ export default defineConfig({
 
 ```tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast ..`a rough summary`<string>;
-  return ask with careful ..`a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`<string>;
+  return ask with careful `a polished summary of: ${draft}`<string>;
 }
 ```
 
@@ -223,11 +232,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.11",
-    "@nola-lang/runtime": "^0.1.11"
+    "@nola-lang/providers": "^0.1.12",
+    "@nola-lang/runtime": "^0.1.12"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.11",
+    "nola-lang": "^0.1.12",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

@@ -10,17 +10,23 @@ npm start        # runs offline via a committed replay ledger - no API key neede
 ```
 
 Interactively the flow asks for a name (Enter keeps the default), a template,
-an inference provider (Nola first — 25 free runs, no account or provider key —
-then OpenAI, Anthropic, Gemini, or skip), whether to set up your editor and
-coding agents (yes opens one list: VS Code, preselected, writes `.vscode/`
-with a debug config + the extension recommendation; coding-agent skills,
-Claude Code preselected), and — once the files are written, when an editor
-was chosen — whether to install dependencies and open the project in VS Code
-right away (on `src/main.ts`, whose opening comment lists the next steps:
-F5 to run, a breakpoint to debug, the recommended extension).
+an inference provider (`nola: dev` first — 25 free hosted runs, no API key required, suited for dev experiments —
+then OpenAI, Anthropic, Gemini, typesafe.ai — bracketed with the caveat that
+it serves literal unions and booleans only — or skip), and — once the files are
+written, unless `--ide none` — whether to install dependencies and open the
+project in VS Code right away (just the install when VS Code's `code` command
+is not on PATH; on the entry file — `src/main.tsi`, or
+`src/main.ts` for `typescript-interop` — whose opening comment lists the next
+steps: F5 to run, a breakpoint to debug, the recommended extension). The editor
+setup (`.vscode/` with a debug config + the extension recommendation) and the
+coding-agent skill (`.agents/skills/nola/`, with `.claude/skills/nola` a
+symlink to it for Claude Code) are written without a question; `--ide none` and
+`--agents none` opt out, `--agents claude,universal,agents-md` adds `AGENTS.md`.
 
-You get a typed extraction example (`src/person.tsi` + a plain-TS consumer),
-`nola.config.ts`, tsconfig, and a recorded replay ledger so the first run
-works without any API key. `npm create nola` is a short alias of this package
-(`create-nola`); `nola init` (from the `nola-lang` package) lays
-down the same starter.
+You get one template per feature — `feature-extraction` (the default) is one
+`src/main.tsi` with a top-level `ask`, `function-calling` the same with a call
+intent over an async function in `src/tickets.ts`, `typescript-interop` is
+`src/person.tsi` plus a plain-TS consumer — with `nola.config.ts`, tsconfig,
+and a recorded replay ledger so the first run works without any API key. `npm create nola`
+is a short alias of this package (`create-nola`); `nola init` (from the
+`nola-lang` package) lays down the same templates.

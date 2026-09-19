@@ -62,7 +62,7 @@ describe("cmdBuild", () => {
 
   it("reports NOLA diagnostics as errors without writing output for the bad file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "nola-badbuild-"));
-    await writeFile(join(dir, "bad.tsi"), "const v = ask ..`v`;\n");
+    await writeFile(join(dir, "bad.tsi"), "const f = async () => ask ..`v`;\n");
     const { errors } = await cmdBuild(dir, join(dir, "dist"));
     expect(errors.some((e) => e.includes("NOLA2001"))).toBe(true);
     expect(existsSync(join(dir, "dist", "bad.tsi.js"))).toBe(false);

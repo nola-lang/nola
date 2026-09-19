@@ -1,0 +1,12 @@
+__NEXT_STEPS__
+
+import { createTicket } from "./tickets.js";
+
+// A `.` binding is context: the ask below sees its value.
+const .message = "Hi, I can't log in since this morning and I have a customer demo in an hour — please help!";
+
+// A call intent: the model fills the extractor-shaped arguments in one round trip,
+// then createTicket (plain TypeScript, next door) runs with them.
+const ticket = ask createTicket(..`a short ticket title`<string>, ..`priority 1-5, where 1 is most urgent`<number>);
+
+console.log(JSON.stringify(ticket));

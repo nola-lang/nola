@@ -15,11 +15,11 @@ a parenthesized expression will not parse.
 ```tsi
 export infer function summarize(.text: string, useFast: boolean) {
   // WRONG
-  const a = ask with "fast" ..`a rough summary`<string>;
-  const b = ask with provider.fast ..`a rough summary`<string>;
+  const a = ask with "fast" `a rough summary`<string>;
+  const b = ask with provider.fast `a rough summary`<string>;
 
   // RIGHT — name it in nola.config.ts, then use that name
-  const c = ask with fast ..`a rough summary`<string>;
+  const c = ask with fast `a rough summary`<string>;
 
   // RIGHT — dynamic choice
   const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
@@ -42,6 +42,9 @@ export default defineConfig({
 
 > `.` context parameters are only allowed on infer function parameters.
 
+Also raised for a `const .x` / `let .x` binding outside an infer body or the
+module body (inside a plain function, a callback, a class).
+
 ```tsi
 // WRONG — a plain function has no inference context to put the value in
 function summarize(.text: string) {
@@ -50,33 +53,54 @@ function summarize(.text: string) {
 
 // RIGHT
 export infer function summarize(.text: string) {
-  return ask ..`a one-sentence summary`<string>;
+  return ask `a one-sentence summary`<string>;
 }
 ```
 
 If the function is genuinely plain TypeScript, drop the `.`; the parameter is
 an ordinary argument.
 
-## NOLA2001 — `ask` outside an infer function body
+## NOLA2013 — marker and body instruction together
 
-> `ask` is only allowed directly inside an infer function body.
+> this infer function already has an instruction marker — write the instruction in one place.
 
-`ask` is not legal at module level, and not inside a nested closure — not even
-one written inside an infer function.
+```tsi
+// WRONG — two spellings of the same instruction
+export infer function f`be terse`(.t: string) {
+  `be terse`
+  return ask `the kind`<string>;
+}
+
+// RIGHT — one or the other
+export infer function f(.t: string) {
+  `be terse`
+  return ask `the kind`<string>;
+}
+```
+
+## NOLA2001 — `ask` outside a scope body
+
+> `ask` is only allowed directly inside an infer function body or the module body.
+
+`ask` is legal DIRECTLY in an infer function body or DIRECTLY in the module
+body (top-level statements, top-level blocks/loops/try). It is not legal
+inside a plain function or a nested closure — not even one written inside an
+infer function — nor in a class field initializer or `static` block.
 
 ```tsi
 // WRONG
-const kind = ask ..`the kind`<string>;                  // module level
+const g = async () => ask `the kind`<string>;         // plain closure
 
 export infer function f(.t: string) {
-  const g = () => ask ..`the kind`<string>;             // nested closure
-  return g();
+  const h = () => ask `the kind`<string>;             // nested closure
+  return h();
 }
 
-// RIGHT — ask directly in the body; from plain TS, await the infer function
+// RIGHT — ask directly in the body, or at the top level of the module
 export infer function f(.t: string) {
-  return ask ..`the kind`<string>;
+  return ask `the kind`<string>;
 }
+export const kind = ask f("…");
 ```
 
 Constructing an extractor outside a body is fine — only resolving it is
@@ -84,6 +108,24 @@ restricted:
 
 ```tsi
 export const nameIntent = ..`the user's full name`<string>;   // legal, inert
+```
+
+## NOLA2014 — a typed template outside `ask` needs the dots
+
+> a typed template literal is an extractor only directly after `ask`; write ..`…`<T> here.
+
+The `..` is implied only directly after `ask`. Anywhere else a bare template
+is an ordinary string, so an extractor there needs its sigil:
+
+```tsi
+declare function createTicket(title: string): Promise<string>;
+
+infer function file(.request: string) {
+  const wrong = ask createTicket(`a short title`<string>);     // NOLA2014
+  const right = ask createTicket(..`a short title`<string>);
+  return right;
+}
+export const stored = ..`the user's full name`<string>;         // stored: dots required
 ```
 
 ## NOLA2002 — a type the compiler cannot turn into a schema
@@ -101,10 +143,10 @@ functions and a generic declaration used without arguments (`Box<T>` — write
 ```tsi
 export infer function tally(.doc: string) {
   // WRONG
-  const wrong = ask ..`counts per label`<Map<string, number>>;
+  const wrong = ask `counts per label`<Map<string, number>>;
 
   // RIGHT — a JSON-shaped type; convert afterwards in plain TS
-  const counts = ask ..`counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`<{ label: string; count: number }[]>;
   const asMap = new Map(counts.map((c) => [c.label, c.count]));
   return asMap;
 }
@@ -127,18 +169,18 @@ values are serialized into the prompt.
 ```tsi
 // WRONG
 export infer function topLabel(.index: Map<string, number>) {
-  return ask ..`the label with the highest count`<string>;
+  return ask `the label with the highest count`<string>;
 }
 
 // RIGHT — pass a JSON-shaped view as the contextual parameter
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask ..`the label with the highest count`<string>;
+  return ask `the label with the highest count`<string>;
 }
 
 // RIGHT — keep the exotic value, but as a PLAIN parameter (the LLM never
 // sees its value, so nothing needs deriving)
 export infer function topLabel(.summary: string, index: Map<string, number>) {
-  const label = ask ..`the label with the highest count`<string>;
+  const label = ask `the label with the highest count`<string>;
   return { label, count: index.get(label) ?? 0 };
 }
 ```
@@ -232,7 +274,12 @@ import { createTicket } from "./tickets";         // WRONG — TS2835
 ```ts
 import { Person } from "./models.tsi";        // RIGHT — the interface and its InferType value
 import type { Person } from "./models.js";    // RIGHT — type only, for a schema in a .tsi
+import { Person } from "./models.js";         // WRONG — kept at run time; models.js exports no VALUE named Person
 ```
+
+- The `type` keyword is REQUIRED for a type-only import from a plain module:
+  like Node's own `.ts` handling, `nola run` strips types without rewriting
+  imports, so a bare `import { Person }` fails when the module loads.
 
 ## Never write generated-code names
 
@@ -250,7 +297,7 @@ export infer function read(.doc: string) {
   );
 
   // RIGHT
-  const v = ask ..`the value`<string>;
+  const v = ask `the value`<string>;
   return v;
 }
 ```

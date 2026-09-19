@@ -13,7 +13,8 @@ describe("transformNola", () => {
     const { code, map } = await transformNola(src, "go.tsi");
     expect(code).toContain("await __nola.ask(");
     expect(code).toContain("__nola.intents.Intent(async (__frame)");
-    expect(code).toContain("function go(q)");
+    // Node's strip mode leaves whitespace where the annotation was (layout preserved)
+    expect(code).toMatch(/function go\(q\s*\)/);
     expect(code).not.toContain(": string");
     const parsed = JSON.parse(map) as { sources: string[] };
     expect(parsed.sources).toContain("go.tsi");
@@ -79,7 +80,78 @@ describe("transformNola", () => {
     }
   });
 
-  it("throws on compile diagnostics too (ask at top level)", async () => {
-    await expect(transformNola("const v = ask ..`v`;\n", "top.tsi")).rejects.toThrow(/NOLA2001/);
+  it("throws on compile diagnostics too (ask in a plain function)", async () => {
+    await expect(transformNola("const f = async () => ask ..`v`;\n", "top.tsi")).rejects.toThrow(/NOLA2001/);
+  });
+});
+
+describe("transformNola keeps the lowered layout (js-debug binds .tsi breakpoints raw AND mapped)", () => {
+  // js-debug sets a .tsi breakpoint twice: through the inline map, and by raw
+  // URL + line on the compiled script — whose URL IS the .tsi path. If type
+  // stripping collapsed lines (esbuild dropped a 6-line interface), raw line 8
+  // landed inside the appendix's __nola_file_ctx, which the ask calls: F10 over
+  // a top-level ask then paused in unmapped code and degraded into a continue.
+  const src = [
+    "export interface Person {",
+    "  name: string;",
+    "  age: number;",
+    "  employer: string;",
+    "  job: string;",
+    "}",
+    "",
+    'const .message = "Alice Smith, 32";',
+    "",
+    "const person = ask ..`the person described in the text`<Person>;",
+    "",
+    "console.log(JSON.stringify(person));",
+    "",
+  ].join("\n");
+
+  it("every body statement stays on its source line; the appendix starts after the last source line", async () => {
+    const { code } = await transformNola(src, "main.tsi");
+    const lines = code.split("\n");
+    expect(lines[7]).toMatch(/^const message = "Alice Smith, 32";/);
+    expect(lines[9]).toMatch(/^const person = await __nola\.ask\(/);
+    expect(lines[11]).toBe("console.log(JSON.stringify(person));");
+    const appendixAt = lines.findIndex((l) => l.startsWith('import { __nola } from "@nola-lang/runtime";'));
+    expect(appendixAt).toBeGreaterThanOrEqual(src.split("\n").length - 1);
+  });
+
+  it("the map agrees with the raw layout: generated line N maps to source line N for body statements", async () => {
+    const { code, map } = await transformNola(src, "main.tsi");
+    const { TraceMap, originalPositionFor } = await import("@jridgewell/trace-mapping");
+    const tracer = new TraceMap(JSON.parse(map));
+    const lineOf = (needle: string) => code.slice(0, code.indexOf(needle)).split("\n").length;
+    for (const [needle, line] of [
+      ["const message =", 8],
+      ["const person = await", 10],
+      ["console.log(", 12],
+    ] as const) {
+      expect(lineOf(needle)).toBe(line);
+      expect(originalPositionFor(tracer, { line, column: 0 })).toMatchObject({ line });
+    }
+  });
+
+  it("non-erasable syntax (an enum) falls back to a transforming strip with a map that still binds", async () => {
+    const enumSrc = [
+      "export enum Kind {",
+      '  Billing = "billing",',
+      '  Refund = "refund",',
+      "}",
+      "export infer function go(q: string) {",
+      "  const k = ask ..`the kind`<Kind>;",
+      "  return k;",
+      "}",
+      "",
+    ].join("\n");
+    const { code, map } = await transformNola(enumSrc, "kind.tsi");
+    expect(code).not.toMatch(/\benum\b/);
+    expect(code).toContain("Kind");
+    const { TraceMap, originalPositionFor } = await import("@jridgewell/trace-mapping");
+    const tracer = new TraceMap(JSON.parse(map));
+    const offset = code.indexOf("await __nola.ask(");
+    const upTo = code.slice(0, offset);
+    const pos = { line: upTo.split("\n").length, column: offset - (upTo.lastIndexOf("\n") + 1) };
+    expect(originalPositionFor(tracer, pos)).toMatchObject({ line: 6 });
   });
 });

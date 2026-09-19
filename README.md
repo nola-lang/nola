@@ -62,8 +62,8 @@ never required — point `nola.config.ts` at any supported provider instead
 
 ## Quick start
 
-Requires **Node ≥ 22.18**. The starter needs no API key — it runs offline from a
-committed replay ledger.
+Requires **Node ≥ 22.18**. The default template needs no API key — it runs offline
+from a committed replay ledger.
 
 ```bash
 npm create nola          # prompts for a name, a template, editor + agent setup
@@ -81,7 +81,10 @@ npm create nola -- --add                              # retrofit the current pro
 
 `--add` writes `nola.config.ts` and merges the packages into your existing
 `package.json`; a bare interactive run offers it automatically when it finds one.
-Templates are `starter` (the default), `empty`, and the curated
+Templates come one per feature: `feature-extraction` (the default: one `.tsi` file with a
+top-level `ask`), `function-calling` (the same, calling an async function from a
+`.ts` file next to it), `typescript-interop` (an `infer function` imported from
+plain TypeScript), `empty`, and — behind *More examples…* — the curated
 [examples](examples/). `npm create nola-lang` is the same command under its full
 name, and `nola init` runs the same flow from inside a project.
 
@@ -111,8 +114,8 @@ means plain `.ts` files that import a `.tsi` see full types. Breakpoints bind in
 code --install-extension nola.nola-vscode
 ```
 
-Scaffolding writes `.vscode/launch.json` and `.vscode/extensions.json` for you if
-you accept the editor step (or pass `--ide vscode`). Keep `.tsi` files inside a
+Scaffolding writes `.vscode/launch.json` and `.vscode/extensions.json` for you
+(`--ide none` skips them). Keep `.tsi` files inside a
 directory-style tsconfig `include` (`["src"]`, never `["src/**/*.ts"]`) so the
 editor can admit them.
 
@@ -130,7 +133,7 @@ nola skill install --agents claude,universal,agents-md
 
 | Target | What it writes |
 |---|---|
-| `claude` | `.claude/skills/nola/` — the full skill directory + references (Claude Code) |
+| `claude` | `.claude/skills/nola/` — a symlink to the `universal` directory when both are written, a full copy on its own (Claude Code) |
 | `universal` | `.agents/skills/nola/` — the same, at the open Agent Skills location (Cursor, Copilot, Codex, Gemini CLI, …) |
 | `agents-md` | `AGENTS.md` — the skill body inline, for agents that read only that file |
 
@@ -138,7 +141,7 @@ The same layout comes out of the community CLI: `npx skills add nola-lang/nola`.
 Each copy carries a version stamp, so a later run reports what has gone stale and
 `--force` refreshes it. The source is
 [`packages/create-nola-lang/skills/nola/`](packages/create-nola-lang/skills/nola/);
-the scaffolder offers the same step as `--agents`.
+the scaffolder writes `claude` and `universal` by default (`--agents` overrides).
 
 ## The core constructs
 
@@ -148,10 +151,10 @@ the scaffolder offers the same step as `--agents`.
 | **Contextual parameter** | `.name: T` | The argument's value joins the prompt of every `ask` in the invocation. Plain parameters contribute name and type only. *One dot in, two dots out.* |
 | **Extractor** | `` ..`instruction`<T> `` | A request to pull a `T` from context. Supports `${}` interpolation; may be constructed anywhere; resolved with `ask`. |
 | **`ask` operator** | `ask <intent>` | Resolves an intent the way `await` resolves a promise. Legal only directly inside an infer function body. `ask` is a reserved word in `.tsi`. |
-| **Provider routing** | `ask with <name> <intent>` | Resolves one ask through a named provider from `nola.config.ts` (static identifier; `.withProvider()` is the dynamic form). |
+| **Model routing** | `ask with <name> <intent>` | Resolves one ask through a named model from `nola.config.ts` (static identifier; `.withModel()` is the dynamic form). |
 | **Call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument, `` fn(..`x`<T>, …) `` | The model fills the extractor-shaped arguments, then the function is called; async results are awaited. Only the hint form carries instruction text. |
 | **Prompt template** | `${.member}` inside any instruction literal | Reads the intent's prompt scope (`.default`, `.next`, `.type`, `.args`, …); the literal then replaces that intent's built-in prompt block. |
-| **Intent methods** | `.withRetry(n)` · `.withProvider()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. The last two exist only on the `Intent` an infer function returns. |
+| **Intent methods** | `.withRetry(n)` · `.withModel()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. `.detached()` exists only on the `Intent` an infer function returns. |
 
 Typed extractors derive a JSON Schema at compile time from `string`, `number`,
 `boolean`, `Date`, arrays, inline object literals, string-literal unions and string

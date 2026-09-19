@@ -74,13 +74,25 @@ describe("emit-contract bump enforcement", () => {
       // JSON Schema validation vocabulary emitted from `@format` / `@minimum` /
       // `@minItems` … tags). A method beside `describe`, so the key snapshot
       // below is unchanged; an emit-15 carrier has no `constrain`, hence the bump.
-      emit: 16,
+      // emit 17: scope bodies — `ask` in the module body lowers to
+      // `__nola.ask(X, __nola_module_ctx())`: ask's second argument is a Frame
+      // OR the module scope node from the new `__nola_file_ctx().module({...})`,
+      // and `__nola.context.file(path, emit)` checks the contract (a module-body
+      // ask runs before the EOF useRuntime statement). Namespace keys unchanged;
+      // an emit-16 runtime has no `.module`, hence the bump.
+      // emit 18: decision types — `__nola.types.choice/scale/prob` (the answer
+      // shapes of a Choice / Scale / Prob site) and the appendix `import type
+      // { Choice, Scale, Prob } from "@nola-lang/runtime"` for the intrinsic
+      // names a file uses. An emit-17 runtime has no choice/scale/prob keys,
+      // hence the bump.
+      emit: 18,
       top: ["ask", "context", "fmt", "intents", "tpl", "types", "useRuntime"],
       context: ["file"],
       intents: ["ExtractIntent", "FunctionCallIntent", "Intent"],
       types: [
         "array",
         "boolean",
+        "choice",
         "date",
         "enum",
         "literal",
@@ -88,8 +100,10 @@ describe("emit-contract bump enforcement", () => {
         "number",
         "object",
         "optional",
+        "prob",
         "record",
         "ref",
+        "scale",
         "string",
         "tuple",
         "union",

@@ -18,8 +18,8 @@ const OUT = [
   "}",
   "",
   'import { __nola } from "@nola-lang/runtime";',
-  "__nola.useRuntime(16);",
-  'function __nola_file_ctx() { return __nola.context.file("x.tsi"); }',
+  "__nola.useRuntime(18);",
+  'function __nola_file_ctx() { return __nola.context.file("x.tsi", 18); }',
   'function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> | undefined { return (undefined as never); }',
   'function __nola_type_$2(): import("@nola-lang/runtime").InferType<unknown> { return (undefined as never); }',
   "",
@@ -44,9 +44,19 @@ describe("infer function lowering", () => {
     expect(code).not.toContain("`extract the user`");
   });
 
-  it("NOLA2001: ask at module top level", () => {
-    const { diagnostics } = compileNola("const v = ask ..`v`;\n", "x.tsi");
+  it("NOLA2001: ask inside a plain function", () => {
+    const src = "async function plain() {\n  return ask ..`v`;\n}\n";
+    const { diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics.map((d) => d.code)).toContain("NOLA2001");
+  });
+
+  it("NOLA2001: ask in a class field initializer or static block — await is illegal there", () => {
+    for (const member of ["v = ask ..`v`;", "static { ask ..`v`; }"]) {
+      const { diagnostics } = compileNola(`class C {\n  ${member}\n}\n`, "x.tsi");
+      expect(diagnostics.map((d) => d.code)).toContain("NOLA2001");
+    }
+    const inBody = "infer function go() {\n  class C { v = ask ..`v`; }\n  return C;\n}\n";
+    expect(compileNola(inBody, "x.tsi").diagnostics.map((d) => d.code)).toContain("NOLA2001");
   });
 
   it("NOLA2001: ask inside a nested plain closure", () => {

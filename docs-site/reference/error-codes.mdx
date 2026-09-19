@@ -67,7 +67,7 @@ export infer function summarize(.text: string, useFast: boolean) {
 ```tsi
 // summarize.tsi — RIGHT
 export infer function summarize(.text: string, useFast: boolean) {
-  const c = ask with fast ..`a rough summary`<string>;
+  const c = ask with fast `a rough summary`<string>;
   const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
   return { c, d };
 }
@@ -77,8 +77,8 @@ export infer function summarize(.text: string, useFast: boolean) {
 
 > `.` context parameters are only allowed on infer function parameters.
 
-**Cause:** a `.name` parameter on a plain function — there is no inference context to put the value in.
-**Fix:** drop the dot (the parameter is an ordinary argument), or make the function an `infer function`.
+**Cause:** a `.name` parameter on a plain function, or a `.name` binding outside an infer body / the module body — there is no inference context to put the value in.
+**Fix:** drop the dot (it is an ordinary argument or variable), or make the function an `infer function`.
 
 ```tsi
 // not-checked — WRONG
@@ -90,7 +90,7 @@ function summarize(.text: string) {
 ```tsi
 // summarize-right.tsi — RIGHT
 export infer function summarize(.text: string) {
-  return ask ..`a one-sentence summary`<string>;
+  return ask `a one-sentence summary`<string>;
 }
 ```
 
@@ -117,10 +117,10 @@ export infer function summarize(.text: string) {
 
 ## NOLA1014
 
-> `.name` contextual bindings (`const .x = …`) are reserved for a future Nola version.
+> `var .x` is reserved — a contextual binding is `const .x` or `let .x`.
 
-**Cause:** a dotted binding inside a body.
-**Fix:** use an ordinary `const` and interpolate it into the instruction with `${}`, or make it a contextual *parameter*.
+**Cause:** the dot on a `var` declaration — `var` hoists to `undefined`, which no ask should see.
+**Fix:** write `const .x` or `let .x` — see [Contextual bindings](/docs/language/contextual-parameters/#contextual-bindings).
 
 ## NOLA1015
 
@@ -129,29 +129,43 @@ export infer function summarize(.text: string) {
 **Cause:** `${.` inside an instruction with no member after the dot.
 **Fix:** finish the member (the editor completes them) — see [Prompt templates](/docs/language/prompt-templates/).
 
+## NOLA1016
+
+> `..x` — expected `choice`, `scale` or `prob` before the prompt template.
+
+**Cause:** an identifier between the extractor sigil and its template that is not one of the three decision kinds — `` ..choose`…` `` — where `` ..choice`…`<C> ``, `` ..scale`…`<L> `` or `` ..prob`…` `` was meant.
+**Fix:** write one of the three kinds, or drop the word for a plain extractor (`` ..`…`<T> ``).
+
+## NOLA1017
+
+> the implied extractor needs whitespace before its template — write `` ask `…` `` (`` ask`…` `` reads as a tagged template).
+
+**Cause:** a template literal glued to `ask` (or to the model name after `ask with`) — `` ask`the user's name`<string> ``. Without the space it reads as a tagged template call on `ask`, which is not what runs.
+**Fix:** put at least one space (any whitespace) between `ask` and the backtick, or write the explicit sigil — `` ask ..`…`<T> ``. See [Extractors](/docs/language/extractors/).
+
 **Compile errors (NOLA2xxx)**
 
 ## NOLA2001
 
-> `ask` is only allowed directly inside an infer function body.
+> `ask` is only allowed directly inside an infer function body or the module body.
 
-**Cause:** `ask` at module level or inside a nested closure — even one written inside an infer function.
-**Fix:** ask directly in the body; from plain TS, `await` the infer function instead. Constructing an extractor outside a body is fine — only resolving it is restricted.
+**Cause:** `ask` inside a plain function or a nested closure — even one written inside an infer function — or in a class field initializer / `static` block, where `await` is illegal.
+**Fix:** ask directly in the infer body or at the top level of the module; from plain TS, `await` the infer function instead. Constructing an extractor anywhere is fine — only resolving it is restricted.
 
 ```tsi
 // not-checked — WRONG
-const kind = ask ..`the kind`<string>;                  // module level
+const g = async () => ask `the kind`<string>;         // plain closure
 
 export infer function f(.t: string) {
-  const g = () => ask ..`the kind`<string>;             // nested closure
-  return g();
+  const h = () => ask `the kind`<string>;             // nested closure
+  return h();
 }
 ```
 
 ```tsi
 // kind.tsi — RIGHT
 export infer function f(.t: string) {
-  return ask ..`the kind`<string>;
+  return ask `the kind`<string>;
 }
 ```
 
@@ -165,14 +179,14 @@ export infer function f(.t: string) {
 ```tsi
 // not-checked — WRONG
 export infer function tally(.doc: string) {
-  return ask ..`counts per label`<Map<string, number>>;
+  return ask `counts per label`<Map<string, number>>;
 }
 ```
 
 ```tsi
 // tally.tsi — RIGHT
 export infer function tally(.doc: string) {
-  const counts = ask ..`counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`<{ label: string; count: number }[]>;
   return new Map(counts.map((c) => [c.label, c.count]));
 }
 ```
@@ -224,14 +238,14 @@ export infer function fileTicket(.request: string) {
 ```tsi
 // not-checked — WRONG
 export infer function topLabel(.index: Map<string, number>) {
-  return ask ..`the label with the highest count`<string>;
+  return ask `the label with the highest count`<string>;
 }
 ```
 
 ```tsi
 // top-label.tsi — RIGHT
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask ..`the label with the highest count`<string>;
+  return ask `the label with the highest count`<string>;
 }
 ```
 
@@ -262,6 +276,27 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 **Cause:** a JSDoc constraint tag ([Constraints](/docs/reference/schema-derivation/#constraints)) does not fit — the keyword is for another kind of type, its value is missing or not a number, the `@format` name is unknown, the `@pattern` is not a valid regular expression, or the tag is given twice. Raised at the type for every kind of site (exported type, extractor, contextual parameter); the contextual-parameter policy does not apply, and prune mode does not drop the member.
 **Fix:** move the tag to a member of the right kind, or correct its value.
+
+## NOLA2013
+
+> this infer function already has an instruction marker — write the instruction in one place.
+
+**Cause:** an infer function carries both an instruction marker (`` infer function f`…`(…) ``) and a body instruction — a template literal as the first statement of its body ([Body instruction](/docs/language/infer-functions/#the-body-instruction)).
+**Fix:** keep one of the two; they mean the same thing.
+
+## NOLA2014
+
+> a typed template literal is an extractor only directly after `ask`; write ..`…`<T> here.
+
+**Cause:** a template literal with type arguments — `` f(`x`<string>) `` — somewhere other than directly after `ask`. The two dots are implied only at the ask site; elsewhere a bare template is an ordinary string, so an extractor there needs its sigil ([Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct)).
+**Fix:** write `` ..`x`<T> `` — in a call-intent argument, a stored intent, or an object/array literal.
+
+## NOLA2015
+
+> Dept: Choice needs 2 to 255 labels, got 1
+
+**Cause:** the criteria of a decision type are malformed — a `Choice` argument that is not a label union or a `{ label: description }` type literal of string literals and `null`, fewer than 2 or more than 255 labels; a `Scale` argument that is not a tuple of 2 to 10 string literals; a `Prob` argument that is not exactly `{ true: "…"; false: "…" }`. Raised at the type for every kind of site (exported type, extractor, contextual parameter); the contextual-parameter policy does not apply, and prune mode does not drop the member.
+**Fix:** write the criteria as literals: `` Choice<{ billing: "Payments"; sales: null }> ``, `` Scale<["Calm", "Angry"]> ``, `` Prob<{ true: "…"; false: "…" }> ``.
 
 **Runtime errors (NOLA3xxx)**
 
@@ -395,6 +430,13 @@ Not raised — reserved.
 
 **Cause:** a Standard JSON Schema consumer asked `User["~standard"].jsonSchema.input()` / `.output()` for a dialect Nola does not emit. The spec requires a library to throw rather than hand back the wrong dialect.
 **Fix:** pass one of the three supported targets. See [Standard Schema](/docs/language/types-as-values/#standard-schema).
+
+## NOLA3018
+
+> output property "department" is a Choice; model "openai" cannot answer decision questions — route the ask to a decision model (`ask with <name>`) or use the plain form (a literal union, or boolean).
+
+**Cause:** the ask's output type contains a `Choice`, `Scale` or `Prob`, and the model the ask resolved to does not declare the decision capability. A chat model cannot measure probabilities; letting it answer would fabricate a confidence that looks real, so the runtime refuses before any request is sent. `fallback([…])` and `roundRobin([…])` count as decision models when any inner is one and skip the others for such an ask.
+**Fix:** route the ask to a decision model (`ask with <name>` over a `model` map entry, or `.withModel()`), or use the plain forms — a literal union for the label, `boolean` for a thresholded yes/no.
 
 **Bundler errors (NOLA4xxx)**
 

@@ -36,9 +36,15 @@ describe("ask with <identifier> lowering", () => {
     expect(code).toMatch(/__nola\.ask\(.*, __frame\);/);
   });
 
-  it("NOLA2001: ask with alias outside an infer function body", () => {
-    const { diagnostics } = compileNola("const v = ask with fast ..`v`;\n", "x.tsi");
+  it("NOLA2001: ask with alias inside a plain function", () => {
+    const { diagnostics } = compileNola("const f = async () => ask with fast ..`v`;\n", "x.tsi");
     expect(diagnostics.map((d) => d.code)).toContain("NOLA2001");
+  });
+
+  it("the alias rides a module-body ask as the third argument too", () => {
+    const { code, diagnostics } = compileNola("const v = ask with fast ..`v`<string>;\n", "x.tsi");
+    expect(diagnostics).toEqual([]);
+    expect(code).toMatch(/__nola\.ask\(.*, __nola_module_ctx\(\), "fast"\);/);
   });
 
   it("lowered ask-with output is tsc-clean under strict", () => {
