@@ -5,7 +5,7 @@
 // The server uses PUSH diagnostics (volar-service-typescript declares
 // interFileDependencies, which disables Volar's pull-diagnostics mode), so
 // tests collect textDocument/publishDiagnostics notifications.
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type LanguageServerHandle, startLanguageServer } from "@volar/test-utils";
@@ -58,6 +58,14 @@ const published = new Map<string, LspDiagnostic[]>();
 const watcherGlobs: string[] = [];
 const FRESH_PATH = join(FIXTURE, "src", "fresh-on-disk.tsi");
 const CASED_PATH = join(FIXTURE, "src", "cased-on-disk.tsi");
+// The differently-cased-URI scenario exists only on a case-insensitive file
+// system (Windows, macOS): there `/EXAMPLES/.../SRC/x.tsi` and the on-disk
+// spelling are ONE file, and the server installs the case-insensitive
+// document lookup. On Linux (the CI runner) they are two files — the odd one
+// does not exist, falls outside the tsconfig into the inferred project and
+// never gets the fixture's `noUnusedLocals` diagnostics — and the lookup is,
+// correctly, not installed. There the bug cannot occur, so the test does not run.
+const CASE_INSENSITIVE_FS = existsSync(join(ROOT, "EXAMPLES"));
 
 /**
  * A completion request as VS Code sends it when the user types a ".": trigger
@@ -232,7 +240,7 @@ describe("LSP over examples/cross-file-types", () => {
   // the whole global scope (`__nola`, `__nola_file_ctx`, ...) — and the
   // derivation pass flashed errors under <T>. The server now falls back to a
   // case-insensitive lookup on case-insensitive file systems.
-  it("a document opened under a differently cased URI still completes against the editor's text", async () => {
+  it.skipIf(!CASE_INSENSITIVE_FS)("a document opened under a differently cased URI still completes against the editor's text", async () => {
     const onDisk = "const person = ask `the person`<{ name: string }>;\nconsole\n";
     writeFileSync(CASED_PATH, onDisk);
     const real = pathToFileURL(CASED_PATH).href;
