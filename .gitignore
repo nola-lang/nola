@@ -17,3 +17,6 @@ next-env.d.ts
 .public-sync/
 .nola
 .superpowers
+# e2e prebuild coordination (test/e2e/helpers/ensure-built.ts)
+.nola-e2e-build.lock/
+.nola-e2e-build.stamp
