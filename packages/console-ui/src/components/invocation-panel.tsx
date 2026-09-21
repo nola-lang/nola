@@ -58,7 +58,7 @@ export function InvocationPanel({
         {node.errorCount > 0 ? ` · ${node.errorCount} error${node.errorCount === 1 ? "" : "s"}` : ""}
       </h2>
       {detail.records.length > 1 ? (
-        <ol className="m-0 list-none overflow-hidden rounded-md border p-0 [&>li:last-child]:border-b-0">
+        <ol className="m-0 list-none overflow-hidden rounded-md p-0">
           {detail.records.slice(1).map((r) => (
             <RecordRow
               key={r.id}

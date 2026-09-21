@@ -34,8 +34,16 @@ function registerView(viewFileName: string, registration: ViewRegistration): voi
   sharedViewsLower.set(viewFileName.toLowerCase(), registration);
 }
 
-/** Registry lookup for the ServerHost decoration; exact match first, then case-insensitive. */
+/**
+ * Registry lookup for the ServerHost decoration; exact match first, then
+ * case-insensitive. This sits under EVERY fileExists / readFile / stat of the
+ * tsserver process (lib files, node_modules probes, tens of thousands per
+ * project load), so the normalize + lowercase run only once a probe can be a
+ * view at all: something is registered, and the name ends in `.tsi.ts`.
+ */
 export function viewRegistration(fileName: string): ViewRegistration | undefined {
+  if (sharedViews.size === 0) return undefined;
+  if (fileName.length < 7 || fileName.slice(-7).toLowerCase() !== ".tsi.ts") return undefined;
   const key = norm(fileName);
   return sharedViews.get(key) ?? sharedViewsLower.get(key.toLowerCase());
 }

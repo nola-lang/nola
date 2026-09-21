@@ -24,7 +24,7 @@ Counted from the files in this repo (non-blank lines, hand-written files only �
 | | **Nola** | **BAML** | **LangChain.js** | **Ax** | **Vercel AI** | **OpenAI SDK** |
 |---|---|---|---|---|---|---|
 | Lines you write | **85**¹ | 112 | 118 | 87 | 114 | 131 |
-| Files you write | 5 | 5 | 4 | 4 | 4 | 4 |
+| Files you write | 4 | 5 | 4 | 4 | 4 | 4 |
 | Times the domain model is declared | **1** | 1² | 2 | 2 | 2 | 2 |
 | Hand-written wire schema | **none** | `.baml` classes | zod | signature string | zod | zod, `.nullable()`³ |
 | `needBy` arrives as a real `Date` | **yes** | no | no | **yes** | no | no |
@@ -33,10 +33,10 @@ Counted from the files in this repo (non-blank lines, hand-written files only �
 | Compile error when the model drifts | **yes** | no | no | no | no | no |
 | Editor support where the schema lives | **yes** | yes | yes | **no**⁴ | yes | yes |
 | First run with no API key | **yes** | no | no | no | no | no |
-| Breakpoint inside the LLM function | **yes** | no | n/a | n/a | n/a | n/a |
+| Debugger steps through the LLM logic | **yes** | no | n/a | n/a | n/a | n/a |
 
-¹ 28 of Nola's 85 lines are the offline mock fixture in `nola.config.ts` that lets the demo
-run with zero API keys. With a real provider that config is ~6 lines — total ≈ 63.
+¹ 28 of Nola's 85 lines are `nola.config.ts`, the offline mock that lets the demo run with
+zero API keys. With a real model that file is 5 lines — total ≈ 62.
 
 ² BAML avoids a second declaration only by inverting ownership: the domain model moves *into*
 `baml_src/`, and the rest of the app imports the generated `baml_client/types`. There is no
@@ -57,7 +57,7 @@ jump to inside it; a typo there is a runtime error.
 cd nola && npm install && npm start
 ```
 
-> Installs `@nola-lang/*` and `nola-lang` from npm (currently `0.1.3`) — no checkout of the
+> Installs `@nola-lang/*` and `nola-lang` from npm (currently `0.1.12`) — no checkout of the
 > Nola monorepo needed, even though this folder lives inside it. The demo runs against the
 > mock provider in `nola.config.ts`, so the first run works offline.
 
@@ -78,16 +78,21 @@ ORDER PLACED: 16 units for Dana Reyes → Oakland 94607 by Wed Sep 30 2026 [rush
 QUOTE QUEUED for Priya Sharma: quote for ~200 M8 temperature sensor bundles
 ```
 
+Nola also prints its ask trace — one line per ask, with the source position — to stderr;
+stdout is exactly the two lines above.
+
 ## What to look at
 
-**`nola/src/triage.tsi`** — the whole LLM seam is 13 lines. The extraction is one expression
-against the `OrderRequest` interface the codebase already has; the JSON schema (nested
-objects, the union, the `Date`) is derived at compile time, and `needBy` arrives revived. The
-quote branch is a call intent: the LLM fills `requestQuote`'s arguments, Nola calls it.
+**`nola/src/main.tsi`** — the whole program. There is no function to declare and no call site:
+`ask` runs at the top level, and `for (const .email of inbox)` makes each email context for
+every ask in the loop body. The extraction is one expression against the `OrderRequest`
+interface the codebase already has; the JSON schema (nested objects, the union, the `Date`) is
+derived at compile time, and `needBy` arrives revived. The quote branch is a call intent: the
+LLM fills `requestQuote`'s arguments, Nola calls it. The whole LLM seam is the 12-line loop.
 
 **`ax/src/signatures.ts`** — the closest competitor on ergonomics, and the most interesting
 one. Ax's signature grammar is genuinely terse, it infers result types end-to-end, and it
-revives `datetime` into a real `Date` — it ties Nola on line count. The catch is *where* the
+revives `datetime` into a real `Date` — it comes within two lines of Nola. The catch is *where* the
 model lives: a template string. Your editor can't complete a field name in it, `tsc` can't
 tell you it drifted from `types.ts`, and the assignment onto the domain type is the only
 place the two could ever meet.
@@ -109,10 +114,11 @@ domain type has to unpick nulls field by field.
 
 Open this repo in VS Code with the Nola VS Code extension (`nola.nola-vscode`) installed:
 
-1. **F5** runs "Nola: inbox-triage demo" under the debugger.
-2. Set a breakpoint on the `const order = ask ...` line in `triage.tsi` — it binds, and
-   hovering `.email` while paused shows the live value.
-3. **F11** from `triageEmail(orderEmail)` in `main.ts` steps *into* the `.tsi` body.
+1. **F5** runs "Nola: inbox-triage comparison" under the debugger.
+2. Set a breakpoint on the `const order = ask ...` line in `main.tsi` — it binds, and
+   hovering `.email` while paused shows the email being triaged.
+3. **F10** steps over the ask; `order` appears in the Variables pane as a typed
+   `OrderRequest`, with `needBy` already a `Date`.
 4. F2-rename `needBy` in `types.ts` — the wire schema follows; nothing else to touch. Try the
    same rename in the other five folders and count what breaks silently.
 5. Delete the `priority` field from `OrderRequest` — `nola check` (and the editor) flag the

@@ -48,7 +48,20 @@ export class NolaVirtualCode implements VirtualCode {
   /** true when the embedded code is last-good output for an unparsable snapshot */
   stale = false;
 
-  private lastGood: { text: string; mappings: CodeMapping[] } | undefined;
+  /**
+   * The last lowered embedded code, kept as the OBJECT that was served: Volar
+   * keys TypeScript's script version, the project version, the source-map
+   * memo and the embedded document version on the identity of the embedded
+   * snapshot, so an update whose generated text is unchanged (the same source
+   * set again, a bailed keystroke served last-good) returns this object
+   * instead of a copy — a copy would force a full TypeScript re-parse and
+   * re-check, a source-map rebuild and a derivation pass for identical text.
+   * Keyed by the SOURCE as well as the generated text: identical output from
+   * a different source (`ask .` → `ask ..`) has different mappings.
+   * `stale` is the same snapshot under semantic-token-less mappings, built on
+   * the first bail and reused for every following one.
+   */
+  private lastGood: { source: string; text: string; code: VirtualCode; stale?: VirtualCode } | undefined;
 
   constructor(
     public snapshot: IScriptSnapshot,
@@ -100,21 +113,32 @@ export class NolaVirtualCode implements VirtualCode {
     this.diagnostics = result.diagnostics;
     this.derivations = result.meta.mode === "lowered" ? result.meta.derivations : [];
     if (result.meta.mode === "lowered") {
-      const mappings = spansToMappings(result.meta.spans, result.meta.anchors, result.code);
-      this.lastGood = { text: result.code, mappings };
       this.stale = false;
-      return { id: "ts", languageId: "typescript", snapshot: snapshotOf(result.code), mappings };
+      // Reused only for the SAME source: the same generated text can come from
+      // a different source — `ask .` and `ask ..` both lower the marker to the
+      // inert placeholder — with different spans, and the mappings must follow
+      // the source (the broken span opts the character after it out of
+      // completion; served under the old mappings the cursor after `..` fell
+      // into a verbatim range and TypeScript answered with the global scope).
+      if (this.lastGood && this.lastGood.source === source && this.lastGood.text === result.code) {
+        return this.lastGood.code;
+      }
+      const mappings = spansToMappings(result.meta.spans, result.meta.anchors, result.code);
+      const code: VirtualCode = { id: "ts", languageId: "typescript", snapshot: snapshotOf(result.code), mappings };
+      this.lastGood = { source, text: result.code, code };
+      return code;
     }
     // Bailed (irrecoverable parse): serve last-good so the editor never goes
     // dark; diagnostics above already describe the current breakage.
     this.stale = true;
     if (this.lastGood) {
-      return {
+      this.lastGood.stale ??= {
         id: "ts",
         languageId: "typescript",
-        snapshot: snapshotOf(this.lastGood.text),
-        mappings: withoutSemanticTokens(this.lastGood.mappings),
+        snapshot: this.lastGood.code.snapshot,
+        mappings: withoutSemanticTokens(this.lastGood.code.mappings),
       };
+      return this.lastGood.stale;
     }
     // No last-good yet: raw source with a diagnostics-only whole-file mapping.
     return {

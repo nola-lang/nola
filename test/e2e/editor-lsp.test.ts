@@ -57,6 +57,7 @@ const published = new Map<string, LspDiagnostic[]>();
 // DidChangeWatchedFiles registration into FileSystemWatchers).
 const watcherGlobs: string[] = [];
 const FRESH_PATH = join(FIXTURE, "src", "fresh-on-disk.tsi");
+const CASED_PATH = join(FIXTURE, "src", "cased-on-disk.tsi");
 
 /**
  * A completion request as VS Code sends it when the user types a ".": trigger
@@ -115,6 +116,7 @@ afterAll(async () => {
   await server?.shutdown();
   server?.process.kill();
   rmSync(FRESH_PATH, { force: true });
+  rmSync(CASED_PATH, { force: true });
 });
 
 describe("LSP over examples/cross-file-types", () => {
@@ -177,6 +179,75 @@ describe("LSP over examples/cross-file-types", () => {
     const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.source === "nola" && x.code === "NOLA1001"));
     const nola = diags.find((d) => d.source === "nola" && d.code === "NOLA1001");
     expect(nola?.range.start).toEqual(positionOf(content, "<T>", 3));
+  });
+
+  // The same slip with the file continuing after it — `;<T>;` and another
+  // statement below. The first recovery was EOF-only, so this state bailed
+  // (a null AST, stale last-good output) on every keystroke until the `;` was
+  // removed. Now the missing operand is recovered before the `;` and the
+  // statements below it still lower: completion after `console.` on the next
+  // line is TypeScript's member list, not the global scope of a stale program.
+  it("reports an expression missing before a `;` mid-file and keeps parsing the rest", async () => {
+    const content = "type T = { a: string }\nconst r = ask `p`;<T>;\nconsole.\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "mid-file.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.source === "nola" && x.code === "NOLA1001"));
+    const nola = diags.find((d) => d.source === "nola" && d.code === "NOLA1001");
+    expect(nola?.range.start).toEqual(positionOf(content, "<T>;", 3));
+    const completion = await server.sendCompletionRequest(uri, positionOf(content, "console.", 8));
+    const labels = new Set((completion?.items ?? []).map((i) => i.label));
+    expect(labels.has("log")).toBe(true);
+    expect(labels.has("__nola")).toBe(false);
+  });
+
+  // `console.` typed as the LAST thing in the file: the appendix begins right
+  // after it, and TypeScript used to read `console.` + newline + `import {
+  // __nola }` as the property access `console.import` — the runtime import
+  // vanished and "Cannot find name '__nola'" landed on the ask site. The
+  // appendix now opens with `;`. Completion after the dot is TypeScript's own
+  // member list either way (the dangling access is kept verbatim).
+  it("a dangling `console.` at the end of the file keeps the appendix import (no TS2304 on the ask)", async () => {
+    const content = "const person = ask `the person`<{ name: string }>;\nconsole\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "dangling.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 6133));
+    const dot = { line: 1, character: "console".length };
+    await server.updateTextDocument(uri, [{ range: { start: dot, end: dot }, newText: "." }]);
+    const labels = await completionOnDotTrigger(uri, { line: 1, character: "console.".length });
+    expect(labels).toContain("log");
+    expect(labels).not.toContain("__nola");
+    // the semantic pass over the edited text: 6133 (person unused) proves it ran
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 6133));
+    expect(diags.map((d) => d.code)).not.toContain(2304);
+  });
+
+  // Volar looks an open document up by the exact string of its URI. When the
+  // editor's spelling of a file differs from the tsconfig's only in case (a
+  // folder opened as `d:/Work/...` on a `d:/work/...` disk), the project's
+  // sync misses the open document under the tsconfig spelling and reads the
+  // file from DISK: the program TypeScript answers from lags the editor by
+  // one autosave while the mappings follow the editor. A `.` typed after
+  // `console` was then answered at a position where the program had no dot —
+  // the whole global scope (`__nola`, `__nola_file_ctx`, ...) — and the
+  // derivation pass flashed errors under <T>. The server now falls back to a
+  // case-insensitive lookup on case-insensitive file systems.
+  it("a document opened under a differently cased URI still completes against the editor's text", async () => {
+    const onDisk = "const person = ask `the person`<{ name: string }>;\nconsole\n";
+    writeFileSync(CASED_PATH, onDisk);
+    const real = pathToFileURL(CASED_PATH).href;
+    await server.connection.sendNotification("workspace/didChangeWatchedFiles", { changes: [{ uri: real, type: 1 }] });
+    const odd = real.replace(/\/examples\//, "/EXAMPLES/").replace(/\/src\//, "/SRC/");
+    expect(odd).not.toBe(real);
+    await server.openInMemoryDocument(odd, "nola", onDisk);
+    await waitForDiagnostics(odd, (d) => d.some((x) => x.code === 6133));
+    // the editor moves on; the disk copy stays behind (no autosave yet)
+    const dot = { line: 1, character: "console".length };
+    await server.updateTextDocument(odd, [{ range: { start: dot, end: dot }, newText: "." }]);
+    await server.sendSemanticTokensRequest(odd);
+    const labels = await completionOnDotTrigger(odd, { line: 1, character: "console.".length });
+    expect(labels).toContain("log");
+    expect(labels).not.toContain("__nola");
   });
 
   it("hover inside .tsi shows the inferred Person type", async () => {

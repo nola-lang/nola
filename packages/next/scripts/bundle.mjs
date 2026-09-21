@@ -1,6 +1,7 @@
 // Bundles the Next loaders to CJS: Turbopack/webpack require() loader files,
 // and our workspace (incl. the vendored parser inside @nola-lang/parser) is
 // ESM — so everything except `esbuild` is inlined (typescript-plugin pattern).
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 for (const name of ["turbopack-loader", "client-error-loader"]) {
@@ -10,6 +11,8 @@ for (const name of ["turbopack-loader", "client-error-loader"]) {
     platform: "node",
     format: "cjs",
     outfile: `dist/${name}.cjs`,
+    // the parser's `charcodes` (CommonJS) as inlinable ESM constants — see scripts/esbuild/charcodes.js
+    alias: { charcodes: fileURLToPath(new URL("../../../scripts/esbuild/charcodes.js", import.meta.url)) },
     // derive (and the TypeScript it drives) is resolved at run time from the
     // project's dependencies: the checker must see the project's tsconfig and
     // its own installed types, and a bundled copy of TypeScript is 8 MB of dead weight.

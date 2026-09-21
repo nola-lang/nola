@@ -27,9 +27,15 @@ export function decorateLanguageServiceWithDerivationDiagnostics(
     if (!program || !(root instanceof NolaVirtualCode)) return base;
     const sf = program.getSourceFile(fileName);
     if (!sf) return base;
-    // the program's text is Volar's source-shaped whitespace shadow + the generated code
-    const leadingOffset = sf.text.length - root.embeddedCodes[0].snapshot.getLength();
-    const extra = derivationDiagnostics(program, fileName, root.derivations, { ...options, leadingOffset }).map(
+    // the program's text is Volar's source-shaped whitespace shadow + the
+    // generated code — verified by the pass, which answers nothing when the
+    // program is not at the virtual code's version (see derive's diagnostics.ts)
+    const snapshot = root.embeddedCodes[0].snapshot;
+    const generatedText = snapshot.getText(0, snapshot.getLength());
+    const leadingOffset = sf.text.length - generatedText.length;
+    const derived = derivationDiagnostics(program, fileName, root.derivations, { ...options, generatedText });
+    if (!derived) return base;
+    const extra = derived.map(
       (d): ts.Diagnostic => ({
         file: sf,
         start: d.generatedStart + leadingOffset,

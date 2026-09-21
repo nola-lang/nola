@@ -63,6 +63,58 @@ describe("parseNola tolerant mode: expression expected at end of file", () => {
     expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: 9 });
   });
 
+  // The same state NOT at EOF: the `;` (or a newline + statement) already
+  // follows the `<T>`. The typescript mixin tries `<T>` as arrow type
+  // parameters, then as a type assertion — the assertion's operand is the `;`,
+  // which cannot start an expression, and the throw took the file down.
+  it("`<T>;` followed by more statements recovers the same way, at the `;`", () => {
+    const src = "const r = ask `p`;<T>;\nconsole.log(r);\n";
+    const { ast, diagnostics } = parseNola(src, "t.tsi", { tolerant: true });
+    expect(ast).not.toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: src.indexOf("<T>") + 3 });
+    const program = (ast as { program?: { body?: Array<{ type: string; expression?: unknown }> } }).program;
+    expect(program?.body?.length).toBe(3);
+    const assertion = program?.body?.[1]?.expression as { type: string; expression: { nolaError?: boolean } };
+    expect(assertion.type).toBe("TSTypeAssertion");
+    expect(assertion.expression.nolaError).toBe(true);
+    expect(program?.body?.[2]?.type).toBe("ExpressionStatement");
+  });
+
+  it("an inline object type — `<{ name: string }>;` — recovers too (arrow type params cannot start with `{`)", () => {
+    const src = "const r = ask `p`;<{ name: string }>;\n";
+    const { ast, diagnostics } = parseNola(src, "t.tsi", { tolerant: true });
+    expect(ast).not.toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: src.indexOf(">;") + 1 });
+  });
+
+  it("`const x = ;` recovers at the `;`, and every later statement still parses", () => {
+    const { ast, diagnostics } = parseNola("const x = ;\nconst y = 1;\n", "t.tsi", { tolerant: true });
+    expect(ast).not.toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: 9 });
+    const program = (ast as { program?: { body?: Array<{ type: string }> } }).program;
+    expect(program?.body?.map((s) => s.type)).toEqual(["VariableDeclaration", "VariableDeclaration"]);
+  });
+
+  it("two missing expressions in one file are two recoveries (the once-only guard is per position)", () => {
+    const { ast, diagnostics } = parseNola("const a = ;\nconst b = ;\n", "t.tsi", { tolerant: true });
+    expect(ast).not.toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001", "NOLA1001"]);
+    expect(diagnostics.map((d) => d.loc.start.line)).toEqual([1, 2]);
+  });
+
+  it("a missing operand before a closing paren — `(a + )` — recovers right after the operator", () => {
+    const src = "const x = (a + );\nconst y = 1;\n";
+    const { ast, diagnostics } = parseNola(src, "t.tsi", { tolerant: true });
+    expect(ast).not.toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: src.indexOf("+") + 1 });
+    const program = (ast as { program?: { body?: Array<{ type: string }> } }).program;
+    expect(program?.body?.length).toBe(2);
+  });
+
   it("recovers ONCE: a loop that keeps asking for an expression at EOF still bails", () => {
     // an unclosed block body loops on parseStatement until `}` — without the
     // once-only guard the placeholder would be minted forever

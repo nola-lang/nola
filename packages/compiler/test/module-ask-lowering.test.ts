@@ -14,6 +14,7 @@ describe("module-body ask lowering (scope-bodies spec §5)", () => {
         "const mail = 'hi';",
         `export const label = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: \`label for \${__nola.fmt(mail)}\`, type: __nola_type_$1(), loc: "2:26", def: "${defHash("x.tsi", "extract", "label for ${mail}", "string")}" }), __nola_module_ctx());`,
         "",
+        ";",
         'import { __nola } from "@nola-lang/runtime";',
         "__nola.useRuntime(18);",
         'function __nola_file_ctx() { return __nola.context.file("x.tsi", 18); }',

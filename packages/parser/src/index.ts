@@ -45,7 +45,10 @@ export function parseNola(source: string, file: string, options: ParseOptions = 
     const ast = babelParse(source, {
       sourceType: "module",
       plugins: [["typescript", {}], "nola"],
-      attachComment: true,
+      // Nothing reads comments off the AST (JSDoc goes through the TypeScript
+      // checker; lowering copies bytes by span), so they are not attached —
+      // see test/comments.test.ts before turning this on
+      attachComment: false,
       errorRecovery: options.tolerant === true,
     }) as BaseNode & { errors?: BabelSyntaxError[] };
     const diagnostics = (ast.errors ?? []).map((e) => toDiagnostic(e, source, file));

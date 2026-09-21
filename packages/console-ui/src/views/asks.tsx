@@ -81,7 +81,7 @@ export function AsksView() {
         {!definition && <div className={EMPTY}>Select an ask definition to see how it behaves over time.</div>}
         {definition && <DefinitionPanel definition={definition} selectedAskId={askId} scaleKey={`${definition.def}|${JSON.stringify(asksQuery)}`} />}
         {definition && askDetail && (
-          <div className="mt-7 border-t pt-4">
+          <div className="mt-7 pt-4">
             {askDetail.kind === "call" ? (
               <CallPanel detail={askDetail} search={search} />
             ) : (

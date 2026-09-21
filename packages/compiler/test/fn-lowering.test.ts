@@ -17,6 +17,7 @@ const OUT = [
   '  }, __nola_file_ctx().func({ fn: "go", instruction: "", args: [{ name: "a", type: __nola_type_$1() }] }));',
   "}",
   "",
+  ";",
   'import { __nola } from "@nola-lang/runtime";',
   "__nola.useRuntime(18);",
   'function __nola_file_ctx() { return __nola.context.file("x.tsi", 18); }',

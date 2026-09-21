@@ -15,12 +15,24 @@ import { viewSpecifierFor } from "../view-name.js";
  * `const`/`let` — an infer function called during its own module's evaluation
  * (`const eager = go();`) reads it before the declaration runs and hits the TDZ.
  * It holds no state: `__nola.context.file` is memoized by path in the runtime.
+ *
+ * The leading `;` closes whatever the source ends with. In tolerant mode a
+ * dangling `console.` at the end of the file is kept verbatim (so TypeScript
+ * completes the members itself), and TypeScript reads `console.` + newline +
+ * `import { __nola } ...` as the property access `console.import` — its
+ * keyword-on-the-next-line recovery fires only when the keyword is followed
+ * by an identifier on the same line, and `{` is not one. That swallowed the
+ * runtime import and turned every `__nola` in the file into TS2304 at the
+ * ask sites. With the `;` TypeScript reports its own "Identifier expected"
+ * at the dot and the appendix parses; the same idiom bundlers use between
+ * concatenated modules.
  */
 export const runtimeImport = (
   displayFile: string,
   moduleScope?: { instructionField?: string; localEntries: string[] },
   decisionTypes: readonly string[] = [],
 ) => `
+;
 import { __nola } from "@nola-lang/runtime";
 ${decisionTypes.length > 0 ? `import type { ${decisionTypes.join(", ")} } from "@nola-lang/runtime";\n` : ""}__nola.useRuntime(${NOLA_EMIT});
 function __nola_file_ctx() { return __nola.context.file(${JSON.stringify(displayFile)}, ${NOLA_EMIT}); }

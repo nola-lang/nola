@@ -166,6 +166,23 @@ describe("dangling member access in tolerant mode", () => {
     expect(tsDiags).toHaveLength(1);
     expect(tsDiags[0]).toMatch(/Identifier expected/);
   });
+
+  // `console.` as the LAST thing in the file: the appendix begins right after
+  // it, and TypeScript reads `console.` + newline + `import { __nola } ...` as
+  // the property access `console.import` — its keyword-on-the-next-line
+  // recovery fires only when the keyword is followed by an identifier on the
+  // same line, and `{` is not one. The runtime import vanished and every
+  // `__nola` in the file became TS2304 at the ask sites.
+  it("a dangling access at the end of the file does not swallow the appendix import", () => {
+    const src = ["const person = ask `the person`<{ name: string }>;", "console."].join("\n");
+    const r = compileNola(src, "t.tsi", { tolerant: true });
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics).toEqual([]);
+    const tsDiags = typecheckLowered({ "t.ts": r.code });
+    expect(tsDiags.filter((d) => /__nola/.test(d))).toEqual([]);
+    expect(tsDiags).toHaveLength(1);
+    expect(tsDiags[0]).toMatch(/Identifier expected/);
+  });
 });
 
 // `ask `p`;<T>` — the `;` slipped in before the type args. Babel's TS mixin
@@ -186,6 +203,20 @@ describe("expression expected at end of file", () => {
     const broken = r.meta.spans.filter((s) => s.kind === "broken");
     expect(broken).toHaveLength(1);
     expect(broken[0]).toMatchObject({ sourceStart: src.indexOf("<T>") + 3, sourceEnd: src.indexOf("<T>") + 3 });
+  });
+
+  it("lowers the missing operand of `<T>;` mid-file the same way, and the rest of the file lowers normally", () => {
+    const src = "type T = { a: string }\nconst r = ask `p`;<T>;\nconst q = ask `q`<T>;\n";
+    const r = compileNola(src, "t.tsi", { tolerant: true });
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(r.code).toContain(";<T>(undefined as never);\n");
+    // the ask after the broken line is still lowered, with ITS type args intact
+    expect(r.code).toContain("__nola.ask(__nola.intents.ExtractIntent<T>({ instruction: `q`");
+    expect(typecheckLowered({ "t.ts": r.code })).toEqual([]);
+    const broken = r.meta.spans.filter((s) => s.kind === "broken");
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatchObject({ sourceStart: src.indexOf("<T>;") + 3, sourceEnd: src.indexOf("<T>;") + 3 });
   });
 
   it("strict mode bails to source", () => {

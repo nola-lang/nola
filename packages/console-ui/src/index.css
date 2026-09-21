@@ -2,28 +2,31 @@
 @import "tw-animate-css";
 
 /*
- * The ONLY place colours, fonts and radii are defined. The values are the
- * console's original palette (amber accent, panel greys, mono type), mapped
- * onto shadcn's semantic names so the copied components pick them up.
+ * The ONLY place colours, fonts and radii are defined. The ground is the nola.sh
+ * landing page's (ink background, panel greys — see the website's landing.css);
+ * the amber accent, status hues and mono type are the console's own. Mapped onto
+ * shadcn's semantic names so the copied components pick them up. Panels draw
+ * NO borders — surfaces (--card on --background) separate them; --border is
+ * left for the resizable handle, inputs and row separators.
  */
 :root {
-  --background: #16181d;
+  --background: #0a0c0b; /* nola.sh ink */
   --foreground: #e8e6e1;
-  --card: #1d2026;
+  --card: #121615; /* nola.sh panel */
   --card-foreground: #e8e6e1;
-  --popover: #1d2026;
+  --popover: #121615;
   --popover-foreground: #e8e6e1;
   --primary: #e8a13d; /* the live/selection amber */
-  --primary-foreground: #16181d;
-  --secondary: #1d2026;
+  --primary-foreground: #0a0c0b;
+  --secondary: #121615;
   --secondary-foreground: #e8e6e1;
-  --muted: #1d2026;
+  --muted: #121615;
   --muted-foreground: #8a8f98;
-  --accent: #1d2026; /* hover ground — the panel */
+  --accent: #121615; /* hover ground — the panel */
   --accent-foreground: #e8e6e1;
   --destructive: #d4645c;
-  --border: #2a2e36;
-  --input: #2a2e36;
+  --border: #242927;
+  --input: #242927;
   --ring: #e8a13d;
   --ok: #7fb069;
   --err: #d4645c;

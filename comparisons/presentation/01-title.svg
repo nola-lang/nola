@@ -8,8 +8,8 @@
   <text x="120" y="566" font-family="Inter" font-size="24" fill="#8A929C">Every folder is a complete, installable project. Same domain types, same inputs, same output.</text>
   <rect x="120.0" y="700" width="266.7" height="180" rx="14" fill="#E6F2F3" stroke="#0E7C86" stroke-width="2"/>
   <text x="144.0" y="754" font-family="Inter" font-size="24" font-weight="700" fill="#0A5A62">Nola</text>
-  <text x="144.0" y="802" font-family="Roboto Mono" font-size="22" font-weight="500" fill="#0A5A62">87 lines</text>
-  <text x="144.0" y="838" font-family="Inter" font-size="15" fill="#437A80">5 files &#183; 0 codegen</text>
+  <text x="144.0" y="802" font-family="Roboto Mono" font-size="22" font-weight="500" fill="#0A5A62">85 lines</text>
+  <text x="144.0" y="838" font-family="Inter" font-size="15" fill="#437A80">4 files &#183; 0 codegen</text>
   <rect x="402.7" y="700" width="266.7" height="180" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
   <text x="426.7" y="754" font-family="Inter" font-size="24" font-weight="700" fill="#161C24">BAML</text>
   <text x="426.7" y="802" font-family="Roboto Mono" font-size="22" font-weight="500" fill="#5B6573">112 lines</text>

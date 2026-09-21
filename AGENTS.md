@@ -114,7 +114,7 @@ ast, core                    # leaf types + shared utilities (errors, redact, fi
   → compiler                 # compileNola(): AST → { code, map, meta, diagnostics } — PHASE 1 (inert accessors + meta.derivations) + finalizeDerivations; no TypeScript, no node:path
   → derive                   # deps compiler + typescript (>=5.6 <7): the checker walk (deriveType), answerRequests, DerivationService (one ts.LanguageService per process), derivationDiagnostics
   → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
-  → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (original amber/panel/mono tokens mapped onto shadcn names — keep the look); LIVE UPDATES (2026-09-16) are patch-then-refetch: `/api/events` carries every ingest envelope, `live-sync.ts` applies each one to the cached definitions at once (`applyNotice`, live-definition.ts — a re-implementation of storage's askStart/askEnd row mapping, held to it by `test/live-definition-parity.test.ts`; change the ingest mapping in sqlite.ts and you change it there too) and then refetches only the queries that notice can have changed (`live-keys.ts`) through the self-pacing `refresh-queue.ts` (first at once, one round at a time, never a trailing debounce — that starved under a steady run of asks); notices that arrive mid-round are re-applied when it settles so an older read cannot blink a bar out; the duration chart draws a running execution at its elapsed time, pads to `MIN_SLOTS` so a new bar takes an empty slot, and holds its Y ceiling (`chart-scale.ts`)
+  → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (since 2026-09-20 the GROUND is the nola.sh landing page's — ink `#0a0c0b` background, `#121615` panels, from the website checkout's landing.css — with the console's own amber accent, status hues and mono type mapped onto shadcn names; PANELS DRAW NO BORDERS — surfaces separate them, `--border` survives only on the resizable handle, inputs and row separators); LIVE UPDATES (2026-09-16) are patch-then-refetch: `/api/events` carries every ingest envelope, `live-sync.ts` applies each one to the cached definitions at once (`applyNotice`, live-definition.ts — a re-implementation of storage's askStart/askEnd row mapping, held to it by `test/live-definition-parity.test.ts`; change the ingest mapping in sqlite.ts and you change it there too) and then refetches only the queries that notice can have changed (`live-keys.ts`) through the self-pacing `refresh-queue.ts` (first at once, one round at a time, never a trailing debounce — that starved under a steady run of asks); notices that arrive mid-round are re-applied when it settles so an older read cannot blink a bar out; the duration chart draws a running execution at its elapsed time, pads to `MIN_SLOTS` so a new bar takes an empty slot, and holds its Y ceiling (`chart-scale.ts`)
   → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); the runtime renders for classic providers (they receive a ClassicPrompt), only the platform model gets the InferenceModel — its `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
   → node-loader, typescript-plugin  # typescript-plugin: language-core + @volar/typescript
   → nola-lang                # the dev tool users install: nola bin (build/run/check/declarations) + ./register
@@ -454,7 +454,14 @@ plugin expects, adapt the *plugin*, never the test expectations.
 - **Lowering is byte-identical outside replaced spans.** Only the runtime import and
   the `__nola_file_ctx` accessor are *appended at EOF* (ESM hoists the import;
   `function` declarations hoist with their value) so original line/column positions
-  never shift. **No module-level context state is emitted** — `__nola_file_ctx()`
+  never shift. The appendix OPENS WITH `;` on its own line (2026-09-19): in
+  tolerant mode a dangling `console.` at the end of the file is kept verbatim,
+  and TypeScript read `console.` + newline + `import { __nola }` as the property
+  access `console.import` (its keyword-on-the-next-line recovery needs an
+  identifier after the keyword on the same line; `{` is not one) — the runtime
+  import vanished and every `__nola` in the file was TS2304 at the ask sites. The
+  `;` is the bundlers' idiom between concatenated modules; a test in
+  `tolerant-compile.test.ts` holds it. **No module-level context state is emitted** — `__nola_file_ctx()`
   delegates to `__nola.context.file(path)`, a runtime helper memoized by path. The
   accessor must stay a `function` declaration: as a `const`/`let` it is in its TDZ,
   and as a `var` it is `undefined`, when an infer function is called during its own
@@ -482,7 +489,12 @@ plugin expects, adapt the *plugin*, never the test expectations.
   source (default-export object, defineConfig wrapper, as/satisfies, one identifier
   indirection); `discoverCompilerConfig` (language-core) finds the nearest config
   with an mtime cache and threads it into every editor compile, so config edits
-  land on the next recompile. A COMPUTED value is invisible to the editor (falls
+  land on the next recompile. It runs on EVERY keystroke of every open file,
+  so since 2026-09-20 the ancestor walk (an existsSync per directory) is
+  memoized per start directory for `CONFIG_DISCOVERY_TTL_MS` (2 s; a config
+  CREATED lands within it, a REMOVED one at once — the per-call stat fails
+  and forgets the location); the clock is an injectable `now` for tests. A
+  COMPUTED value is invisible to the editor (falls
   back to the default) while build/check/run see the evaluated truth — keep the
   editor-relevant value literal.
 - **Tolerant mode and spans (Track 1, editor groundwork).** `parseNola`/`compileNola`
@@ -521,21 +533,29 @@ plugin expects, adapt the *plugin*, never the test expectations.
   the marker span is parked on the id as `nolaReservedMarker` and the
   lowerer's `VariableDeclarator` case drops it under `broken`).
   On a plain function `.` is NOLA1010 and its bytes survive into the lowered
-  output, as before. A THIRD recovery (2026-09-19): an expression expected at
-  the END OF THE FILE — `const x =`, or `` ask `p`;<T> `` where the `;` slipped
-  in before the type args and the typescript mixin reads `<T>` as a type
-  assertion with no operand — used to reach the same throwing `unexpected()`
-  and bail. `parseExprAtom` now mints a ZERO-WIDTH placeholder right after
-  the last token (`nolaMissingExpression`: NOLA1001 "expected an expression
-  before the end of the file", reported on the line it belongs to, not the
-  trailing blank one), lowered by `appendLeft` under a `broken` span since
-  there are no bytes to overwrite. It is once per PARSER STATE OBJECT
-  (`nolaEofPlaceholderState`): nothing is consumed at EOF, so an unclosed
-  block's statement loop must hit the throw on its second visit, while a
-  `tryParse` rollback (the typescript mixin tries `<T>` as arrow type
-  parameters BEFORE a type assertion) swaps in a fresh state and asks again
-  legitimately — a plain boolean on the parser survived the rollback and
-  broke exactly the `<T>` case. Two editor-layer rules follow from what a
+  output, as before. A THIRD recovery (2026-09-19, widened 2026-09-20): an
+  expression expected where none can start — at the END OF THE FILE, or
+  before a token that closes or separates the enclosing construct (`;` `)`
+  `]` `}` `,`): `const x =`, `const x = ;`, `(a + )`, or `` ask `p`;<T> `` /
+  `` ask `p`;<T>; `` where the `;` slipped in before the type args and the
+  typescript mixin reads `<T>` as a type assertion with no operand — used to
+  reach the same throwing `unexpected()` and bail (the EOF-only first version
+  still bailed as soon as a `;` or the next line followed the `<T>`).
+  `parseExprAtom` now mints a ZERO-WIDTH placeholder right after the last
+  token (`nolaMissingExpression`: NOLA1001 "expected an expression", reported
+  on the line it belongs to, not on the closer or the trailing blank one),
+  lowered by `appendLeft` under a `broken` span since there are no bytes to
+  overwrite. It is once per PARSER STATE OBJECT AND POSITION
+  (`nolaMissingExpressionState` / `nolaMissingExpressionPos`): the
+  placeholder consumes nothing, so an unclosed block's statement loop at EOF
+  must hit the throw on its second visit, while a `tryParse` rollback (the
+  typescript mixin tries `<T>` as arrow type parameters BEFORE a type
+  assertion) swaps in a fresh state and asks again legitimately — a plain
+  boolean on the parser survived the rollback and broke exactly the `<T>`
+  case — and a second `const b = ;` in the same file is a different position
+  on the same state. Babel recovers `f(, a)` on its own (a recoverable raise
+  at the comma), so that one never reaches the placeholder. Two editor-layer
+  rules follow from what a
   bail costs: nola-native diagnostics are published on the ROOT document
   (the `.tsi` source, whose identity mapping carries `verification` — Volar
   visits the root code in its diagnostics loop too), never translated
@@ -1048,13 +1068,26 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `@nola-lang/node-loader/project-root` (a runtime-free module — never add a
   runtime import there), because the package index evaluates
   `register.ts`/`config.ts` and would drag the whole runtime, slot claim
-  included, into an editor process. The three CJS bundle scripts
-  (language-server, typescript-plugin, next) FAIL on any esbuild warning and
-  inject `scripts/esbuild/import-meta-url.js` so an inlined ESM
-  `import.meta.url` (derive's fallback, the loader's `module.register`
-  parentURL) is the bundle's own file URL rather than esbuild's empty `{}`;
-  the tsserver entry is `tsserver-entry.cts` (`export =`) because a
-  `module.exports` in an ESM-typed `.ts` is itself a bundler warning.
+  included, into an editor process. The four bundle scripts that inline the
+  parser (parser, language-server, typescript-plugin, next) FAIL on any
+  esbuild warning; the three CJS ones also inject
+  `scripts/esbuild/import-meta-url.js` so an inlined ESM `import.meta.url`
+  (derive's fallback, the loader's `module.register` parentURL) is the
+  bundle's own file URL rather than esbuild's empty `{}`; the tsserver entry
+  is `tsserver-entry.cts` (`export =`) because a `module.exports` in an
+  ESM-typed `.ts` is itself a bundler warning. ALL FOUR ALIAS `charcodes` →
+  `scripts/esbuild/charcodes.js` (2026-09-20): the fork reads its character
+  constants from that CommonJS package, and esbuild exposes a CommonJS
+  module's exports through getters, so every `charCodes.x` in the tokenizer's
+  inner loop was a function call — the bundled parser ran 2.5x slower than
+  the unbundled one (one getter was a third of the parse in a CPU profile).
+  The shim is an ESM module of plain `export const` integers GENERATED from
+  the installed package; `test/esbuild-charcodes-shim.test.ts` holds every
+  key/value and every name the fork reads to it (regenerate it on a
+  `charcodes` upgrade), and `test/e2e/parser-bundle-parity.test.ts` holds
+  the bundled parser's AST + diagnostics byte-for-byte to the source parser's
+  over every `.tsi` in the repo plus the tolerant recoveries. The fork itself
+  is untouched (no VENDOR.md entry).
 - **Cross-file types: the `*.tsi` view rule (emit 14; companions and the
   `*.nola.*` namespace are RETIRED, NOLA2006 with them).** A type reached in
   another project file lowers to `__nola.types.ref("<moduleId>#<Name>", () =>
@@ -1170,7 +1203,15 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   `meta.spans` → `CodeMapping[]` (verbatim = full features, replaced =
   verification-only, appendix unmapped), `meta.mode === "bailed"` → last-good
   embedded code with `stale = true` and current parse diagnostics on
-  `NolaVirtualCode.diagnostics` (Track 3's server reads them). Volar is pinned
+  `NolaVirtualCode.diagnostics` (Track 3's server reads them). The embedded
+  snapshot is served BY IDENTITY (2026-09-20): Volar keys TypeScript's script
+  version, the project version, the source-map memo and the embedded document
+  version on the snapshot OBJECT, so an update whose generated text is
+  unchanged — the same source again, or a bailed keystroke served last-good —
+  returns the previously served `VirtualCode` (and, for a bail, one memoized
+  semantic-less copy), never a fresh object for identical text; a fresh one
+  cost a full TypeScript re-parse + re-check, a map rebuild and a derivation
+  pass per keystroke while a construct was half-typed. Volar is pinned
   EXACT (2.4.28). Companions in the editor are host-level synthetic scripts —
   `decorateHostWithCompanions` in `@nola-lang/typescript-plugin` — derived from
   the LIVE source snapshot and versioned by it; never VirtualCode. The tsserver
@@ -1200,7 +1241,21 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   itself, so without it a `.tsi` created on disk after startup fell into
   the INFERRED project (module CommonJS) and a top-level ask showed TS1378
   until a window reload (2026-09-18; the LSP e2e advertises the capability
-  and sends the created-file notification the way VS Code does). Everything the editor host
+  and sends the created-file notification the way VS Code does). The server also
+  DECORATES `server.documents.get` on case-insensitive file systems
+  (`document-lookup.ts`, 2026-09-19): Volar finds an open document by the EXACT
+  string of its URI while its script map, TypeScript and its own unsaved-file
+  matching are case-insensitive, so an editor URI that differs from the
+  tsconfig spelling only in case (`d:/Work/App` vs `d:/work/App`) made the same
+  file two root names — the project's sync hit the open document under one and
+  fell back to the file ON DISK under the other, and the one shared script
+  flipped between the two texts on every host call. The program then lagged
+  the editor by one autosave: a `.` after `console` was answered with the whole
+  global scope (`__nola`, `__nola_file_ctx`, …), TS2304 and derivation errors
+  flashed under `<T>` for the 1–2 s until autosave. The LSP e2e opens a file
+  under `/EXAMPLES/…/SRC/` and expects console members; the derivation pass
+  additionally refuses a program whose text is not the virtual code's
+  (`derivationDiagnostics` `generatedText`). Everything the editor host
   `require`s ships as an esbuild CJS bundle wired into `npm run build`:
   tsserver plugin (the `require` condition of `@nola-lang/typescript-plugin`),
   LSP server (`@nola-lang/language-server/server.cjs`), extension

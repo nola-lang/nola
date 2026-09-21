@@ -10,7 +10,7 @@ import { StatusDot } from "./status-dot";
 export const LABEL = "mt-6 mb-2 font-sans font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.12em]";
 export const META = "col-start-2 font-mono text-[11px] text-muted-foreground";
 export const ROW =
-  "grid w-full grid-cols-[auto_1fr] items-center gap-x-2.5 border-b px-3.5 py-2.5 text-left text-foreground hover:bg-card focus-visible:outline-2 focus-visible:outline-ring";
+  "grid w-full grid-cols-[auto_1fr] items-center gap-x-2.5 px-3.5 py-2.5 text-left text-foreground hover:bg-card focus-visible:outline-2 focus-visible:outline-ring";
 export const ROW_SELECTED = "bg-card shadow-[inset_2px_0_0_var(--primary)]";
 
 /** The owning invocation chain, root first — each name opens that invocation. */
@@ -77,7 +77,7 @@ export function AskBody({ detail }: { detail: AskDetail }) {
       {detail.attemptRows.length > 0 && (
         <section>
           <h2 className={LABEL}>attempts</h2>
-          <ol className="m-0 list-none rounded-md border p-0">
+          <ol className="m-0 list-none rounded-md p-0">
             {detail.attemptRows.map((attempt) => (
               <li
                 key={attempt.attempt}

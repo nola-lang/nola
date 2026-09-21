@@ -36,7 +36,7 @@ function Shell() {
   return (
     <div className="flex h-screen">
       {/* Activity bar: icons only, never expands (VS Code style). */}
-      <nav className="flex w-12 shrink-0 flex-col border-r" aria-label="Views">
+      <nav className="flex w-12 shrink-0 flex-col" aria-label="Views">
         <Link to="/" className="grid h-12 place-items-center focus-visible:outline-2 focus-visible:outline-ring" title="Nola Console">
           <img src="/nola.svg" alt="Nola" className="block w-6.5" />
         </Link>
@@ -62,7 +62,7 @@ function Shell() {
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-4 border-b px-3">
+        <header className="flex h-12 shrink-0 items-center gap-4 px-3">
           <FilterBar projects={projects} />
         </header>
         <Outlet />

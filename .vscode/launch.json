@@ -109,7 +109,7 @@
 			"type": "node",
 			"request": "launch",
 			"name": "Nola: inbox-triage comparison",
-			"program": "${workspaceFolder}/comparisons/inbox-triage/nola/src/main.ts",
+			"program": "${workspaceFolder}/comparisons/inbox-triage/nola/src/main.tsi",
 			"runtimeArgs": ["--import", "nola-lang/register", "--enable-source-maps"],
 			"console": "integratedTerminal",
 			"cwd": "${workspaceFolder}/comparisons/inbox-triage/nola",

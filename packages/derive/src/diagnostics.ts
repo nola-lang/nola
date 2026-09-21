@@ -14,13 +14,22 @@ export interface EditorDerivationDiagnostic {
 export interface EditorDerivationOptions {
   sourceRoot: string;
   /**
-   * Volar serves a `.tsi` to TypeScript as a whitespace shadow of the SOURCE
-   * followed by the generated text (decorateLanguageServiceHost, unless
-   * preventLeadingOffset), so a request's `lowered` range sits this many
-   * characters later in the program's SourceFile than in the embedded code:
-   * `sourceFile.text.length - embeddedText.length`. Reported positions stay
-   * in embedded coordinates.
+   * The generated (embedded) text the requests were computed on. Volar serves
+   * a `.tsi` to TypeScript as a whitespace shadow of the SOURCE followed by
+   * that text (decorateLanguageServiceHost, unless preventLeadingOffset), so
+   * a request's `lowered` range sits `sourceFile.text.length - generatedText
+   * .length` characters later in the program's SourceFile than in the
+   * embedded code. Passing the text lets the pass VERIFY that the program is
+   * at this version before it reads a single range: the requests and the
+   * program are versioned independently (the virtual code updates on the
+   * document, the program on its own sync), and a program one edit behind
+   * turned the length difference into a shift that landed every range on the
+   * wrong node — `<Perso` is spanned by the ExtractIntent call, typed
+   * Askable<T>, and the walk failed on its first method. Reported positions
+   * stay in embedded coordinates.
    */
+  generatedText?: string;
+  /** The raw shift, for a caller that has verified the program itself. Ignored when `generatedText` is given. */
   leadingOffset?: number;
 }
 
@@ -31,16 +40,28 @@ export interface EditorDerivationOptions {
  * failures produce nothing — the value is typed `InferType` in the editor and
  * `nola check` reports the UnsupportedType — and a context site only reports
  * under the "error" policy, exactly as finalizeDerivations does.
+ *
+ * Returns `undefined` when `generatedText` is given and the program's
+ * SourceFile does not end with it — the program is not at this version, and
+ * nothing can be said about these requests from it. The caller keeps what it
+ * last published; the next pass runs against the caught-up program.
  */
 export function derivationDiagnostics(
   program: ts.Program,
   fileName: string,
   derivations: DerivationRequest[],
   options: EditorDerivationOptions,
-): EditorDerivationDiagnostic[] {
+): EditorDerivationDiagnostic[] | undefined {
   const sf = program.getSourceFile(fileName);
-  if (!sf || derivations.length === 0) return [];
-  const leading = options.leadingOffset ?? 0;
+  if (!sf) return [];
+  let leading: number;
+  if (options.generatedText !== undefined) {
+    if (!sf.text.endsWith(options.generatedText)) return undefined;
+    leading = sf.text.length - options.generatedText.length;
+  } else {
+    leading = options.leadingOffset ?? 0;
+  }
+  if (derivations.length === 0) return [];
   const shifted = derivations.map((req) => ({
     ...req,
     lowered: { start: req.lowered.start + leading, end: req.lowered.end + leading },

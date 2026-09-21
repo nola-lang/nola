@@ -1,7 +1,7 @@
 import { compileNola } from "@nola-lang/compiler";
 import { derivationDiagnostics } from "@nola-lang/derive";
 import { NolaVirtualCode } from "@nola-lang/language-core";
-import type { LanguageServicePlugin } from "@volar/language-service";
+import type { Diagnostic, LanguageServicePlugin } from "@volar/language-service";
 import type ts from "typescript";
 import type { Provide } from "volar-service-typescript";
 import { URI } from "vscode-uri";
@@ -38,6 +38,8 @@ export function createNolaServicePlugin(typescript: typeof ts, options: { source
     },
     create(context) {
       const formatter = createSourceFormatter(typescript);
+      /** the derivation diagnostics last published per embedded document — served again when a pass finds the program at another version */
+      const lastDerivation = new Map<string, Diagnostic[]>();
       return {
         provideDiagnostics(document) {
           const decoded = context.decodeEmbeddedDocumentUri(URI.parse(document.uri));
@@ -64,30 +66,44 @@ export function createNolaServicePlugin(typescript: typeof ts, options: { source
             }));
           }
 
-          const out = [];
           // The lazy derivation pass (spec §7): the embedded code is phase-1
           // output, so underivable types are found here against the live
           // program. Generated offsets — this IS the embedded document.
+          if (root.derivations.length === 0) {
+            lastDerivation.delete(document.uri);
+            return [];
+          }
           const ls =
             typeof context.inject === "function"
               ? context.inject<Provide, "typescript/languageService">("typescript/languageService")
               : undefined;
           const program = ls?.getProgram();
           const fileName = decoded[0].fsPath.replace(/\\/g, "/");
-          const programFile = program?.getSourceFile(fileName);
-          if (program && programFile && root.derivations.length > 0) {
-            // the program's text is Volar's source-shaped whitespace shadow + this embedded text
-            const leadingOffset = programFile.text.length - virtualCode.snapshot.getLength();
-            for (const d of derivationDiagnostics(program, fileName, root.derivations, { sourceRoot, leadingOffset })) {
-              out.push({
-                range: { start: document.positionAt(d.generatedStart), end: document.positionAt(d.generatedEnd) },
-                severity: 1 as const,
-                code: d.code,
-                source: "nola",
-                message: d.message,
-              });
-            }
-          }
+          // Three versions meet here: the document Volar handed this pass, the
+          // virtual code (synced to the newest source by `scripts.get` above)
+          // and the program's SourceFile. The requests belong to the virtual
+          // code; deriving them against a program or reporting them on a
+          // document that is at another version lands every range on the wrong
+          // node (a program one edit behind read `<Perso`, spanned by the
+          // ExtractIntent call, and failed on `withRetry` of Askable<T> — the
+          // error that flashed under <T> on every keystroke). When the three
+          // disagree, this pass has nothing to say: keep what was last
+          // published for the document and let the next pass, over the
+          // caught-up program, replace it.
+          const generatedText = virtualCode.snapshot.getText(0, virtualCode.snapshot.getLength());
+          const derived =
+            program && document.getText() === generatedText
+              ? derivationDiagnostics(program, fileName, root.derivations, { sourceRoot, generatedText })
+              : undefined;
+          if (!derived) return lastDerivation.get(document.uri) ?? [];
+          const out = derived.map((d) => ({
+            range: { start: document.positionAt(d.generatedStart), end: document.positionAt(d.generatedEnd) },
+            severity: 1 as const,
+            code: d.code,
+            source: "nola",
+            message: d.message,
+          }));
+          lastDerivation.set(document.uri, out);
           return out;
         },
         provideDocumentFormattingEdits(document, range, options) {

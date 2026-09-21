@@ -106,7 +106,7 @@ export function ExecutionsTable({ asks, selectedAskId }: { asks: AskSummary[]; s
   }, [pageCount, pageIndex, table]);
 
   return (
-    <div className="overflow-hidden rounded-md border">
+    <div className="overflow-hidden rounded-md">
       <Table className="table-fixed font-mono text-xs">
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
@@ -158,7 +158,7 @@ export function ExecutionsTable({ asks, selectedAskId }: { asks: AskSummary[]; s
           })}
         </TableBody>
       </Table>
-      <div className="flex items-center gap-3 border-t px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-3 px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
         <span>
           {asks.length} execution{asks.length === 1 ? "" : "s"}
         </span>

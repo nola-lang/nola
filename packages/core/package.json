@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/core",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Core types and shared utilities for the Nola toolchain (internal)",
   "keywords": [
     "nola"

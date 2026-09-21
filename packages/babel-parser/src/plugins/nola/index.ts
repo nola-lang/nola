@@ -46,7 +46,7 @@ export const NolaErrors = ParseErrorEnum`nola`({
     "NOLA1017: the implied extractor needs whitespace before its template — write `ask `…`` (`ask`…`` reads as a tagged template).",
   // No code prefix: this is the ordinary syntax error (NOLA1001), worded the
   // way TypeScript words it — only its recovery is ours.
-  NolaExpectedExpression: "expected an expression before the end of the file.",
+  NolaExpectedExpression: "expected an expression.",
 });
 
 export default (superClass: typeof Parser) =>
@@ -72,13 +72,16 @@ export default (superClass: typeof Parser) =>
     // expression position a scope access instead of a syntax error.
     nolaTemplateStack: Array<{ scopeAccess: boolean }> = [];
 
-    // The parser state the end-of-file placeholder was minted on (see
-    // parseExprAtom). Nothing is consumed at EOF, so the recovery must not
-    // repeat on the SAME state or a loop that keeps asking for an expression
-    // there would never end — while a tryParse rollback (the typescript mixin
-    // tries `<T>` as arrow type parameters before a type assertion) swaps in
-    // a fresh state object and legitimately asks again.
-    nolaEofPlaceholderState: object | null = null;
+    // The parser state and position the missing-expression placeholder was
+    // last minted on (see parseExprAtom). The placeholder consumes nothing, so
+    // the recovery must not repeat on the SAME state at the SAME position or a
+    // loop that keeps asking for an expression there (an unclosed block at EOF)
+    // would never end — while a tryParse rollback (the typescript mixin tries
+    // `<T>` as arrow type parameters before a type assertion) swaps in a fresh
+    // state object and legitimately asks again at that position, and a later
+    // `const b = ;` in the same file is a different position on the same state.
+    nolaMissingExpressionState: object | null = null;
+    nolaMissingExpressionPos = -1;
 
     parseTemplate(isTagged: boolean): N.TemplateLiteral {
       const entry = { scopeAccess: false };
@@ -194,13 +197,14 @@ export default (superClass: typeof Parser) =>
       return this.finishNode(node as never, "NolaExtractExpression" as never);
     }
 
-    // The expression missing at the END OF THE FILE: `const x =`, a `<T>` type
-    // assertion with nothing after it (the `;` slipped in before an
-    // extractor's type args). A zero-width placeholder right after the last
-    // token — where the operand belongs, and where the diagnostic lands
-    // rather than on the trailing blank line the EOF token sits on. Same
-    // placeholder node as the marker recoveries: the lowering replaces it
-    // with the inert expression under a `broken` span.
+    // The expression missing where the parser stands: `const x =` at the end
+    // of the file or before a `;`, a `<T>` type assertion with nothing after
+    // it (the `;` slipped in before an extractor's type args), `f(, a)`. A
+    // zero-width placeholder right after the last token — where the operand
+    // belongs, and where the diagnostic lands rather than on the closer (or
+    // the trailing blank line the EOF token sits on). Same placeholder node
+    // as the marker recoveries: the lowering replaces it with the inert
+    // expression under a `broken` span.
     nolaMissingExpression(): N.Expression {
       const at = (this.state.lastTokEndLoc ?? this.state.startLoc) as Position;
       this.raise(NolaErrors.NolaExpectedExpression, at);
@@ -310,19 +314,30 @@ export default (superClass: typeof Parser) =>
       if (this.match(tt.dot) && this.optionFlags & OptionFlags.ErrorRecovery) {
         return this.nolaIncompleteExtract();
       }
-      // An expression expected at the end of the file. super reaches
-      // unexpected(), which THROWS even under errorRecovery — the whole file
-      // bails and the editor serves last-good output whose mappings describe
-      // an OLDER text (semantic tokens on the wrong characters, the parse
-      // error dropped). TypeScript recovers with a missing expression; do the
-      // same, ONCE per parser state: the second visit at EOF on the same state
-      // (an unclosed block's statement loop) reaches the throw as before.
+      // An expression expected where none can start: the end of the file, or
+      // a token that closes or separates the enclosing construct — `const x =
+      // ;`, `f(, a)`, and `ask `p`;<T>;` where the `;` slipped in before the
+      // type args and the typescript mixin reads `<T>` as a type assertion
+      // whose operand is the `;`. super reaches unexpected(), which THROWS
+      // even under errorRecovery — the whole file bails and the editor serves
+      // last-good output whose mappings describe an OLDER text (semantic
+      // tokens on the wrong characters, the parse error dropped). TypeScript
+      // recovers with a missing expression; do the same, ONCE per parser
+      // state and position: a second visit at the same place on the same
+      // state (an unclosed block's statement loop at EOF) reaches the throw
+      // as before, so no loop is fed forever.
       if (
-        this.match(tt.eof) &&
         this.optionFlags & OptionFlags.ErrorRecovery &&
-        this.nolaEofPlaceholderState !== this.state
+        (this.match(tt.eof) ||
+          this.match(tt.semi) ||
+          this.match(tt.parenR) ||
+          this.match(tt.braceR) ||
+          this.match(tt.bracketR) ||
+          this.match(tt.comma)) &&
+        !(this.nolaMissingExpressionState === this.state && this.nolaMissingExpressionPos === this.state.start)
       ) {
-        this.nolaEofPlaceholderState = this.state;
+        this.nolaMissingExpressionState = this.state;
+        this.nolaMissingExpressionPos = this.state.start;
         return this.nolaMissingExpression();
       }
       if (this.match(tt.nolaDotDot)) {

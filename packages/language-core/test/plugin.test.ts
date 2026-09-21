@@ -2,6 +2,7 @@ import { mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNolaLanguagePlugin, NolaVirtualCode } from "@nola-lang/language-core";
+import { defaultMapperFactory } from "@volar/language-core";
 import type ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -149,5 +150,84 @@ describe("NolaVirtualCode: what a bailed snapshot may serve", () => {
     const back = restored instanceof NolaVirtualCode ? restored : current;
     expect(back.stale).toBe(false);
     expect(back.embeddedCodes[0].mappings.some((m) => m.data.semantic)).toBe(true);
+  });
+});
+
+// Volar keys four caches on the IDENTITY of the embedded snapshot object:
+// TypeScript's script version, the project version, the source-map memo and
+// the embedded document version. A fresh object for the same text forces a
+// full TypeScript re-parse and re-check, a source-map rebuild and a
+// derivation pass. So an update whose generated text is unchanged — the
+// same source set again, or a bailed keystroke served last-good — returns
+// the previous embedded snapshot (and mappings) instead of a copy.
+describe("NolaVirtualCode: snapshot identity across updates", () => {
+  const GOOD = "const i = ..`x`<string>;\n";
+  const OTHER = "const j = ..`y`<number>;\n";
+  const BAILS = "const i = ..`x`<string>;\nfoo(\n";
+
+  function update(code: NolaVirtualCode, text: string): NolaVirtualCode {
+    const updated = plugin.updateVirtualCode?.("/proj/a.tsi", code, snap(text), {} as never);
+    return updated instanceof NolaVirtualCode ? updated : code;
+  }
+
+  it("the same source set again serves the same embedded snapshot object", () => {
+    const code = create(GOOD);
+    const before = code.embeddedCodes[0];
+    const after = update(code, GOOD).embeddedCodes[0];
+    expect(after.snapshot).toBe(before.snapshot);
+    expect(after.mappings).toBe(before.mappings);
+  });
+
+  it("a bailed keystroke serves the last-good snapshot OBJECT, and so does the next one", () => {
+    const code = create(GOOD);
+    const good = code.embeddedCodes[0].snapshot;
+    const first = update(code, BAILS);
+    expect(first.stale).toBe(true);
+    expect(first.embeddedCodes[0].snapshot).toBe(good);
+    const staleMappings = first.embeddedCodes[0].mappings;
+    const second = update(first, `${BAILS}\n`);
+    expect(second.embeddedCodes[0].snapshot).toBe(good);
+    expect(second.embeddedCodes[0].mappings).toBe(staleMappings);
+  });
+
+  // The trap the LSP e2e caught: typing the second `.` of `ask ..` lowers to
+  // the SAME generated text as `ask .` (both markers become the inert
+  // placeholder) but the broken span is one character longer, and the
+  // mappings must follow — served under the old mappings, the cursor after
+  // `..` fell into a verbatim range and TypeScript completed the global scope.
+  it("the same generated text from a DIFFERENT source is a new embedded code with its own mappings", () => {
+    const one = "infer function f() {\n  const x = ask .\n}\n";
+    const two = "infer function f() {\n  const x = ask ..\n}\n";
+    const code = create(one);
+    const before = code.embeddedCodes[0];
+    const after = update(code, two).embeddedCodes[0];
+    const text = (c: typeof before) => c.snapshot.getText(0, c.snapshot.getLength());
+    expect(text(after)).toBe(text(before)); // premise: identical generated text
+    expect(after).not.toBe(before);
+    expect(after.mappings).not.toBe(before.mappings);
+    // the cursor after `..` has no completion-enabled mapping under the new
+    // mappings — and WOULD have one under the old (that was the global-scope list)
+    const cursor = two.indexOf("..") + 2;
+    const completable = (mappings: typeof after.mappings) =>
+      [...defaultMapperFactory(mappings).toGeneratedLocation(cursor)].filter(([, m]) => m.data.completion);
+    expect(completable(before.mappings)).not.toEqual([]);
+    expect(completable(after.mappings)).toEqual([]);
+  });
+
+  it("a different lowering is a new snapshot", () => {
+    const code = create(GOOD);
+    const before = code.embeddedCodes[0].snapshot;
+    const after = update(code, OTHER).embeddedCodes[0].snapshot;
+    expect(after).not.toBe(before);
+    expect(after.getText(0, after.getLength())).toContain("ExtractIntent<number>");
+  });
+
+  it("recovering from a bail to the same good text serves the original object again", () => {
+    const code = create(GOOD);
+    const good = code.embeddedCodes[0];
+    const back = update(update(code, BAILS), GOOD).embeddedCodes[0];
+    expect(back.snapshot).toBe(good.snapshot);
+    expect(back.mappings).toBe(good.mappings);
+    expect(back.mappings.some((m) => m.data.semantic)).toBe(true);
   });
 });

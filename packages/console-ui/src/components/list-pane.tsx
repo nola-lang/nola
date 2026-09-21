@@ -22,7 +22,7 @@ export function ListPane({
 }) {
   return (
     <ScrollArea className="h-full w-full [&>[data-slot=scroll-area-viewport]>div]:block!">
-      <h1 className="sticky top-0 z-20 m-0 flex items-center gap-2 border-b bg-background py-1 pr-1.5 pl-3.5 font-sans font-semibold text-[11px] text-foreground/80 uppercase tracking-[0.12em]">
+      <h1 className="sticky top-0 z-20 m-0 flex items-center gap-2 bg-background py-1 pr-1.5 pl-3.5 font-sans font-semibold text-[11px] text-foreground/80 uppercase tracking-[0.12em]">
         {title}
         {count !== undefined && <span className="font-mono font-normal normal-case tracking-normal">{count}</span>}
         {actions !== undefined && <span className="ml-auto flex items-center gap-1 normal-case tracking-normal">{actions}</span>}

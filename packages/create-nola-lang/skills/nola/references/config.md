@@ -232,11 +232,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.12",
-    "@nola-lang/runtime": "^0.1.12"
+    "@nola-lang/providers": "^0.1.13",
+    "@nola-lang/runtime": "^0.1.13"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.12",
+    "nola-lang": "^0.1.13",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

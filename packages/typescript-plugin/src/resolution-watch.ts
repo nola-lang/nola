@@ -69,8 +69,10 @@ export function decorateHostForTsiResolutionWatch(
   // accessor keeps ours composed on top: the setter captures tsserver's
   // function as the inner delegate, the getter serves the composition.
   let innerHasInvalidated = hostWithInvalidation.hasInvalidatedResolutions;
+  // asked for every file in the program on every graph update; the set is
+  // almost always empty, so the canonicalization runs only when it is not
   const composedHasInvalidated = (path: ts.Path): boolean =>
-    invalidated.has(canon(path)) || (innerHasInvalidated?.(path) ?? false);
+    (invalidated.size > 0 && invalidated.has(canon(path))) || (innerHasInvalidated?.(path) ?? false);
   Object.defineProperty(host, "hasInvalidatedResolutions", {
     configurable: true,
     get: () => composedHasInvalidated,
@@ -83,11 +85,12 @@ export function decorateHostForTsiResolutionWatch(
     const containing = canon(containingFile);
     invalidated.delete(containing);
     const results = prior(moduleLiterals, containingFile, ...rest);
+    let dir: string | undefined; // the containing directory, computed once a literal needs it
     for (let i = 0; i < moduleLiterals.length; i++) {
       const text = moduleLiterals[i]?.text ?? "";
       if (!text.startsWith("./") && !text.startsWith("../")) continue;
       if (!extensions.some((ext) => text.endsWith(ext))) continue;
-      const dir = containingFile.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+      dir ??= containingFile.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
       const candidate = canon(`${dir}/${text}`.replace(/\/\.\//g, "/"));
       const entry = watched.get(candidate);
       if (entry) {

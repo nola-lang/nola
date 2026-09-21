@@ -14,11 +14,13 @@
   <text x="128" y="530" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  needBy?: Date;</text>
   <text x="128" y="552" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  priority: "standard" | "rush";</text>
   <text x="128" y="574" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
-  <text x="128" y="618" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// triage.tsi &#8212; the whole LLM seam</text>
-  <text x="128" y="640" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">const order =</text>
-  <text x="128" y="662" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">  ask ..`the order request`&lt;OrderRequest&gt;;</text>
-  <text x="128" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">placeOrder(order);</text>
-  <text x="128" y="728" font-family="Roboto Mono" font-size="14.5" fill="#1E7A3C">// needBy is already a real Date</text>
+  <text x="128" y="618" font-family="Roboto Mono" font-size="14.5" fill="#8A929C">// main.tsi &#8212; no wrapper function, no call site</text>
+  <text x="128" y="640" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">for (const .email of inbox) {</text>
+  <text x="128" y="662" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">  const order =</text>
+  <text x="128" y="684" font-family="Roboto Mono" font-size="14.5" font-weight="500" fill="#0A5A62">    ask `the order request`&lt;OrderRequest&gt;;</text>
+  <text x="128" y="706" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">  placeOrder(order);</text>
+  <text x="128" y="728" font-family="Roboto Mono" font-size="14.5" fill="#1E7A3C">  // needBy is already a real Date</text>
+  <text x="128" y="750" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">}</text>
   <rect x="683" y="280" width="554" height="640" rx="14" fill="#FFFFFF" stroke="#DFE3E8" stroke-width="1.5"/>
   <text x="711" y="330" font-family="Inter" font-size="28" font-weight="700" fill="#161C24">BAML</text>
   <text x="711" y="362" font-family="Inter" font-size="18" fill="#5B6573">a second language &#183; a codegen step</text>
@@ -64,5 +66,5 @@
   <text x="1294" y="816" font-family="Roboto Mono" font-size="14.5" fill="#2A323C">const domainOrder: OrderRequest = order;</text>
   <text x="1294" y="838" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">// typed, dates revived &#8212; but nothing ties</text>
   <text x="1294" y="860" font-family="Roboto Mono" font-size="14.5" fill="#B06A14">// the string above to types.ts</text>
-  <text x="100" y="985" font-family="Inter" font-size="24" font-weight="500" fill="#2A323C">Ax ties Nola on line count. The difference is that Nola's schema IS the type &#8212; Ax's is a string the compiler never reads.</text>
+  <text x="100" y="985" font-family="Inter" font-size="24" font-weight="500" fill="#2A323C">Ax comes within two lines of Nola. The difference is that Nola's schema IS the type &#8212; Ax's is a string the compiler never reads.</text>
 </svg>

@@ -32,6 +32,6 @@ import. (PNG imports flat; Figma can't import PDF at all.)
 
 ## A note on the Ax column
 
-Ax ties Nola on line count (87 each) and revives dates automatically, so several of its cells
+Ax comes within two lines of Nola (87 to 85) and revives dates automatically, so several of its cells
 are green. That is deliberate and correct — the slides argue Nola's case on *where the schema
 lives* and *what the compiler can check*, not on Ax being clumsy. Don't "fix" those cells.

@@ -23,6 +23,7 @@ import {
 } from "@volar/language-server/node.js";
 import { create as createTypeScriptServices } from "volar-service-typescript";
 import type { URI } from "vscode-uri";
+import { decorateDocumentsForCaseInsensitiveFs } from "./document-lookup.js";
 import { createNolaServicePlugin } from "./nola-service.js";
 
 const WATCHED_EXTENSIONS = ["tsi", "ts", "cts", "mts", "tsx", "js", "cjs", "mjs", "jsx", "json"];
@@ -41,6 +42,11 @@ connection.onInitialize((params) => {
   // derive walks the programs Volar builds on this tsdk: it must use the SAME
   // TypeScript, and the bundle ships none of its own (typescript is external).
   useTypeScript(tsdk.typescript);
+  // Volar finds an open document by the exact string of its URI; on Windows
+  // and macOS a tsconfig spelling that differs from the editor's only in case
+  // misses it and reads the file from DISK instead — the program then lags
+  // the editor by one autosave (see document-lookup.ts).
+  if (!tsdk.typescript.sys.useCaseSensitiveFileNames) decorateDocumentsForCaseInsensitiveFs(server.documents);
   const rootDir = server.workspaceFolders.all[0]?.fsPath ?? process.cwd();
   const sourceRoot = findProjectRoot(rootDir);
 

@@ -27,7 +27,7 @@
   <text x="1540.0" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
   <text x="1726.7" y="424" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
   <line x1="100" y1="442" x2="1820" y2="442" stroke="#E8ECF0" stroke-width="1"/>
-  <text x="120" y="478" font-family="Inter" font-size="20" fill="#2A323C">Breakpoints inside the LLM function</text>
+  <text x="120" y="478" font-family="Inter" font-size="20" fill="#2A323C">Debugger steps through the LLM logic</text>
   <text x="793.3" y="480" text-anchor="middle" font-family="Inter" font-size="24" font-weight="700" fill="#1E7A3C">&#10003;</text>
   <text x="980.0" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>
   <text x="1166.7" y="480" text-anchor="middle" font-family="Inter" font-size="24" fill="#C2C8D0">&#8212;</text>

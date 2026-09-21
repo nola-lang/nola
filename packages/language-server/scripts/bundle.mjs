@@ -3,6 +3,7 @@
 // require(esm). Everything except `typescript` is inlined.
 // The map is dev-only (--sourcemap, passed by the "bundle: editor" task).
 import { rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const sourcemap = process.argv.includes("--sourcemap");
@@ -14,6 +15,8 @@ const result = await build({
   format: "cjs",
   outfile: "dist/server.cjs",
   external: ["typescript"],
+  // the parser's `charcodes` (CommonJS) as inlinable ESM constants — see scripts/esbuild/charcodes.js
+  alias: { charcodes: fileURLToPath(new URL("../../../scripts/esbuild/charcodes.js", import.meta.url)) },
   // `import.meta.url` in a CJS bundle (derive's ESM fallback) resolves to this file's URL
   inject: ["../../scripts/esbuild/import-meta-url.js"],
   define: { "import.meta.url": "import_meta_url" },

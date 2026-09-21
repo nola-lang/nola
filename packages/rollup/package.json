@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/rollup",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Rollup plugin for Nola (.tsi)",
   "keywords": [
     "nola",
@@ -36,7 +36,7 @@
     "!dist/**/*.map"
   ],
   "dependencies": {
-    "@nola-lang/unplugin": "0.1.12"
+    "@nola-lang/unplugin": "0.1.13"
   },
   "engines": {
     "node": ">=22"

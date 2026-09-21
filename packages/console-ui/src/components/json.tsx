@@ -5,7 +5,7 @@ import { type JsonTokenKind, jsonTokens, renderValue, type ValueFormat } from ".
 import { readValueFormat, writeValueFormat } from "../value-format";
 
 /** The code block every value in the detail pane sits in. */
-export const CODE = "overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-card p-3 font-mono text-xs leading-relaxed";
+export const CODE = "overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-card p-3 font-mono text-xs leading-relaxed";
 
 /** Token colours drawn from the palette tokens in index.css — no theme of their own. */
 const TONE: Record<JsonTokenKind, string | undefined> = {

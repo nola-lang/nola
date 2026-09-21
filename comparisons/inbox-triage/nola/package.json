@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "nola run src/main.ts",
+    "start": "nola run src/main.tsi",
     "build": "nola build",
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.4",
-    "@nola-lang/runtime": "^0.1.4"
+    "@nola-lang/providers": "^0.1.12",
+    "@nola-lang/runtime": "^0.1.12"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.4",
+    "nola-lang": "^0.1.12",
     "typescript": "^5.6.0"
   }
 }
