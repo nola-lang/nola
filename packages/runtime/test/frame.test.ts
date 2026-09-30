@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 afterEach(() => nolaRuntime.reset());
 
-const fnNode = (data: Record<string, unknown> = { fn: "go", instruction: "" }, file = "x.tsi") =>
-  nolaRuntime.current().fileContext(file).scope(data);
+const fnNode = (data: Record<string, unknown> = { fn: "go" }, file = "x.tsi") =>
+  nolaRuntime.current().moduleContext(file).scope(data);
 
 describe("Frame", () => {
   it("openAsk records a span; toReceipt matches the receipt shape plus identity", () => {
@@ -37,8 +37,8 @@ describe("Frame", () => {
   });
 
   it("child frames self-attach: trace nests, spanPath is root-first, fn/file derive from the static node", () => {
-    const root = Frame.open(fnNode({ fn: "a", instruction: "" }, "a.tsi"));
-    const child = root.child(fnNode({ fn: "b", instruction: "" }, "b.tsi"));
+    const root = Frame.open(fnNode({ fn: "a" }, "a.tsi"));
+    const child = root.child(fnNode({ fn: "b" }, "b.tsi"));
     expect(child.spanPath()).toEqual([root.invocationId, child.invocationId]);
     const trace = root.toTrace();
     expect(trace).toMatchObject({ kind: "invocation", fn: "a", file: "a.tsi" });
@@ -55,9 +55,9 @@ describe("Frame", () => {
   });
 
   it("historyChain reads caller records first; collapse pushes exactly one record onto the parent", () => {
-    const root = Frame.open(fnNode({ fn: "a", instruction: "" }));
+    const root = Frame.open(fnNode({ fn: "a" }));
     root.history.push({ prompt: "first", value: 1 });
-    const child = root.child(fnNode({ fn: "b", instruction: "find it" }));
+    const child = root.child(fnNode({ fn: "b" }));
     child.history.push({ prompt: "inner", value: 2 });
     expect(child.historyChain()).toEqual([
       { prompt: "first", value: 1 },
@@ -66,7 +66,7 @@ describe("Frame", () => {
     child.collapse("v1");
     expect(root.history).toEqual([
       { prompt: "first", value: 1 },
-      { prompt: "b: find it", value: "v1" },
+      { prompt: "b", value: "v1" },
     ]);
     expect(child.history).toEqual([{ prompt: "inner", value: 2 }]);
   });

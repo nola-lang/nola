@@ -15,13 +15,24 @@ import { ensureBuilt } from "./helpers/ensure-built.js";
 const ROOT = join(import.meta.dirname, "..", "..");
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".nola", "comparisons"]);
 
-function tsiFilesUnder(dir: string): string[] {
-  const out: string[] = [];
+/**
+ * Every `.tsi` under `dir` with its text, read NOW, while the suite is
+ * collected. Other e2e suites create and delete `.tsi` files while this one
+ * runs (editor-lsp's `fresh-on-disk.tsi`), so a test that read its file later
+ * could meet ENOENT; a file that vanishes between the listing and the read
+ * here is simply not part of the corpus.
+ */
+function tsiSourcesUnder(dir: string): Array<{ file: string; source: string }> {
+  const out: Array<{ file: string; source: string }> = [];
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...tsiFilesUnder(path));
-    else if (entry.endsWith(".tsi")) out.push(path);
+    try {
+      if (statSync(path).isDirectory()) out.push(...tsiSourcesUnder(path));
+      else if (entry.endsWith(".tsi")) out.push({ file: path, source: readFileSync(path, "utf8") });
+    } catch (e) {
+      if ((e as { code?: unknown }).code !== "ENOENT") throw e;
+    }
   }
   return out;
 }
@@ -52,15 +63,14 @@ beforeAll(async () => {
 const canonical = (result: ReturnType<ParseNola>) => JSON.stringify(result);
 
 describe("the bundled parser parses exactly like the source parser", () => {
-  const files = tsiFilesUnder(ROOT);
+  const corpus = tsiSourcesUnder(ROOT);
 
   it("has a corpus to compare", () => {
-    expect(files.length).toBeGreaterThan(20);
+    expect(corpus.length).toBeGreaterThan(20);
   });
 
-  for (const file of files) {
+  for (const { file, source } of corpus) {
     it(`${basename(file)} (strict): ${file.slice(ROOT.length + 1)}`, () => {
-      const source = readFileSync(file, "utf8");
       expect(canonical(parseFromBundle(source, file))).toBe(canonical(parseFromSource(source, file)));
     });
   }

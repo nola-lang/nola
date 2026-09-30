@@ -1,29 +1,50 @@
 ---
 title: Extractors
-description: The ask `instruction`<T> expression — typed vs untyped, ${} interpolation, the ..`instruction` spelling off the ask site, and which types derive to a schema.
+description: Request a typed answer with an extractor. Learn how to write instructions, interpolate values and choose a supported TypeScript type.
 sidebar:
   order: 40
 ---
 
-An extractor is the request itself: instruction text in backticks plus an optional type argument. Directly after `ask` the backticks alone are the extractor; anywhere else it is written with two leading dots, `` ..`…`<T> `` ([below](#two-spellings-one-construct)). `ask` resolves it to a `T`.
+An extractor describes a model request using instruction text in backticks and an optional type. Write `` ask `instruction`: T `` to request a `T`; the type can also be written as a type argument, `` ask `instruction`<T> `` ([the angle-bracket spelling](#the-angle-bracket-spelling)). To store the request, add two leading dots: `` ..`instruction`: T `` ([details below](#two-spellings-one-construct)).
 
 ## Typed and untyped
 
 ```tsi
 // parse.tsi
 export infer function parse(.doc: string) {
-  const id = ask `the ticket id`<string>;             // typed
-  const count = ask `how many line items`<number>;
+  const id = ask `the ticket id`: string;             // typed
+  const count = ask `how many line items`: number;
   const free = ask `think step by step about the document`;  // untyped
   return { id, count, free };
 }
 ```
 
-With no `<T>` the extractor asks for free text: the wire schema is a plain string and the static TypeScript type is `any`. Give every extractor an explicit `<T>` unless you deliberately want unconstrained prose.
+With no type the extractor asks for free text: the wire schema is a plain string and the static TypeScript type is `any`. Give every extractor an explicit type unless you deliberately want unconstrained prose.
+
+## The angle-bracket spelling
+
+The type can also be written as a type argument after the closing backtick:
+
+```tsi
+// angle.tsi
+export infer function parse(.doc: string) {
+  const id = ask `the ticket id`<string>;              // same as `: string`
+  const count = ask `how many line items`<number>;
+  return { id, count };
+}
+```
+
+The two spellings are one construct: they compile to the same code and share one definition, so a recorded ledger serves either. Everything that accepts `: T` accepts `<T>`: the `..` form (`` ..`x`<T> ``), call-intent slots (`` fn(`x`<T>) ``), `ask with`, and [decision types](/docs/language/decision-types/) (`` ask `Which team?`<Choice<{ billing: "Payments"; sales: null }>> ``). This documentation writes `: T` throughout; use `<T>` when you prefer it, or where the colon's rules get in the way.
+
+Three rules come with the colon:
+
+- **The colon touches the backtick, and the type starts on its line.** A colon after a space is never the extractor's, which is what keeps `` cond ? ask `p` : fallback `` an ordinary conditional over an untyped ask, while `` cond ? ask `p`: number : fallback `` asks for a number. A glued colon with nothing after it on its line raises [`NOLA1018`](/docs/reference/error-codes/#nola1018): a type would otherwise continue onto the next line and swallow the next statement.
+- **A type name followed by `.` continues the type.** `` ask `p`: User.withRetry(2) `` reads `User.withRetry` as a qualified type name. To chain [intent methods](/docs/language/intent-methods/), parenthesize the extractor (`` ask (..`p`: User).withRetry(2) ``), use a delimited type such as `string[]`, `Array<User>`, `{ … }` or `(User)`, or write `<User>`.
+- **`<` after a type name starts type arguments**, with either spelling: `` ask `p`: User < 5 `` is not a comparison. Parenthesize the ask to compare.
 
 ## Interpolation
 
-`${expr}` is legal inside the backticks and is evaluated when the intent is constructed. Strings splice as-is; anything else is JSON-stringified.
+`${expr}` inserts a JavaScript value into the instruction when you construct the intent. Strings are inserted as written; other values are serialized as JSON.
 
 ```tsi
 // lookup.tsi
@@ -33,50 +54,53 @@ interface Person {
 }
 
 export infer function lookup(text: string) {
-  return ask `the person described in: ${text}`<Person>;
+  return ask `the person described in: ${text}`: Person;
 }
 ```
 
-One exception: a hole that starts with a single dot — `${.type}` — is *not* a lexical value. It reads the extractor's prompt scope and turns the backticks into a prompt template. See [Prompt templates](/docs/language/prompt-templates/).
+A substitution is ordinary TypeScript, read when the ask runs: a string is spliced verbatim, anything else is written as JSON. It cannot contain another Nola construct ([`NOLA2010`](/docs/reference/error-codes/#nola2010)).
 
 ## Two spellings, one construct
 
-Directly after `ask` (and after `ask with <name>`) the two dots are implied — `ask` already says a value is coming out of the model. Everywhere else the dots are required, because there a bare template literal is an ordinary string:
+You can omit `..` in two places: directly after `ask` or `ask with <name>`, and in a call's argument list, where a typed template makes the call a [call intent](/docs/language/call-intents/). Everywhere else, include the dots to distinguish an extractor from an ordinary template string:
 
 ```tsi
 // spellings.tsi
 declare function createTicket(title: string, priority: number): Promise<string>;
 
-export const nameIntent = ..`the user's full name`<string>;     // stored: dots required
+export const nameIntent = ..`the user's full name`: string;     // stored: dots required
 
 export infer function whoIsIt(.text: string) {
-  const name = ask `the user's full name`<string>;              // implied
-  const same = ask ..`the user's full name`<string>;            // still legal
-  const id = ask createTicket(..`a short title`<string>, 2);    // call-intent slot: dots required
-  return { name, same, id };
+  const name = ask `the user's full name`: string;              // implied
+  const same = ask ..`the user's full name`: string;            // still legal
+  const id = ask createTicket(`a short title`: string, 2);      // call-intent slot: implied too
+  const also = ask createTicket(..`a short title`: string, 2);  // still legal
+  return { name, same, id, also };
 }
 ```
 
-Only a template literal that is the *first token* of the operand is claimed: `` ask (`x`) `` and `` ask tag`x` `` are plain expressions. The space is mandatory: `` ask`x` `` with the backtick glued to `ask` reads as a tagged template and is [`NOLA1017`](/docs/reference/error-codes/#nola1017). A typed template outside `ask` — `` f(`x`<string>) `` — is [`NOLA2014`](/docs/reference/error-codes/#nola2014). In both spellings a `<` right after the closing backtick always starts type arguments; parenthesize to compare.
+After `ask`, the template literal must be the first token of the operand. In a call, it must be the first token of an argument, or of a property value or element in an object or array literal written there (`` api.save({ note: `a one-line note`: string }) ``). Parenthesized templates (`` ask (`x`) ``) and tagged templates (`` ask tag`x` ``) stay ordinary expressions, `` f((`x`: T)) `` is a syntax error, and an untyped template in a call passes a string: `` f(`x`) `` is an ordinary call.
+
+A space is required between `ask` and the backtick. Writing `` ask`x` `` raises [`NOLA1017`](/docs/reference/error-codes/#nola1017). A typed template anywhere else needs the two dots: `` const i = `x`<string> `` raises [`NOLA2014`](/docs/reference/error-codes/#nola2014), and `` const i = `x`: string `` is an ordinary syntax error. With either extractor spelling, `<` after the closing backtick starts type arguments; use parentheses if you mean to compare values. In a call's argument list a bare template is an extractor only when its `<…>` reads as type arguments, so `` f(`a` < b) `` stays a comparison.
 
 ## Construction anywhere, resolution only with ask
 
-An extractor may be constructed anywhere in a `.tsi` file, module level included — construction needs no context:
+You can construct an extractor anywhere in a `.tsi` file, including at module level. It needs context only when you resolve it:
 
 ```tsi
 // intents.tsi
-export const nameIntent = ..`the user's full name`<string>;   // legal, inert
+export const nameIntent = ..`the user's full name`: string;   // legal, inert
 
 export infer function whoIsIt(.text: string) {
   return ask nameIntent;                                       // resolved here
 }
 ```
 
-Only `ask` is position-restricted: it must sit directly inside an infer function body or directly in the module body ([`NOLA2001`](/docs/reference/error-codes/#nola2001)) — see [Where ask is legal](/docs/language/ask/#where-ask-is-legal). A raw extractor is never bare-`await`ed — it carries no context of its own and throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time.
+Resolve extractors with `ask` inside an infer function or at module level. Other locations raise [`NOLA2001`](/docs/reference/error-codes/#nola2001); see [Where ask is legal](/docs/language/ask/#where-ask-is-legal). Awaiting a raw extractor directly raises [`NOLA3010`](/docs/reference/error-codes/#nola3010) because it has no invocation context.
 
 ## Derivable types
 
-The compiler derives a JSON Schema from `<T>` by asking the TypeScript checker what the type resolves to, so anything TypeScript can flatten to a JSON-shaped structure derives. What it accepts:
+The compiler uses the TypeScript checker to derive a JSON Schema from the extractor's type. It supports the following types:
 
 | TypeScript | Wire schema · notes |
 | --- | --- |
@@ -110,17 +134,17 @@ export type TreeNode = {
 };
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask `answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`: Conclusion;
 }
 
 export infer function nextEvent(.calendar: string) {
-  const event = ask `the next event on the calendar`<CalendarEvent>;
+  const event = ask `the next event on the calendar`: CalendarEvent;
   const when: Date = event.at;   // a Date, not a string
   return when;
 }
 
 export infer function parseTree(.input: string) {
-  return ask `the tree structure described in the input`<TreeNode>;
+  return ask `the tree structure described in the input`: TreeNode;
 }
 ```
 
@@ -139,24 +163,24 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask `the person described in the text`<Person>;
+  return ask `the person described in the text`: Person;
 }
 ```
 
-**Not derivable:** `Map`, `Set`, `RegExp`, functions, generics, class instances and other ambient library types — [`NOLA2002`](/docs/reference/error-codes/#nola2002). Ask for a JSON-shaped type and convert afterwards in plain TypeScript:
+**Unsupported types** include `Map`, `Set`, `RegExp`, functions, class instances, uninstantiated generics and other ambient library types ([`NOLA2002`](/docs/reference/error-codes/#nola2002)). Ask for a supported shape, then convert the result in TypeScript:
 
 ```tsi
 // tally.tsi
 export infer function tally(.doc: string) {
-  const counts = ask `counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`: { label: string; count: number }[];
   return new Map(counts.map((c) => [c.label, c.count]));
 }
 ```
 
 ## Writing the instruction
 
-- **Name the thing, not the action.** `the person described in the text` reads better than `extract the person` — the extractor is already a request.
-- **Put the contract in the type, not the prose.** Optional fields, label sets, dates: say it in `<T>` and JSDoc, and the model gets it as schema.
-- **Prefer a named, exported type** over an inline literal: it documents the contract, it is reusable from plain TS, and its JSDoc becomes descriptions.
+- **Describe the answer you need.** For example, `the person described in the text` tells the model what to look for.
+- **Use types for structure.** Declare optional fields, label sets and dates in the type, and use JSDoc to describe fields or add constraints.
+- **Name types you reuse.** An exported type gives other functions and TypeScript callers the same contract, including its JSDoc descriptions.
 
 Next: [The ask operator](/docs/language/ask/)

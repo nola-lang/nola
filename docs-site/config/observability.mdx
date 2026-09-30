@@ -1,15 +1,23 @@
 ---
 title: Telemetry — observers, receipts, tracers
-description: The telemetry list — terminalTrace, a URL for a Nola console, your own observers — plus every event payload and the receipt.
+description: Send ask events to the terminal, a Nola console or custom observers. Reference event payloads, receipts and tracer settings.
 sidebar:
   order: 60
 ---
 
-Every ask emits events, and every finished ask produces a *receipt*. `telemetry` says who receives them: the terminal (`{ level }`), one observer, or an ordered list of observers. Observers only observe — nothing here can change an ask.
+Every ask emits events and produces a receipt when it finishes. Use `telemetry` to send them to the terminal, a Nola console or your own observers. Observers receive events without changing the ask.
 
 ## The terminal
 
-With no `telemetry` at all, every event prints to the terminal — the default is `terminalTrace()` at level `debug`. `telemetry: { level }` is the same terminal at another level: `silent` · `error` (failed asks) · `warn` (adds validation failures and retries) · `info` (adds ask start/end and infer-function start/end) · `debug` (adds every provider request and reply).
+By default, `terminalTrace()` prints every event at level `debug`. Set `telemetry: { level }` to choose how much detail appears:
+
+| Level | Events shown |
+| --- | --- |
+| `silent` | none |
+| `error` | failed asks |
+| `warn` | errors, validation failures and retries |
+| `info` | the above, plus ask and infer-function start/end |
+| `debug` | the above, plus every provider request and reply |
 
 ```ts
 // nola.config.ts
@@ -22,7 +30,9 @@ export default defineConfig({
 });
 ```
 
-The lines are the ones `nola console` prints for the same events — time, kind, site, provider, duration; attempt-level lines indented under their ask — in the same colours on a TTY (`NO_COLOR` turns them off; `terminalTrace({ color })` forces either way), so the terminal and the console show one stream. They go to **stderr**: your program's stdout stays its own at any level.
+Terminal output includes the time, event kind, source location, provider and duration, with each attempt indented under its ask. It uses the same format and colours as `nola console`.
+
+Output goes to stderr, leaving stdout for your program. Colours are enabled on a TTY; `NO_COLOR` disables them, and `terminalTrace({ color })` overrides that choice.
 
 ## The telemetry list
 
@@ -46,14 +56,14 @@ export default defineConfig({
 });
 ```
 
-- An entry is `terminalTrace({ level })`, an `http(s)` URL string (a tracer — short for `nola.tracer(url)`), `nola.tracer(...)` itself, or any object with some of `onAskStart`, `onProviderRequest`, `onProviderResponse`, `onValidationFailed`, `onRetry`, `onAskEnd`, `onInvocationStart`, `onInvocationEnd` (and an optional `name`). That object shape is `NolaTelemetry`, exported from `@nola-lang/runtime` — a third-party exporter is one of them. A single observer — or a single URL — may be given without the array.
-- Every entry receives every event, in list order.
-- An observer or a list replaces the terminal: nothing is implied, so list `terminalTrace()` to keep it. An empty list is silent.
-- An observer that throws is swallowed and warned about once; it can never break resolution.
+- Add `terminalTrace({ level })`, an `http(s)` URL, `nola.tracer(...)` or your own observer object. A URL is shorthand for `nola.tracer(url)`.
+- A custom observer implements any of the event methods listed below and may have a `name`. Its type, `NolaTelemetry`, is exported from `@nola-lang/runtime`.
+- A single observer or URL can be supplied without an array. An observer or list replaces the default terminal output; include `terminalTrace()` to keep it. An empty list is silent.
+- Events are delivered to every entry in list order. If an observer throws, Nola catches the error and warns once for that observer and event method. The ask continues.
 
 ## Tracers
 
-A tracer posts every event to a Nola-Protocol server — the local console from `npx nola-lang console`, or the platform. The plain way to list one is its URL:
+A tracer sends events to a Nola-Protocol server, such as the local console started by `npx nola-lang console` or the platform. Set `telemetry` to the server's URL:
 
 ```ts
 // nola.config.ts
@@ -65,21 +75,29 @@ export default defineConfig({
 });
 ```
 
-The URL is short for `nola.tracer(url)`; call `nola.tracer(...)` (from `@nola-lang/runtime`) yourself only for its options. It sends one fire-and-forget POST per event: it never blocks or fails an ask, an unreachable server warns once per process and later events keep trying, nothing is buffered, and content is redacted before it leaves the process. `nola.tracer()` with no argument targets `NOLA_API_URL`, then `https://api.nola.sh`; a URL string or `{ baseUrl, apiKey?, apiKeyEnv?, fetch? }` names another (keyless on loopback, `NOLA_API_KEY` otherwise). Like any single observer, a bare URL replaces the terminal — write `["http://127.0.0.1:4141", terminalTrace()]` to keep both. A string that is not an `http(s)` URL is [`NOLA3003`](/docs/reference/error-codes/#nola3003). Listing a tracer is the whole decision: inference on the platform does not imply traces to it, and a listed tracer sends whether or not the server stores them.
+A URL is shorthand for `nola.tracer(url)`. Use `nola.tracer(...)` from `@nola-lang/runtime` when you need options:
 
-**`NOLA_TRACING_URL`** is the zero-config attach for development: when set, the runtime appends that URL's tracer to the list. A config that lists a tracer itself wins, and the variable is ignored with one notice. Unsetting it disconnects.
+- `nola.tracer()` uses `NOLA_API_URL`, falling back to `https://api.nola.sh`.
+- A URL string or `{ baseUrl, apiKey?, apiKeyEnv?, fetch? }` selects another server. Loopback connections need no key; other hosts use `NOLA_API_KEY` by default.
+- A string that is not an `http(s)` URL produces [`NOLA3003`](/docs/reference/error-codes/#nola3003).
 
-Every envelope carries the app's **project** name — the `project` config key, defaulting to the nearest `package.json` `name` — so a console receiving several apps' traces groups each run under its project. It is deployment metadata: never part of the ask fingerprint.
+The tracer sends one POST per event without waiting for the response. It redacts content before sending and does not buffer events. If the server is unreachable, it warns once per process and keeps trying on later events. A tracer cannot block or fail an ask.
 
-Sending traces to a non-loopback host prints a once-per-process notice naming the host — traces carry prompts and outputs, so leaving the machine is never invisible.
+A single tracer replaces terminal output. To keep both, use `["http://127.0.0.1:4141", terminalTrace()]`. Tracing is configured separately from inference: using the platform model does not enable it, and a listed tracer sends events regardless of whether the server stores them.
+
+For development, set **`NOLA_TRACING_URL`** to attach a tracer without editing the config. Nola appends it to the telemetry list unless the config already includes a tracer; in that case, it ignores the variable and prints one notice. Unset the variable before the next run to remove it.
+
+Trace envelopes include the app's `project` name, taken from config or the nearest `package.json` `name`. The console uses it to group runs from different apps. The project name does not affect the ask fingerprint.
+
+When a tracer sends to a non-loopback host, Nola prints a notice naming the host once per process. This makes it clear where prompts and outputs are being sent.
 
 ## Event payloads
 
 | Event | Payload |
 | --- | --- |
 | `onAskStart` | `askId`, `site`, `provider`, `invocationId`, `spanPath` (invocation ids from the root frame to the ask site — `spanPath[0]` identifies the whole invocation, which the console shows as one trace), `def` (compiler-stamped identity of the authored ask — stable across line shifts, so executions group by definition), `instruction`, `kind` (`extract` or `call`), `callee` and `hint` (call intents — the function name and the authored hint), `typeText` (extract intents — the target type as TypeScript text, e.g. `"quote" \| "order"` or `Ticket`) |
-| `onProviderRequest` | `askId`, `attempt`, `provider`, `payload` (what was sent — the rendered chat prompt, or the inference model for the platform model, `"nola"`; narrow with `isInferenceModel(e.payload)` from `@nola-lang/runtime`; carries the correction turn on the retry), `params`, `profile` (the `ask with <name>` name when the platform serves inference) |
-| `onProviderResponse` | `askId`, `attempt`, `provider`, `text`, `durationMs` |
+| `onProviderRequest` | `askId`, `attempt`, `provider`, `intent` (the ask as data — scopes, inputs, task, schema; carries the correction on the retry), `params`, `profile` (the `ask with <name>` name when the platform serves inference) |
+| `onProviderResponse` | `askId`, `attempt`, `provider`, `text`, `durationMs`, `sent` (what a text-rendering provider sent: `{ system, messages }`) |
 | `onValidationFailed` | `askId`, `attempt`, `error`, `site` — the answer did not match the schema; a correction attempt follows |
 | `onRetry` | `askId`, `attempt`, `reason`, `site` |
 | `onAskEnd` | `askId`, `receipt` (below) |
@@ -93,21 +111,21 @@ Sending traces to a non-loopback host prints a once-per-process notice naming th
 | Field | Meaning |
 | --- | --- |
 | `askId`, `site` | the ask and its source location (`file:line:col` in the `.tsi`) |
-| `originalPrompt` | the conversation as first composed for this ask |
-| `effectivePrompt` | as last sent to the provider — diverges from the original on a correction retry |
+| `originalPrompt` | the default rendering of the ask as first composed |
+| `effectivePrompt` | what the provider sent on the last attempt, when it reports it; else the default rendering — diverges from the original on a correction retry |
 | `schema` | the JSON Schema the answer was validated against |
 | `servedBy` | the provider name that answered |
 | `attempts` | provider round trips actually performed |
 | `outcome` | `{ ok: true, value }` or `{ ok: false, error }` |
-| `usage` | `{ inputTokens?, outputTokens? }` — reserved; no built-in provider reports tokens in 0.1.x, so it is always absent |
+| `usage` | `{ inputTokens?, outputTokens? }` — reserved; built-in providers do not currently report token usage |
 | `durationMs` | wall-clock time of the ask |
 | `invocationId`, `spanPath` | the invocation this ask belongs to, and the chain from the root frame |
 | `fingerprint` | the canonical ask fingerprint — the replay key |
 | `profile` | the inference profile sent with the request (`ask with <name>` when the platform serves inference); absent otherwise |
 | `def` | the ask's compiler-stamped source identity — a hash of the authored text (file, instruction, type; never line numbers), so executions of the same ask group together across runs and edits elsewhere in the file |
 | `kind` | `extract` for an extractor, `call` for the slot-filling ask of a call intent |
-| `meta` | scratch space for middleware stages; always `{}` while middleware is unwired |
+| `meta` | scratch space for middleware stages; currently always `{}` because middleware is inactive |
 
-The receipt's `outcome.error` string is redacted (`redactError`); the prompt fields are **not** — `originalPrompt` and `effectivePrompt` hold the conversation exactly as composed, so a key that reached a contextual value is in the receipt. Keep secrets out of contextual parameters; see [Environments and secrets](/docs/config/environments-and-secrets/).
+The receipt's `outcome.error` is redacted with `redactError`. Its prompt fields contain the conversation as composed, so any secret passed as a contextual value remains in `originalPrompt` and `effectivePrompt`. See [Environments and secrets](/docs/config/environments-and-secrets/).
 
 Next: [Record and replay](/docs/config/record-and-replay/)

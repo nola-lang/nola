@@ -9,7 +9,7 @@ afterEach(() => nolaRuntime.reset());
 function hangingProvider(): LanguageModel {
   return {
     name: "hang",
-    complete: (req) =>
+    infer: (req) =>
       new Promise((_, reject) => {
         req.signal?.addEventListener("abort", () => reject(req.signal?.reason), { once: true });
       }),
@@ -40,7 +40,7 @@ describe("invocation timeout", () => {
 
   it("timeout: 0 disables the clock", async () => {
     nolaRuntime.configure({
-      model: { default: { name: "fast", complete: async () => ({ text: '"ok"' }) } },
+      model: { default: { name: "fast", infer: async () => ({ text: '"ok"' }) } },
     });
     const frame = openTestFrame({ options: { timeout: 0 } });
     await expect(extract().run(frame)).resolves.toBe("ok");
@@ -53,7 +53,7 @@ describe("invocation timeout", () => {
       model: {
         default: {
           name: "count",
-          complete: async () => {
+          infer: async () => {
             calls++;
             return { text: '"ok"' };
           },
@@ -81,11 +81,11 @@ describe("invocation timeout", () => {
 
   it(".withTimeout on an infer-function intent asked from a body bounds the callee invocation", async () => {
     nolaRuntime.configure({ model: { default: hangingProvider() } });
-    const file = nolaRuntime.current().fileContext("x.tsi");
+    const file = nolaRuntime.current().moduleContext("x.tsi");
     const callee = () =>
       __nola.intents.Intent(
         async (__frame: Frame) => __nola.ask(extract(), __frame),
-        file.func({ fn: "callee", instruction: "" }),
+        file.func({ fn: "callee" }),
       );
     const caller = openTestFrame({ options: { timeout: 0 } });
     await expect(__nola.ask(callee().withTimeout(25), caller)).rejects.toThrow(/invocation timed out after 25ms/);

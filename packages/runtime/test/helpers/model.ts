@@ -1,11 +1,11 @@
-import type { InferenceModel, InferenceScope, JsonSchema, ProviderParams, ProviderRequest } from "@nola-lang/core";
-import { renderClassic } from "@nola-lang/core";
+import type { InferenceModel, InferenceScope, InferRequest, JsonSchema, ProviderParams } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import { buildInferenceModel, type Frame, type InferContext } from "@nola-lang/runtime";
 
-/** The classic user-message text for (frame, ask-site node) — what PromptBuilder.build used to return. */
+/** The default user-turn text for (frame, ask-site node). */
 export function classicText(frame: Frame, context: InferContext = frame.infer, system?: string): string {
   const model = buildInferenceModel({ frame, context, site: "test:?", ...(system !== undefined ? { system } : {}) });
-  return renderClassic(model).messages[0]?.content ?? "";
+  return renderPrompt(model).messages[0]?.content ?? "";
 }
 
 export interface ModelInit {
@@ -17,7 +17,7 @@ export interface ModelInit {
   correction?: { response: string; error: string };
 }
 
-/** A minimal extract model — what the ModelBuilder produces for one ask. */
+/** A minimal extract intent — what the ModelBuilder produces for one ask. */
 export function modelOf(init: ModelInit = {}): InferenceModel {
   return {
     intent: "extract",
@@ -31,13 +31,11 @@ export function modelOf(init: ModelInit = {}): InferenceModel {
 
 export interface RequestInit extends ModelInit {
   params?: ProviderParams;
-  /** "classic" (default) hands the provider the rendered ClassicPrompt — what the runtime sends any unbranded provider; "model" hands it the InferenceModel itself. */
-  dialect?: "classic" | "model";
+  profile?: string;
 }
 
-/** The request as the runtime builds it for a provider of the given dialect. */
-export function requestOf(init: RequestInit = {}): ProviderRequest {
-  const { params, dialect, ...rest } = init;
-  const model = modelOf(rest);
-  return { payload: dialect === "model" ? model : renderClassic(model), ...(params ? { params } : {}) };
+/** The request as the runtime builds it for any model: the intent plus params and profile. */
+export function requestOf(init: RequestInit = {}): InferRequest {
+  const { params, profile, ...rest } = init;
+  return { intent: modelOf(rest), ...(params ? { params } : {}), ...(profile !== undefined ? { profile } : {}) };
 }

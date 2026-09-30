@@ -1,4 +1,5 @@
-import type { AskReceipt, AskStartEvent, ProviderRequest } from "@nola-lang/core";
+import type { AskReceipt, AskStartEvent, InferRequest } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { ask, ExtractIntent, FunctionCallIntent, NolaResolutionError, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,8 +13,8 @@ const slot = (instruction: string) => new ExtractIntent<string>({ instruction, t
 
 describe("FunctionCallIntent", () => {
   it("fills slots with ONE combined LLM call and invokes the function", async () => {
-    const complete = vi.fn(async () => ({ text: '{"arg0":"Evgen","arg2_n":"two"}' }));
-    nolaRuntime.configure({ model: { default: { name: "probe", complete } } });
+    const infer = vi.fn(async () => ({ text: '{"arg0":"Evgen","arg2_n":"two"}' }));
+    nolaRuntime.configure({ model: { default: { name: "probe", infer } } });
     const fetchUser = vi.fn((a: string, b: number, o: { n: string }) => `${a}/${b}/${o.n}`);
     const result = await ask(
       new FunctionCallIntent<string>({
@@ -24,8 +25,8 @@ describe("FunctionCallIntent", () => {
       }),
       ctx(),
     );
-    expect(complete).toHaveBeenCalledTimes(1);
-    const schema = (complete.mock.calls[0]?.[0] as { payload?: { output?: { schema?: unknown } } })?.payload?.output
+    expect(infer).toHaveBeenCalledTimes(1);
+    const schema = (infer.mock.calls[0]?.[0] as { intent?: { output?: { schema?: unknown } } })?.intent?.output
       ?.schema as {
       properties: Record<string, unknown>;
       required: string[];
@@ -43,14 +44,14 @@ describe("FunctionCallIntent", () => {
   });
 
   it("skips the LLM entirely when there are no slots", async () => {
-    const complete = vi.fn(async () => ({ text: "{}" }));
-    nolaRuntime.configure({ model: { default: { name: "probe", complete } } });
+    const infer = vi.fn(async () => ({ text: "{}" }));
+    nolaRuntime.configure({ model: { default: { name: "probe", infer } } });
     const result = await ask(
       new FunctionCallIntent<number>({ fn: (a: number) => a + 1, name: "inc", args: [41] }),
       ctx(),
     );
     expect(result).toBe(42);
-    expect(complete).not.toHaveBeenCalled();
+    expect(infer).not.toHaveBeenCalled();
   });
 
   it("appends the call to history", async () => {
@@ -74,7 +75,7 @@ describe("FunctionCallIntent", () => {
         return this;
       }
     }
-    const alien = new AlienIntent(async () => 1, nolaRuntime.current().fileContext("x.tsi"));
+    const alien = new AlienIntent(async () => 1, nolaRuntime.current().moduleContext("x.tsi"));
     await expect(
       ask(new FunctionCallIntent({ fn: (x: number) => x, name: "f", args: [alien] }), ctx()),
     ).rejects.toBeInstanceOf(NolaResolutionError);
@@ -103,12 +104,12 @@ describe("FunctionCallIntent — ask identity", () => {
     const starts: AskStartEvent[] = [];
     const receipts: AskReceipt[] = [];
     const payloads: unknown[] = [];
-    const complete = vi.fn(async (req: ProviderRequest) => {
-      payloads.push(req.payload);
+    const infer = vi.fn(async (req: InferRequest) => {
+      payloads.push(renderPrompt(req.intent));
       return { text: '{"arg0":"Evgen"}' };
     });
     nolaRuntime.configure({
-      model: { default: { name: "probe", complete } },
+      model: { default: { name: "probe", infer } },
       telemetry: [{ name: "cap", onAskStart: (e) => starts.push(e), onAskEnd: (e) => receipts.push(e.receipt) }],
     });
     const fetchUser = (a: string) => a;
@@ -130,11 +131,10 @@ describe("FunctionCallIntent — ask identity", () => {
     });
     expect(starts[0]?.typeText).toBeUndefined();
     expect(receipts[0]?.kind).toBe("call");
-    // The provider is classic-dialect: it receives the rendering, whose TASK block is the synthesized request verbatim.
+    // The default rendering's TASK block is the synthesized request verbatim (stage 1 of the prompt-rendering plan).
     const text = (payloads[0] as { messages: Array<{ content: string }> }).messages[0]?.content ?? "";
-    expect(text).toContain(
-      '<request>\nGenerate the arguments for calling the function "fetchUser". pick the user\n</request>',
-    );
+    expect(text).toContain('<task call="fetchUser">\npick the user\n</task>');
+    expect(text).not.toContain("Generate the arguments");
   });
 
   it('a call without a hint reports hint: ""', async () => {

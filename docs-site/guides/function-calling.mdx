@@ -5,11 +5,11 @@ sidebar:
   order: 40
 ---
 
-When you already have a function that *does* something, do not extract its arguments one at a time and then call it. Make the call itself the intent: the model fills every extractor-shaped argument in one provider call, and the function runs with the results.
+A call intent lets a model fill arguments for an existing function. Nola resolves all extractor arguments in one provider call, validates them, then invokes the function with those values.
 
 ## The helper
 
-Ordinary TypeScript, nothing Nola about it:
+Start with a TypeScript function that creates a ticket:
 
 ```ts
 // src/tickets.ts
@@ -24,7 +24,7 @@ export async function createTicket(title: string, priority: number): Promise<str
 
 ## The call intent
 
-The `.tsi` imports the helper with the NodeNext `.js` specifier and gives the call extractor arguments. That is the whole recipe:
+Import the helper into a `.tsi` file and use an extractor for the argument the model should supply. This example keeps the priority fixed at `2`:
 
 ```tsi
 // src/file-ticket.tsi
@@ -33,16 +33,16 @@ import { createTicket } from "./tickets.js";
 export infer function fileTicket(.request: string) {
   // Sigil-less: the extractor argument makes this call an intent. `2` is a
   // plain argument and is passed through untouched.
-  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  const id = ask createTicket(`a short ticket title for the request`: string, 2);
   return id;
 }
 ```
 
-`createTicket` is async, but `id` is a `string`, not a `Promise<string>`: a call intent awaits a promise-returning callee itself (`ask` ≈ `await`), so `await ask createTicket(…)` is redundant.
+The call intent awaits `createTicket`, so `id` has type `string`. You do not need another `await` around the ask.
 
 ## Adding instruction text
 
-The marker form is the only spelling that carries a hint for the call:
+To give the model an instruction for the whole call, put a template literal after the function name:
 
 ```tsi
 // src/file-ticket-carefully.tsi
@@ -50,32 +50,36 @@ import { createTicket } from "./tickets.js";
 
 export infer function fileTicketCarefully(.request: string) {
   return ask createTicket`file the ticket exactly as the customer described it`(
-    ..`a short ticket title`<string>,
-    ..`priority 1-5, where 1 is most urgent`<number>,
+    `a short ticket title`: string,
+    `priority 1-5, where 1 is most urgent`: number,
   );
 }
 ```
 
-Every slot needs an explicit `<T>` ([`NOLA2004`](/docs/reference/error-codes/#nola2004)), and all slots of one call resolve together in a single provider round trip — the model is asked for the arguments of the named function, sees each slot's type and instruction (plus the hint, if any), and fills every slot of the same call consistently. Plain, non-extractor arguments are not shown to it.
+Every extractor argument needs an explicit type; an untyped template in the argument list is a plain string, not an extractor, and an untyped `` ..`…` `` slot raises [`NOLA2004`](/docs/reference/error-codes/#nola2004). The model receives the function name, each extractor's type and instruction, and the call hint. It fills the extractor arguments together in one response. Plain arguments are passed to the function without being shown to the model.
 
 ## Idempotency
 
-Because the callee runs *inside* the ask, `.withRetry(n)` on a call intent re-invokes it on every failed attempt. Only use it when the target is idempotent. When it is not, split the work: extract the arguments with plain extractors, then call the function in ordinary TypeScript under your own retry policy.
+The function runs as part of resolving the ask. If it runs and then the attempt fails, `.withRetry(n)` can run it again. Use intent retries only when repeated calls are safe.
+
+To keep the helper outside each extraction's retry loop, extract the arguments first and call it separately:
 
 ```tsi
 // src/file-ticket-split.tsi
 import { createTicket } from "./tickets.js";
 
 export infer function fileTicketOnce(.request: string) {
-  const title = ask `a short ticket title for the request`<string>;
-  const priority = ask `priority 1-5, where 1 is most urgent`<number>;
+  const title = ask `a short ticket title for the request`: string;
+  const priority = ask `priority 1-5, where 1 is most urgent`: number;
   return await createTicket(title, priority);   // plain await — runs exactly once
 }
 ```
 
+The helper runs once per execution of this function body. Retrying the whole `fileTicketOnce` intent can still repeat it, so splitting the asks does not guarantee exactly-once side effects.
+
 ## Timeouts
 
-The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider round trips only. Once the arguments are filled, the callee's own promise runs to completion, exactly like a plain `await createTicket()` in your code — see [Ask options](/docs/config/ask-options/#timeouts).
+`ask.timeoutMs` and `.withTimeout` limit provider round trips. They do not cancel a function that has already started running. Give the helper its own timeout or cancellation handling if it needs one. See [Ask options](/docs/config/ask-options/#timeouts).
 
 ## Calling from plain TypeScript
 
@@ -87,6 +91,6 @@ const id = await fileTicket("Checkout is down for every customer in the EU — p
 console.log("created", id);
 ```
 
-The grammar in full — the three spellings, the detection rule, what stays a plain call — is on [Call intents](/docs/language/call-intents/).
+See [Call intents](/docs/language/call-intents/) for all three spellings and the rules that distinguish an intent from a plain function call.
 
 Next: [Testing](/docs/guides/testing/)

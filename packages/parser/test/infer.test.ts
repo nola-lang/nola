@@ -27,30 +27,30 @@ describe("infer function", () => {
     expect(inferFns(ast as BaseNode)).toHaveLength(1);
   });
 
-  it("records the instruction marker text", () => {
+  it("NOLA1019: a marker on an infer function is reserved — strict mode bails", () => {
     const src = "infer function getUser`extract user from message`(m: string) {\n  return m;\n}\n";
     const { ast, diagnostics } = parseNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    const [fn] = inferFns(ast as BaseNode);
-    expect(fn?.nolaMarker?.instruction).toBe("extract user from message");
+    expect(ast).toBeNull();
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1019"]);
+    expect(diagnostics[0]?.start).toBe(src.indexOf("`"));
+    // any bare template statement in the body is a context statement now — not only the first one
+    expect(diagnostics[0]?.message).toContain("write the instruction as a context statement in the body");
+    expect(diagnostics[0]?.message).not.toContain("first statement");
   });
 
-  it("an empty marker yields an empty instruction", () => {
-    const { ast } = parseNola("infer function go``() {\n  return 1;\n}\n", "x.tsi");
-    expect(inferFns(ast as BaseNode)[0]?.nolaMarker?.instruction).toBe("");
+  it("NOLA1019: on an exported infer function too", () => {
+    const { diagnostics } = parseNola("export infer function go`be terse`(m: string) {\n  return m;\n}\n", "x.tsi");
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1019"]);
+  });
+
+  it("NOLA1019: the empty marker is reserved as well", () => {
+    const { diagnostics } = parseNola("infer function go``() {\n  return 1;\n}\n", "x.tsi");
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1019"]);
   });
 
   it("NOLA1007: instruction marker on a non-infer function", () => {
     const { diagnostics } = parseNola("export function analyze``(x: string) {\n  return x;\n}\n", "x.tsi");
     expect(diagnostics[0]?.code).toBe("NOLA1007");
-  });
-
-  it("${} in a marker is legal — the marker keeps its holes", () => {
-    const { ast, diagnostics } = parseNola("infer function go`use ${db}`() {\n  return 1;\n}\n", "x.tsi");
-    expect(diagnostics).toEqual([]);
-    const [fn] = inferFns(ast as BaseNode);
-    expect(fn?.nolaMarker?.quasi?.expressions).toHaveLength(1);
-    expect(fn?.nolaMarker?.hasScopeAccess).toBe(false);
   });
 
   it("NOLA1004: infer generator", () => {

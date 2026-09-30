@@ -85,9 +85,28 @@ describe("emit-contract bump enforcement", () => {
       // { Choice, Scale, Prob } from "@nola-lang/runtime"` for the intrinsic
       // names a file uses. An emit-17 runtime has no choice/scale/prob keys,
       // hence the bump.
-      emit: 18,
-      top: ["ask", "context", "fmt", "intents", "tpl", "types", "useRuntime"],
-      context: ["file"],
+      // emit 19: module scope unification (spec 2026-09-26) — one node per
+      // file: `__nola.context.module(path, 19, init?)` replaces `context.file`
+      // (the file node is gone; the module node is the lineage root, the
+      // `<module>` scope and the parent of the file's function scopes —
+      // `__nola_module_ctx().func({...})`), and the init — instruction /
+      // template / locals — rides a thunk read once on creation. An emit-18
+      // runtime has no `context.module`, hence the bump.
+      // emit 20: instruction interpolation (spec 2026-09-28) — the `${.member}`
+      // prompt template is retired: no `template` on any init, no `__nola.tpl`.
+      // A holed body instruction stays in place as `const __nola_fn_instr`
+      // (read at the call) and the init carries `instruction: __nola_fn_instr`;
+      // a holed module instruction is the hoisted `__nola_module_instr()` the
+      // init carries as a thunk, read at each ask. An emit-19 build with a
+      // template calls the missing tag, hence the bump.
+      // emit 21: context statements (spec 2026-09-29) — `__nola.ctx`, the tag
+      // every lowered context statement's `__nola_ctx_N` function returns; ask
+      // takes one options object; the function init carries `moduleContext`
+      // instead of `instruction`, the module init `context`. An emit-20 build
+      // calls the missing tag, hence the bump.
+      emit: 21,
+      top: ["ask", "context", "ctx", "fmt", "intents", "types", "useRuntime"],
+      context: ["module"],
       intents: ["ExtractIntent", "FunctionCallIntent", "Intent"],
       types: [
         "array",

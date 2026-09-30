@@ -5,7 +5,7 @@ sidebar:
   order: 30
 ---
 
-Nola ships a VS Code extension, `nola.nola-vscode`. Other editors talk to the same language server — see the end of this page.
+The Nola VS Code extension adds editing and debugging support for `.tsi` files. Other editors can use the same language server; setup details are at the end of this page.
 
 ## Install
 
@@ -15,19 +15,21 @@ Install **Nola** from the [Visual Studio Marketplace](https://marketplace.visual
 code --install-extension nola.nola-vscode
 ```
 
-Projects created with `npm create nola` (and retrofits with `--add`) carry a `.vscode/extensions.json` that recommends the extension, so VS Code offers to install it when the folder opens — the editor setup is written by default; `--ide none` skips it. The interactive scaffold also offers to install the dependencies and open the folder in VS Code as its last step (answer *yes* to *Install dependencies and open VS Code?*) — it lands on the entry file, whose opening comment lists the next steps (F5, a breakpoint, the extension). The offer needs VS Code's `code` command on your PATH — on macOS run *Shell Command: Install 'code' command in PATH* from the Command Palette once; without it the last question is just *Install dependencies?* and the folder is not opened.
+`npm create nola` and `npm create nola -- --add` write an extension recommendation in `.vscode/extensions.json`, so VS Code offers to install Nola when you open the folder. Pass `--ide none` to skip editor setup.
+
+The interactive scaffold also offers to install dependencies and open VS Code at the entry file. Its opening comment explains how to run the program and set a breakpoint. This requires the `code` command on your PATH. On macOS, you can add it with *Shell Command: Install 'code' command in PATH* in the Command Palette. If the command is unavailable, the scaffold offers only to install dependencies.
 
 ## What you get
 
-- **Syntax highlighting** for `.tsi`: the `infer` and `ask` keywords, extractor templates, `ask with <provider>` routing.
+- **Syntax highlighting** for `.tsi`, including `infer`, `ask`, extractor templates and `ask with <name>` model routing.
 - **Diagnostics** — Nola parse errors and TypeScript errors, reported at the original `.tsi` positions.
-- **Hover, completion, go-to-definition** inside `.tsi` files. Prompt templates included: typing `${.` inside an instruction (marker, extractor, call hint) completes the prompt-scope members, and TS errors inside a template point at the exact source range.
-- **Plain TypeScript interop** — `.ts` files that import `.tsi` modules get full types, and go-to-definition from `.ts` lands on the original `infer function` (a bundled tsserver plugin).
-- **Debugging** — the "Nola: Launch File" configuration runs a `.tsi` entry under the Nola loader; breakpoints bind in `.tsi` source, stepping into an infer function works, and debug hover evaluates contextual parameters.
+- **Hover, completion and go-to-definition** inside `.tsi` files, including inside the `${…}` holes of an instruction, extractor or call hint, where the interpolated expression is ordinary TypeScript. TypeScript errors point to the relevant source text.
+- **TypeScript interop** through the bundled tsserver plugin. A `.ts` consumer gets the types of its `.tsi` imports, and go-to-definition opens the original infer function.
+- **Debugging** with the "Nola: Launch File" configuration. Set breakpoints in `.tsi` source, step into infer functions and hover contextual parameters to inspect their values.
 
 ## Keep .tsi inside the tsconfig include
 
-The language server and the tsserver plugin only see `.tsi` files that your `tsconfig.json` admits, and they can only do that through a **directory-style** `include`:
+Use a directory-style `include` in `tsconfig.json` so the language server and tsserver plugin can include your `.tsi` files:
 
 ```jsonc
 // tsconfig.json
@@ -36,11 +38,11 @@ The language server and the tsserver plugin only see `.tsi` files that your `tsc
 }
 ```
 
-`["src/**/*.ts"]` would drop every `.tsi` file out of the program — auto-import stops offering your infer functions and `.ts` consumers lose their types. The scaffold's tsconfig already uses the directory form.
+`["src/**/*.ts"]` excludes `.tsi` files, which prevents auto-imports from finding infer functions and leaves `.ts` consumers without their types. The scaffold already uses the directory form.
 
 ## Debugging with F5
 
-This is the launch configuration the scaffold writes to `.vscode/launch.json` when you choose VS Code (the extension also offers it under *Add Configuration… → Nola: Launch File*):
+The scaffold writes `.vscode/launch.json` with the template's entry file as `program`. The example below uses `src/main.ts`; for a one-file template, use `src/main.tsi`. You can also add a configuration through *Add Configuration… → Nola: Launch File*:
 
 ```jsonc
 // .vscode/launch.json
@@ -62,16 +64,16 @@ This is the launch configuration the scaffold writes to `.vscode/launch.json` wh
 }
 ```
 
-Three entries are load-bearing:
+Keep these three settings when adapting the configuration:
 
-- **`runtimeArgs`** — `--import nola-lang/register` lowers `.tsi` in memory with inline source maps that point back at the on-disk files; `--enable-source-maps` makes stack traces report `.tsi` positions.
-- **`resolveSourceMapLocations`** — VS Code's default only admits source maps for `.js` files; without this entry the inline map of a `.tsi` module is ignored and breakpoints never bind.
-- **`skipFiles`** — without it, stepping *over* an `ask` surfaces inside the Nola runtime instead of landing on your next line.
+- **`runtimeArgs`** loads Nola's `.tsi` support and enables source maps for stack traces.
+- **`resolveSourceMapLocations`** lets VS Code use the inline source maps for `.tsi` modules. Without it, breakpoints may fail to bind.
+- **`skipFiles`** keeps stepping focused on your code. Stepping over an ask proceeds to your next line instead of entering the runtime.
 
-With it in place: set a breakpoint in a `.tsi` file, press F5, step into an infer function with F11 (you land on its first statement), and hover a contextual parameter to see its value. This is the development and debugging path — production builds use `nola build` and run without the loader.
+Set a breakpoint in a `.tsi` file and press F5. Use F11 to step into an infer function, then hover a contextual parameter to inspect its value. This setup runs source files through the loader; production builds can use `nola build` and run the emitted JavaScript directly.
 
 ## Other editors
 
-The extension is a thin shell around two packages you can wire into any editor with an LSP client: `@nola-lang/language-server` (diagnostics, hover, completion, definition inside `.tsi`) and `@nola-lang/typescript-plugin` (types for `.ts` files that import `.tsi`). See their READMEs on npm: [language-server](https://www.npmjs.com/package/@nola-lang/language-server), [typescript-plugin](https://www.npmjs.com/package/@nola-lang/typescript-plugin).
+For other editors, configure `@nola-lang/language-server` with the editor's LSP client for diagnostics, hover, completion and go-to-definition in `.tsi`. The separate `@nola-lang/typescript-plugin` supplies types to `.ts` files that import `.tsi` modules. See the package READMEs for setup: [language-server](https://www.npmjs.com/package/@nola-lang/language-server) and [typescript-plugin](https://www.npmjs.com/package/@nola-lang/typescript-plugin).
 
 Next: [Project anatomy](/docs/start/project-anatomy/)

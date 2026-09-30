@@ -15,7 +15,7 @@ function fakeFetch(reply: (c: Call) => { status?: number; body?: unknown }) {
   }) as typeof fetch;
   return { fn, calls };
 }
-const mock = { name: "mock", complete: async () => ({ text: "" }) };
+const mock = { name: "mock", infer: async () => ({ text: "" }) };
 const askStart = { askId: "a1", site: { file: "f.tsi", loc: "1:1" }, provider: "mock" } as never;
 
 describe("nola.tracer() — a NolaTelemetry that posts envelopes", () => {

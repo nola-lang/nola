@@ -38,8 +38,6 @@ export interface TemplateLiteralNode extends BaseNode {
   type: "TemplateLiteral";
   quasis: TemplateElementNode[];
   expressions: BaseNode[];
-  /** set by the parser when any hole (at any nesting depth) contains a NolaScopeAccess */
-  nolaHasScopeAccess?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,9 +216,12 @@ export interface NolaExtractExpression extends BaseNode {
   quasi: TemplateLiteralNode | null;
   /** cooked prompt text */
   prompt: string;
+  /**
+   * The written type: `` `p`<T> `` or, since the colon-typed spec (2026-09-23),
+   * `` `p`: T `` — the parser wraps a colon type in the same one-param node
+   * (spanning the colon to the type's end), so read `params[0]` either way.
+   */
   typeArgs: TSTypeParameterInstantiationNode | null;
-  /** `..choice` / `..scale` / `..prob` (decision types spec §5): the sugar's primitive; absent on a plain extractor */
-  kind?: "choice" | "scale" | "prob";
   /**
    * Set by the parser's tolerant-mode recovery: the construct was broken and a
    * diagnostic was recorded, so the lowering replaces its span with an inert
@@ -237,15 +238,29 @@ export interface NolaAskExpression extends BaseNode {
 }
 
 /**
- * `${.member}` inside a Nola instruction template: reads the intent's prompt
- * scope. `property` is null only on the tolerant-mode placeholder for a
- * half-typed `${.` (nolaError) — the lowering still emits the scope prefix so
- * TypeScript can answer completion after the dot.
+ * A context statement (spec 2026-09-29): an expression statement that is a
+ * bare template literal, a chain of adjacent template literals, or text parts
+ * and value parts (`` `analyze:` user `and report` ``). `parts` are in source
+ * order and the first is always a TemplateLiteral; a value part is any
+ * left-hand-side expression the parser admitted (a name chain, a call, a
+ * bracketed literal, `new …`; a bare `this`, `await` or `ask` is NOLA1020).
+ * The lowerer joins the parts into one `__nola.ctx` tagged template; a value
+ * is never adjacent to another value.
  */
-export interface NolaScopeAccessNode extends BaseNode {
-  type: "NolaScopeAccess";
-  property: IdentifierNode | null;
-  nolaError?: boolean;
+export interface NolaContextStatementNode extends BaseNode {
+  type: "NolaContextStatement";
+  parts: BaseNode[];
+}
+
+/**
+ * The token span of a context statement's value part, as the parser consumed
+ * it. Babel's node for a parenthesized expression spans the INNER expression
+ * only (`extra.parenStart` names the `(`, nothing names the `)`), so the
+ * lowerer reads this span — parentheses included — to know which bytes are
+ * the value's own.
+ */
+export interface NolaContextValueNode extends BaseNode {
+  nolaValueSpan?: { start: number; end: number };
 }
 
 /** Span + text of the provider alias in `ask with <name>`. */
@@ -266,7 +281,13 @@ export interface NolaFunctionNode extends BaseNode {
   async?: boolean;
 }
 
-/** Span + cooked text of the instruction marker on an infer function. */
+/**
+ * Span + cooked text of the marker between an infer function's name and its
+ * parameters. RESERVED since 2026-09-26 (NOLA1019, spec
+ * 2026-09-26-body-instruction-only §3.1): the instruction is a context
+ * statement in the body. Attached in tolerant mode only, so the lowering can
+ * drop the bytes; strict mode never gets past the raise.
+ */
 export interface NolaMarker {
   start: number;
   end: number;
@@ -274,8 +295,6 @@ export interface NolaMarker {
   instruction: string;
   /** the marker literal, holes included */
   quasi?: TemplateLiteralNode;
-  /** true when any hole is a `${.member}` scope access — the marker is a template */
-  hasScopeAccess?: boolean;
 }
 
 /** A function parameter node, plus the span of a `..` contextual prefix if present. */
@@ -327,9 +346,12 @@ export const Codes = {
   IncompleteContextualParam: "NOLA1012",
   ContextualParamDoubleDot: "NOLA1013",
   ContextualBindingReserved: "NOLA1014",
-  IncompleteScopeAccess: "NOLA1015",
-  UnknownExtractorKind: "NOLA1016",
+  // NOLA1015 (IncompleteScopeAccess) retired with prompt templates (2026-09-28, instruction-interpolation spec): `${.member}` no longer parses.
+  // NOLA1016 (UnknownExtractorKind) retired with the ..choice/..scale/..prob sugar (2026-09-23): an identifier after `..` is NOLA1005.
   AskTemplateNeedsSpace: "NOLA1017",
+  ExpectedExtractorType: "NOLA1018",
+  MarkerReserved: "NOLA1019",
+  ContextValueTail: "NOLA1020",
   AskOutsideNolaFunction: "NOLA2001",
   UnsupportedIntentType: "NOLA2002",
   NolaFnNotTopLevel: "NOLA2003",
@@ -337,13 +359,15 @@ export const Codes = {
   // NOLA2006 (ReservedCompanionPath) retired with companions (emit 14): no reserved filename namespace remains.
   ViewUnavailable: "NOLA2007",
   UnderivableContextType: "NOLA2008",
-  ScopeAccessOutsideTemplate: "NOLA2009",
+  // NOLA2009 (ScopeAccessOutsideTemplate) retired with prompt templates (2026-09-28, instruction-interpolation spec): `${.member}` no longer parses.
   NolaConstructInMarker: "NOLA2010",
   TypeValueNameConflict: "NOLA2011",
   InvalidConstraint: "NOLA2012",
-  DuplicateInstruction: "NOLA2013",
+  // NOLA2013 (DuplicateInstruction) retired with the marker instruction (2026-09-26): the body literal is the only spelling; a marker is NOLA1019.
   ExtractorSigilRequired: "NOLA2014",
   InvalidDecisionCriteria: "NOLA2015",
+  // NOLA2016 (LexicalHoleInInstruction) retired (2026-09-28, instruction-interpolation spec): a lexical hole is legal in every instruction literal.
+  ContextOutsideScopeBody: "NOLA2017",
   // NOLA3xxx: runtime diagnostics
   EmitContractMismatch: "NOLA3001",
   DuplicateRuntimeConflict: "NOLA3002",
@@ -358,7 +382,7 @@ export const Codes = {
   IntentWithoutParentFrame: "NOLA3011",
   ConfigImportsTsi: "NOLA3012",
   BrowserExecutionUnsupported: "NOLA3013",
-  PromptTemplateFailed: "NOLA3014",
+  // NOLA3014 (PromptTemplateFailed) retired with prompt templates (2026-09-28, instruction-interpolation spec): a throwing instruction thunk surfaces its own error.
   LoaderHooksUnsupported: "NOLA3015",
   ValidationFailed: "NOLA3016",
   SchemaTargetUnsupported: "NOLA3017",

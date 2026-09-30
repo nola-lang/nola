@@ -23,12 +23,7 @@ type Shape = BaseNode & {
   id?: { name?: string };
   local?: { name?: string };
   typeName?: BaseNode & { name?: string };
-  /** `..choice` / `..scale` / `..prob`: the sugar desugars to the wrapper, which the lowered text then references */
-  kind?: keyof typeof SUGAR_WRAPPERS;
 };
-
-/** The intrinsic each extractor sugar lowers to (mirrors `DECISION_WRAPPERS` in lower/templates.ts). */
-const SUGAR_WRAPPERS = { choice: "Choice", scale: "Scale", prob: "Prob" } as const;
 
 export function collectDecisionTypeUses(ast: BaseNode): DecisionTypeName[] {
   const declared = new Set<string>(collectTypeImports(ast).keys());
@@ -40,7 +35,6 @@ export function collectDecisionTypeUses(ast: BaseNode): DecisionTypeName[] {
       declared.add(n.local.name);
     }
     if (n.type === "TSTypeReference" && n.typeName?.type === "Identifier" && n.typeName.name) used.add(n.typeName.name);
-    if (n.type === "NolaExtractExpression" && n.kind && n.kind in SUGAR_WRAPPERS) used.add(SUGAR_WRAPPERS[n.kind]);
   });
   return DECISION_TYPE_NAMES.filter((name) => used.has(name) && !declared.has(name));
 }

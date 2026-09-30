@@ -6,7 +6,7 @@ import {
   mergeProviderParams,NolaIntentError, 
   type ProviderParams
 } from "@nola-lang/core";
-import type { AskLocals, InferContext } from "../infer-context/index.js";
+import type { InferContext, VisibleContext } from "../infer-context/index.js";
 import { Frame, type NolaRuntime, nolaRuntime } from "../runtime/index.js";
 
 export interface IntentOptions {
@@ -26,12 +26,12 @@ export interface IntentOptions {
   /** resolve without inheriting the caller frame's context (InvocationIntent only) */
   detached?: boolean;
   /**
-   * The ask site's visible contextual bindings (`const .x`), set by `ask`
-   * itself — never by user code. On an extract/call intent they describe the
-   * scope the ask runs on; on a callee invocation, the caller scope as seen
-   * from that call site.
+   * What the ask site sees — its visible `const .x` bindings and context
+   * items (spec 2026-09-29 §3.4) — set by `ask` itself, never by user code. On
+   * an extract/call intent it describes the scope the ask runs on; on a callee
+   * invocation, the caller scope as seen from that call site.
    */
-  locals?: AskLocals;
+  visible?: VisibleContext;
 }
 
 export type IntentExecutor<T> = (frame: Frame) => Promise<T>;
@@ -94,9 +94,21 @@ export abstract class Intent<T = unknown, TContext extends InferContext = InferC
     return this.clone({ timeout });
   }
 
-  /** @internal the ask path attaches the site's contextual bindings (scope-bodies spec §3.3). */
-  withLocals(locals: AskLocals): Intent<T> {
-    return this.clone({ locals });
+  /** @internal the ask path attaches what the site sees (bindings and context items). */
+  withVisible(visible: VisibleContext): Intent<T> {
+    return this.clone({ visible });
+  }
+
+  /**
+   * @internal What `fmt` prints for an intent used as a VALUE in a context
+   * statement (spec 2026-09-29 §3.4): an extractor's prompt, an infer
+   * function's name; a call intent overrides this with its callee and arguments.
+   */
+  describe(): string {
+    const identity = this.inferContext?.askIdentity();
+    if (identity) return identity.instruction;
+    const fn = (this.inferContext?.data as { fn?: unknown } | undefined)?.fn;
+    return typeof fn === "string" ? fn : "(intent)";
   }
 
   withParams(params: ProviderParams): Intent<T> {

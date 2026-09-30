@@ -28,9 +28,9 @@ describe("core Intent contract", () => {
     expect(s.type).toBe("object");
   });
 
-  it("LanguageModel.complete returns { text }", () => {
-    const p: LanguageModel = { name: "noop", complete: async () => ({ text: '"x"' }) };
-    expectTypeOf(p.complete).returns.resolves.toEqualTypeOf<{ text: string }>();
+  it("LanguageModel.infer returns { text } (and more)", () => {
+    const p: LanguageModel = { name: "noop", infer: async () => ({ text: '"x"' }) };
+    expectTypeOf(p.infer).returns.resolves.toMatchTypeOf<{ text: string }>();
     expect(p.name).toBe("noop");
   });
 });

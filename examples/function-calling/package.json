@@ -1,0 +1,22 @@
+{
+  "name": "nola-example-function-calling",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "nola run src/main.tsi",
+    "build": "nola build",
+    "check": "nola check"
+  },
+  "dependencies": {
+    "@nola-lang/providers": "*",
+    "@nola-lang/runtime": "*"
+  },
+  "devDependencies": {
+    "nola-lang": "*",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

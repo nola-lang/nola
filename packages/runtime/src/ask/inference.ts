@@ -2,24 +2,21 @@ import { Codes } from "@nola-lang/ast";
 import {
   type AskContext,
   type AskResult,
-  type ChatModel,
   findDecisionQuestions,
   fingerprintRequest,
   formatIssues,
   type InferenceModel,
-  type InferModel,
   type InferRequest,
+  type InferResult,
   isDecisionModel,
-  isInferModel,
   isPlatformModel,
   type LanguageModel,
   mergeProviderParams,
   NolaIntentError,
   NolaResolutionError,
-  type PlatformModel,
-  type ProviderRequest,
   redactError,
-  renderClassic,
+  renderPrompt,
+  renderTranscript,
   type Site,
 } from "@nola-lang/core";
 import type { InferContext } from "../infer-context/index.js";
@@ -44,11 +41,9 @@ export type CorrectionRequest = {
   error: string;
 };
 
-/** The composed conversation as one string — receipts and error reporting. */
+/** The default rendering of an intent as one transcript — receipts (as first composed) and error reporting. */
 export function describeModel(model: InferenceModel): string {
-  return renderClassic(model)
-    .messages.map((m) => `${m.role}: ${m.content}`)
-    .join("\n\n");
+  return renderTranscript(renderPrompt(model));
 }
 
 /**
@@ -57,10 +52,9 @@ export function describeModel(model: InferenceModel): string {
  * request fingerprint, the one-correction retry loop, the contract check,
  * receipt emission — so every strategy fires identical observability.
  * Subclasses own the wire dialect through three seams: parse /
- * validateResult / correctionRequest. The method name is the dialect
- * (reshape design 2026-09-01): a managed provider takes the canonical
- * InferenceModel through `infer`, every classic provider takes the
- * rendering (`renderClassic`) through `complete`. Middleware
+ * validateResult / correctionRequest. Every model takes the canonical
+ * InferenceModel through `infer` and renders it itself (prompt-rendering
+ * spec 2026-09-28); what it sent comes back as `sent`. Middleware
  * and the fingerprint cache are deliberately NOT wired — pipeline.ts and the
  * config sections stay as infrastructure. The runtime is reached through the
  * frame — the ask path never reads the global slot.
@@ -165,7 +159,7 @@ export abstract class Inference {
       context: this.task.context,
       site: this.site.toString(),
       ...(system !== undefined ? { system } : {}),
-      ...(this.task.options.locals !== undefined ? { locals: this.task.options.locals } : {}),
+      ...(this.task.options.visible !== undefined ? { visible: this.task.options.visible } : {}),
     });
   }
 
@@ -191,39 +185,32 @@ export abstract class Inference {
       );
     }
 
-    // One request has one shape — the METHOD NAME is the dialect (spec
-    // 2026-09-18 §6.2): `infer` takes InferRequest { model }, `complete` takes
-    // ProviderRequest with the rendering. Platform-only fields ride only the platform.
-    const managed = isInferModel(provider);
+    // One request, one shape (prompt-rendering spec 2026-09-28 §3.4): every
+    // model takes the intent through `infer` and renders it itself. `project`
+    // rides only to the platform.
     const platform = isPlatformModel(provider);
     const params = mergeProviderParams(this.frame.resolveParams(), this.task.options.params);
-    // Deployment metadata for managed servers (per-project display/metering) — never the fingerprint.
+    // Deployment metadata for the platform (per-project display/metering) — never the fingerprint.
     const project = this.runtime.config?.project;
-    const requestFor = (m: InferenceModel): InferRequest | ProviderRequest => {
-      const common = {
-        // The intent's own params are the nearest override over the frame chain.
-        params,
-        signal: current.abortSignal,
-        trace: { askId: this.askId, invocationId: this.frame.invocationId, spanPath: this.frame.spanPath() },
-        // The managed-mode inference profile (ask with <name>) — joins the fingerprint.
-        ...(profile !== undefined ? { profile } : {}),
-      };
-      if (managed) return { model: m, ...common, ...(platform && project !== undefined ? { project } : {}) };
-      return { payload: renderClassic(m), ...common };
-    };
+    const requestFor = (m: InferenceModel): InferRequest => ({
+      intent: m,
+      // The intent's own params are the nearest override over the frame chain.
+      params,
+      signal: current.abortSignal,
+      trace: { askId: this.askId, invocationId: this.frame.invocationId, spanPath: this.frame.spanPath() },
+      // The managed-mode inference profile (ask with <name>) — joins the fingerprint.
+      ...(profile !== undefined ? { profile } : {}),
+      ...(platform && project !== undefined ? { project } : {}),
+    });
     let request = requestFor(model);
     this.span.profile = profile;
-    // The ask's identity is the request as first composed — a correction retry
-    // does not restamp. A managed ask hashes the model; a classic ask its
-    // rendering — identical by design (renderClassic is the fingerprint form).
-    this.span.fingerprint = fingerprintRequest({
-      payload: "model" in request ? request.model : request.payload,
-      params: request.params,
-      ...(profile !== undefined ? { profile } : {}),
-    });
+    // The ask's identity is the intent as first composed — a correction retry
+    // does not restamp (fingerprintRequest strips `correction`).
+    this.span.fingerprint = fingerprintRequest(request);
     // TODO(cache): serve repeat fingerprints from config.cache.store when the cache is re-wired.
 
-    let text = await this.callProvider(provider, request);
+    let res = await this.callProvider(provider, request);
+    let text = res.text;
     let result = this.interpret(text, model);
 
     if (!result.ok) {
@@ -233,10 +220,8 @@ export abstract class Inference {
 
       model = this.correctionRequest({ frame: this.frame, response: text, error: reason }, model);
       request = requestFor(model);
-      // "As sent": the correction changed the conversation, so the pair diverges here.
-      this.span.effectivePrompt = describeModel(model);
-
-      text = await this.callProvider(provider, request);
+      res = await this.callProvider(provider, request);
+      text = res.text;
       result = this.interpret(text, model);
     }
 
@@ -244,7 +229,7 @@ export abstract class Inference {
       const reason = formatIssues(result.issues);
       this.recordValidationFailure(reason);
       throw new NolaResolutionError(`Intent resolution failed after retry at ${this.site} — ${reason}`, {
-        prompt: describeModel(model),
+        prompt: this.span.effectivePrompt,
         raw: text,
         site: this.site,
       });
@@ -252,10 +237,12 @@ export abstract class Inference {
     return { model, value: result.value, servedBy: provider.name };
   };
 
-  private async callProvider(
-    provider: LanguageModel | InferModel | PlatformModel,
-    request: InferRequest | ProviderRequest,
-  ): Promise<string> {
+  /**
+   * One provider round trip. "As last sent" is the provider's own echo when it
+   * rendered text (`sent`), else the default rendering of the intent it
+   * received — so a provider that renders differently is reported honestly.
+   */
+  private async callProvider(provider: LanguageModel, request: InferRequest): Promise<InferResult> {
     // Fail fast on an already-elapsed timeout even when the provider ignores the signal.
     request.signal?.throwIfAborted();
     const attempt = this.span.attempts.length + 1;
@@ -263,17 +250,26 @@ export abstract class Inference {
       askId: this.askId,
       attempt,
       provider: provider.name,
-      payload: "model" in request ? request.model : request.payload,
+      intent: request.intent,
       ...(request.params ? { params: request.params } : {}),
       ...(request.profile !== undefined ? { profile: request.profile } : {}),
     });
-    const { text, durationMs = NaN } =
-      "model" in request
-        ? await (provider as InferModel).infer(request)
-        : await (provider as ChatModel).complete(request);
+    // "As last sent" is set BEFORE the call, so a provider that throws still leaves the
+    // in-flight conversation (a correction, say) on the receipt; the echo overwrites it.
+    this.span.effectivePrompt = describeModel(request.intent);
+    const res = await provider.infer(request);
+    const durationMs = res.durationMs ?? NaN;
     this.span.attempts.push({ attempt, provider: provider.name, durationMs });
-    this.runtime.emitEvent("onProviderResponse", { askId: this.askId, attempt, provider: provider.name, text, durationMs });
-    return text;
+    if (res.sent) this.span.effectivePrompt = renderTranscript(res.sent);
+    this.runtime.emitEvent("onProviderResponse", {
+      askId: this.askId,
+      attempt,
+      provider: provider.name,
+      text: res.text,
+      durationMs,
+      ...(res.sent ? { sent: res.sent } : {}),
+    });
+    return res;
   }
 
   /** parse then contract-check — the strategy's two seams composed. */

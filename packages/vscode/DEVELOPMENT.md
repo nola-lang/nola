@@ -71,6 +71,36 @@ can't):
     three ask snippets appear. Snippets are a VS Code-native completion source
     rather than an LSP one, so this checks the two lists coexist; the bodies
     themselves are parse-checked in `test/snippets.test.ts`.
+12. Context statements. Set up as in item 10 (`examples/_playground`, the
+    "Nola: Launch main" config). In `src/test_3/classify.tsi`, add these
+    lines just before the `return`:
+
+    ```
+    const seen: string[] = [];
+    for (const n of [1, 2, 3]) {
+      `Steps so far:` seen;
+      seen.push(ask `the next step ${n}`: string);
+    }
+    ```
+
+    Put a breakpoint on the `` `Steps so far:` `` line and F5. It binds (solid
+    red) at the statement itself and pauses once per loop pass, before the ask
+    on the next line renders the item: the statement is a line like any other,
+    so F10 walks on to the ask, and a step over the ask never enters the item.
+    The Variables pane shows `seen` one entry longer each pass, which is the
+    text the item will put into the prompt. Stepping stays in the `.tsi`.
+
+    Then the module-body shape: make a file's FIRST line a context statement
+    at column 0 (`` `You are a request solver.`; `` above a top-level ask) and
+    put a breakpoint on it. It binds at line 1, pauses there at program start
+    displaying the `.tsi`, and F10 steps to the next statement in source
+    order. Before 2026-09-29 the breakpoint resolved into the item's hoisted
+    function instead: the pause came mid-ask, in a read-only copy of the
+    generated script (the loader dropped the line's map segments as if it
+    were an infer-wrapper line), and F10 toured the other items as the
+    runtime rendered them. `transform.test.ts` pins the line's map; the
+    `contextItemOpen` comment in the compiler's templates.ts explains the
+    `void` read that gives the statement its step location.
 
 ## Scaffolding against the workspace build
 

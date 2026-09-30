@@ -43,8 +43,8 @@ describe("ExtractIntent", () => {
       model: { default: mockProvider(["free text"]) },
       telemetry: [{ onAskEnd: (e) => seen.push(e.receipt.site.file) }],
     });
-    // A scope with no FileInferContext anywhere in the lineage.
-    const c = Frame.open(nolaRuntime.current().system.scope({ fn: "go", instruction: "" }));
+    // A scope with no module node (file root) anywhere in the lineage.
+    const c = Frame.open(nolaRuntime.current().system.scope({ fn: "go" }));
     await ask(new ExtractIntent({ instruction: "anything" }), c);
     expect(seen).toEqual(["<unknown>"]);
   });
@@ -67,7 +67,7 @@ describe("ExtractIntent", () => {
 
   it("withModel(instance) uses the instance directly", async () => {
     nolaRuntime.configure({ model: { default: mockProvider(["default-answer"]) } });
-    const pinned = { name: "pinned", complete: async () => ({ text: '"pinned-answer"' }) };
+    const pinned = { name: "pinned", infer: async () => ({ text: '"pinned-answer"' }) };
     const intent = new ExtractIntent<string>({ instruction: "m", type: { type: "string" }, loc: "1:1" });
     await expect(ask(intent.withModel(pinned), ctx())).resolves.toBe("pinned-answer");
   });

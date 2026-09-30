@@ -21,7 +21,7 @@ export interface Launcher {
   /**
    * `code <dir> [<dir>/<entry>]`, detached; "not-found" when VS Code's `code`
    * command is not on PATH. `entry` is a project-relative file to open as the
-   * active editor on top of the folder (the scaffold's src/main.ts).
+   * active editor on top of the folder (the template's entry file).
    */
   openVscode(dir: string, entry?: string): Promise<"opened" | "not-found">;
 }
@@ -30,7 +30,7 @@ export interface Launcher {
  * The arguments that open a project in VS Code: the folder alone, or the
  * folder plus one file. `code <folder> <file>` opens the folder as the
  * workspace and the file as the active editor — that is how the scaffold
- * lands the user on src/main.ts instead of an empty window.
+ * lands the user on the entry file instead of an empty window.
  */
 export function vscodeArgs(dir: string, entry?: string): string[] {
   return entry === undefined ? [dir] : [dir, join(dir, entry)];

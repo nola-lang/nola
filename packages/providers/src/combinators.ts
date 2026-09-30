@@ -1,7 +1,8 @@
 import { Codes } from "@nola-lang/ast";
-import type { ChatModel, InferModel, InferRequest, LanguageModel, ProviderRequest, ProviderResponse } from "@nola-lang/core";
-import { DECISION_MODEL, isDecisionModel, isInferModel, isPlatformModel, NolaConfigError, NolaProviderError } from "@nola-lang/core";
-import { callModel, isDecisionRequest } from "./dialect.js";
+import type { InferRequest, InferResult, LanguageModel } from "@nola-lang/core";
+import { DECISION_MODEL, isDecisionModel, isPlatformModel, NolaConfigError, NolaProviderError } from "@nola-lang/core";
+import { isDecisionRequest } from "./decision-request.js";
+import { requireInfer } from "./require-infer.js";
 
 export interface RetryPolicy {
   maxRetries: number;
@@ -67,21 +68,10 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type AnyModel = ChatModel | InferModel;
-type AnyRequest = InferRequest | ProviderRequest;
-
-/**
- * Build the outer model of a combinator (decision types spec 2026-09-18
- * §6.1–6.2): infer-dialect iff any inner is (chat inners get the rendering
- * through callModel), branded a decision model iff any inner is. `run`
- * receives the request in the outer dialect.
- */
-function outer(name: string, inners: AnyModel[], run: (req: AnyRequest) => Promise<ProviderResponse>): LanguageModel {
+/** Build the outer model of a combinator: branded a decision model iff any inner is; `run` receives the request as is. */
+function outer(name: string, inners: LanguageModel[], run: (req: InferRequest) => Promise<InferResult>): LanguageModel {
   const brand = inners.some((m) => isDecisionModel(m)) ? { [DECISION_MODEL]: true as const } : {};
-  const model = inners.some((m) => isInferModel(m))
-    ? { name, ...brand, infer: (req: InferRequest) => run(req) }
-    : { name, ...brand, complete: (req: ProviderRequest) => run(req) };
-  return model as unknown as LanguageModel;
+  return { name, ...brand, infer: (req: InferRequest) => run(req) };
 }
 
 /**
@@ -92,17 +82,18 @@ function outer(name: string, inners: AnyModel[], run: (req: AnyRequest) => Promi
  * with no delay) ignores the header entirely. Distinct from the intent method
  * `.withRetry(n)`, which flat-retries the entire ask (composition, provider
  * call, parse, validation) with no backoff and no definitive-error check.
- * Mirrors the inner's dialect and decision brand.
+ * Forwards `infer` and carries the inner's decision brand.
  */
 export function withRetry(provider: LanguageModel, policy: RetryPolicy): LanguageModel {
+  requireInfer([provider], "withRetry");
   rejectPlatformModel([provider], "withRetry");
-  const inner = provider as AnyModel;
+  const inner = provider;
   return outer(`retry(${provider.name})`, [inner], async (req) => {
     let delay = policy.delayMs;
     let lastError: unknown;
     for (let attempt = 0; attempt <= policy.maxRetries; attempt++) {
       try {
-        return await callModel(inner, req);
+        return await inner.infer(req);
       } catch (error) {
         lastError = error;
         if (isDefinitiveProviderError(error) || attempt === policy.maxRetries) throw error;
@@ -116,7 +107,7 @@ export function withRetry(provider: LanguageModel, policy: RetryPolicy): Languag
 }
 
 /** Try each inner in order; on a decision request, unbranded inners are skipped (they would fabricate). */
-async function tryInOrder(name: string, ordered: AnyModel[], req: AnyRequest): Promise<ProviderResponse> {
+async function tryInOrder(name: string, ordered: LanguageModel[], req: InferRequest): Promise<InferResult> {
   const decision = isDecisionRequest(req);
   const failures: string[] = [];
   for (const p of ordered) {
@@ -125,7 +116,7 @@ async function tryInOrder(name: string, ordered: AnyModel[], req: AnyRequest): P
       continue;
     }
     try {
-      return await callModel(p, req);
+      return await p.infer(req);
     } catch (error) {
       failures.push(`${p.name}: ${describeError(error)}`);
     }
@@ -135,21 +126,23 @@ async function tryInOrder(name: string, ordered: AnyModel[], req: AnyRequest): P
 
 export function fallback(providers: LanguageModel[]): LanguageModel {
   requireModels(providers, "fallback");
+  requireInfer(providers, "fallback");
   rejectPlatformModel(providers, "fallback");
-  const inners = providers as AnyModel[];
+  const inners = providers;
   const name = `fallback(${providers.map((p) => p.name).join(", ")})`;
   return outer(name, inners, (req) => tryInOrder(name, inners, req));
 }
 
 export function roundRobin(providers: LanguageModel[]): LanguageModel {
   requireModels(providers, "roundRobin");
+  requireInfer(providers, "roundRobin");
   rejectPlatformModel(providers, "roundRobin");
-  const inners = providers as AnyModel[];
+  const inners = providers;
   const name = `roundRobin(${providers.map((p) => p.name).join(", ")})`;
   let nextStart = 0;
   return outer(name, inners, (req) => {
     const start = nextStart++ % inners.length;
-    const ordered = inners.map((_, i) => inners[(start + i) % inners.length] as AnyModel);
+    const ordered = inners.map((_, i) => inners[(start + i) % inners.length] as LanguageModel);
     return tryInOrder(name, ordered, req);
   });
 }

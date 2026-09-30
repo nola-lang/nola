@@ -7,13 +7,14 @@ import {
   children,
   type Diagnostic,
   type NolaAskExpression,
+  type NolaContextStatementNode,
+  type NolaContextValueNode,
   type NolaExtractExpression,
   type NolaFunctionNode,
   type NolaParamNode,
   type NolaVariableIdNode,
   type ObjectExpressionNode,
   type ObjectPropertyNode,
-  programBody,
   type TaggedTemplateExpressionNode,
   type TemplateLiteralNode,
   walk,
@@ -27,18 +28,20 @@ import type { CompileResult, DerivationRequest, ViewInlineOptions } from "../typ
 import {
   ASK_OPEN,
   askClose,
+  askSiteArg,
   BROKEN_CONSTRUCT,
   CALL_INTENT_CLOSE,
+  CONTEXT_ITEM_CLOSE,
   callIntentArgsHead,
   callIntentOpen,
   callIntentTypeText,
-  DECISION_WRAPPERS,
+  contextItemName,
+  contextItemOpen,
   defHash,
   EXTRACT_DEFAULT_TYPE_EXPR,
   EXTRACT_DEFAULT_TYPE_TEXT,
   extractClose,
   extractOpen,
-  extractOpenTemplate,
   FMT_CLOSE,
   FMT_OPEN,
   FRAME_PARAM,
@@ -46,17 +49,11 @@ import {
   invocationArgEntry,
   invocationClose,
   invocationOpen,
-  localsArg,
   MODULE_SCOPE_CALL,
-  MODULE_TEMPLATE_CLOSE,
-  MODULE_TEMPLATE_FN,
-  moduleTemplateOpen,
-  PROB_BARE_TYPE_EXPR,
   rawTemplateText,
   runtimeImport,
-  SCOPE_PARAM,
   siteAccessorName,
-  TEMPLATE_OPEN,
+  TEXT_JOIN_HOLE,
   templateCopy,
   typeArgsText,
   typeValueDecl,
@@ -66,40 +63,42 @@ import {
 /** The scope body a node sits directly in (scope-bodies spec §5.1); "none" is where `ask` is illegal. */
 type AskBody = "infer" | "module" | "none";
 
+/** A hole holding the tolerant placeholder of a stray `${.` mid-typing — its bytes are not TypeScript. */
+const isPlaceholderHole = (expr: BaseNode) =>
+  expr.type === "NolaExtractExpression" && (expr as NolaExtractExpression).nolaError === true;
+
 /**
- * A scope body's instruction literal (spec §2.3): its FIRST statement, when
- * that is a bare template literal. A string literal there is a JS directive
- * and is not claimed (Babel keeps directives out of `body` anyway).
+ * Statements whose body may be a single statement instead of a block. A
+ * context statement there (`if (x) `…``) has no block for its item to be
+ * visible in, and the function declaration it lowers to is illegal there in
+ * strict code — NOLA2017, like a context statement outside a scope body.
  */
-function bodyInstruction(statements: readonly BaseNode[]): { stmt: BaseNode; quasi: TemplateLiteralNode } | undefined {
-  const stmt = statements[0];
-  if (stmt?.type !== "ExpressionStatement") return undefined;
-  const expr = (stmt as { expression?: BaseNode }).expression;
-  if (expr?.type !== "TemplateLiteral") return undefined;
-  return { stmt, quasi: expr as TemplateLiteralNode };
-}
-
-const hasScopeAccess = (quasi: TemplateLiteralNode) => (quasi as { nolaHasScopeAccess?: boolean }).nolaHasScopeAccess === true;
-
-/** cooked quasis joined — holes contribute nothing (the marker's `instruction` rule) */
-const cookedText = (quasi: TemplateLiteralNode) => quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
+const UNBRACED_BODY_PARENTS: ReadonlySet<string> = new Set([
+  "IfStatement",
+  "ForStatement",
+  "ForInStatement",
+  "ForOfStatement",
+  "WhileStatement",
+  "DoWhileStatement",
+  "LabeledStatement",
+  "WithStatement",
+]);
 
 /**
  * One scope body being lowered (an infer body or the module body): the static
  * half of its contextual bindings — the `locals: [{ name, type? }]` entries of
- * its scope init — and the block-scope stack that decides which of them an
- * ask can see (declared before it, in its block or an enclosing one).
+ * its scope init — and the block-scope stack that decides which bindings and
+ * context items an ask can see (declared before it, in its block or an
+ * enclosing one — spec 2026-09-29 decision 4).
  */
 interface BodyRecord {
   localEntries: string[];
-  scopes: string[][];
+  scopes: Array<{ locals: string[]; items: string[] }>;
 }
 
 /** A request whose lowered range is resolved once the span tiling exists (end of run()). */
 interface PendingRequest extends Omit<DerivationRequest, "lowered"> {
   lowered?: DerivationRequest["lowered"];
-  /** the sugar's wrapper around the anchored type copy (`Choice<` … `>`): widens the lowered range past the anchor */
-  loweredPad?: { before: number; after: number };
 }
 
 /**
@@ -122,28 +121,37 @@ export class Lowerer {
   private readonly meta: { nolaFunctions: string[] } = { nolaFunctions: [] };
   private usedRuntime = false;
   /**
-   * Where a `${.member}` scope access may appear right now: "inplace" — the
-   * enclosing instruction literal stays where it is (extractor), so the scope
-   * parameter is inserted before the dot here; "copy" — the literal is copied
-   * elsewhere (marker / call hint) and the copy builder did the insertion;
-   * "none" — not inside a Nola instruction literal (NOLA2009).
+   * Where the node being visited lives: "context" — inside a context
+   * statement (a value, or a hole of a text part): `ask` and a bare extractor
+   * have no frame there — NOLA2010 — while a call intent is a value like any
+   * other (a HINTED one, `fn`hint`(…)`, must be parenthesized or sit in a
+   * hole: bare, its backtick reads as the next text part and the extractor
+   * argument lands here as a parenthesized bare extractor); "copy" — a call
+   * hint re-emitted from source bytes into the args head, where a Nola
+   * construct has nowhere to lower to (NOLA2010) and a tolerant placeholder
+   * was already replaced by the copy, so it is left alone. NOTHING inside a
+   * copy is edited — the copy overwrote those bytes and magic-string cannot
+   * split an edited chunk — so every construct there is only diagnosed (a
+   * `.x` binding in a callback keeps its NOLA1010); "none" — neither.
    */
-  private scopeSite: "none" | "inplace" | "copy" = "none";
-  /**
-   * True while visiting the holes of a COPIED instruction literal (marker /
-   * call hint). Nola constructs there have nowhere to lower to — the literal
-   * is re-emitted from source bytes — so they are NOLA2010.
-   */
-  private inCopiedHole = false;
+  private holeSite: "none" | "context" | "copy" = "none";
   /** derivation requests in declaration order: site accessors as met, exported types last */
   private readonly requests: PendingRequest[] = [];
   private siteCounter = 0;
-  /** the module body asks — the appendix then carries the `__nola_module_ctx` accessor */
-  private moduleAsks = false;
+  /** file-wide counter behind `__nola_ctx_N` — module and body items alike, source order */
+  private itemCounter = 0;
+  /** the module body's TOP-LEVEL context items met so far, by name: the init's canonical list and each later function's view */
+  private readonly moduleItems: string[] = [];
+  /**
+   * whether every context statement in the file is an item (a pre-scan): the
+   * module body asks, the file declares an infer function, or a context
+   * statement has two or more parts — never valid JavaScript alone
+   */
+  private scopeUsers = false;
+  /** context statements that are the unbraced body of an `if`, a loop, a label or a `with` (the same pre-scan) — NOLA2017 */
+  private readonly unbracedStatements = new Set<BaseNode>();
   /** the scope bodies being lowered, innermost last; the module body is the bottom entry */
   private readonly bodies: BodyRecord[] = [];
-  /** the module body's first-statement instruction literal (spec §2.3), lowered after the walk */
-  private moduleInstruction?: { stmt: BaseNode; quasi: TemplateLiteralNode };
   /** exported alias/interface/enum declarations (spec §1: every alias/interface also becomes a value) */
   private readonly exportedTypes: ExportedTypeDecl[];
   /** policy for underivable `.`-contextual param types (compiler.underivableContextType) */
@@ -166,13 +174,29 @@ export class Lowerer {
   }
 
   run(): CompileResult {
-    const moduleBody: BodyRecord = { localEntries: [], scopes: [[]] };
+    // Whether the file's context statements are items (spec 2026-09-29 §3.3,
+    // amended): the module body asks, the file declares an infer function, or a
+    // statement has two or more parts (alone a chain throws and a value does
+    // not parse). Known BEFORE the walk, so every item lowers in place as it is
+    // met; a file with none of these keeps its lone text statements
+    // byte-identical (see lowerContextStatement).
+    walk(this.ast, (n, parent) => {
+      if (
+        n.type === "NolaAskExpression" ||
+        (n.type === "FunctionDeclaration" && (n as NolaFunctionNode).nolaInfer) ||
+        (n.type === "NolaContextStatement" && (n as NolaContextStatementNode).parts.length > 1)
+      ) {
+        this.scopeUsers = true;
+      }
+      if (n.type === "NolaContextStatement" && parent !== null && UNBRACED_BODY_PARENTS.has(parent.type)) {
+        this.unbracedStatements.add(n);
+      }
+    });
+    const moduleBody: BodyRecord = { localEntries: [], scopes: [{ locals: [], items: [] }] };
     this.bodies.push(moduleBody);
-    this.moduleInstruction = bodyInstruction(programBody(this.ast));
     this.visit(this.ast, "module", true);
     this.bodies.pop();
     this.emitTypeValues();
-    const instructionField = this.lowerModuleInstruction();
 
     // intrinsic decision types (spec 2026-09-18 §2.1): the appendix imports the
     // names the file uses and does not declare — which needs the appendix at all
@@ -181,11 +205,7 @@ export class Lowerer {
 
     let accessorsStart = -1;
     if (this.usedRuntime) {
-      let appendix = runtimeImport(
-        this.displayFile,
-        this.moduleAsks ? { instructionField, localEntries: moduleBody.localEntries } : undefined,
-        decisionTypes,
-      );
+      let appendix = runtimeImport(this.displayFile, { itemNames: this.moduleItems, localEntries: moduleBody.localEntries }, decisionTypes);
       accessorsStart = appendix.length;
       for (const r of this.requests) appendix += inertAccessorDecl(r.accessor, r.kind === "context");
       this.s.appendix(appendix);
@@ -199,9 +219,9 @@ export class Lowerer {
     const appendixSpan = spans[spans.length - 1];
     const appendixStart =
       accessorsStart >= 0 && appendixSpan?.kind === "appendix" ? appendixSpan.generatedStart + accessorsStart : -1;
-    const derivations = this.requests.map(({ loweredPad: _pad, ...r }) => ({
+    const derivations = this.requests.map((r) => ({
       ...r,
-      lowered: r.lowered ?? this.loweredRange({ ...r, loweredPad: _pad }, spans, anchors),
+      lowered: r.lowered ?? this.loweredRange(r, spans, anchors),
     }));
 
     return {
@@ -226,10 +246,7 @@ export class Lowerer {
     const { start, end } = r.source;
     if (r.kind === "extract") {
       const a = anchors.find((x) => x.sourceStart === start && x.sourceEnd === end);
-      if (a) {
-        const pad = r.loweredPad ?? { before: 0, after: 0 };
-        return { start: a.generatedStart - pad.before, end: a.generatedEnd + pad.after };
-      }
+      if (a) return { start: a.generatedStart, end: a.generatedEnd };
     }
     const sp = spans.find((x) => x.kind === "verbatim" && x.sourceStart <= start && end <= x.sourceEnd);
     if (!sp) throw new Error(`lowerer: no verbatim span for ${r.kind} request ${r.accessor} at ${start}-${end}`);
@@ -278,16 +295,16 @@ export class Lowerer {
   private visit(node: BaseNode, body: AskBody, topLevel: boolean): void {
     switch (node.type) {
       case "NolaExtractExpression": {
-        if (this.inCopiedHole) {
-          this.diagCopiedHole(node);
-          return;
-        }
         const extract = node as NolaExtractExpression;
         // Tolerant-parse placeholder: the diagnostic is already recorded, so
         // this only has to keep the generated text sane for the editor. The
         // marker's own bytes would otherwise leave a dot at the cursor and TS
         // would answer the next `.`-triggered completion with the global scope.
+        // A stray `${.` inside an instruction hole lands here too — never
+        // NOLA2010: a copied call hint already replaced it (templateCopy), an
+        // in-place literal replaces it now.
         if (extract.nolaError || !extract.quasi) {
+          if (this.holeSite === "copy") return;
           // The end-of-file placeholder is zero-width (an expression that was
           // never typed): there are no bytes to overwrite, so the inert text
           // is inserted at its position instead.
@@ -295,41 +312,29 @@ export class Lowerer {
           else this.s.overwrite(node.start, node.end, BROKEN_CONSTRUCT, { broken: true });
           return;
         }
+        if (this.holeSite !== "none") {
+          this.diagCopiedHole(node);
+          return;
+        }
         this.lowerExtract(extract, body);
         return;
       }
-      case "NolaScopeAccess": {
-        if (this.scopeSite === "none") {
-          this.diag(
-            Codes.ScopeAccessOutsideTemplate,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in a diagnostic message
-            "`${.member}` scope access is only allowed inside a Nola instruction template (infer-function marker, extractor prompt, call-intent hint).",
-            node,
-          );
-          this.s.overwrite(node.start, node.end, BROKEN_CONSTRUCT, { broken: true });
-          return;
-        }
-        // In place: `.args` → `__nola_s.args`; the dot and member stay verbatim
-        // (a half-typed `${.` placeholder gets the prefix too, so TS answers
-        // completion after the dot). Copied literals were prefixed by the copy.
-        if (this.scopeSite === "inplace") this.s.appendLeft(node.start, SCOPE_PARAM);
-        return;
-      }
       case "TSInstantiationExpression": {
-        // `` `x`<T> `` is an extractor only directly after `ask`; anywhere
-        // else TypeScript rejects type args on a non-generic expression. Say
-        // what the author meant instead of leaving that to TS2635.
+        // `` `x`<T> `` is an extractor only directly after `ask` or in a call's
+        // slots (the parser claims both); anywhere else TypeScript rejects type
+        // args on a non-generic expression. Say what the author meant instead
+        // of leaving that to TS2635.
         if ((node as unknown as { expression: BaseNode }).expression.type === "TemplateLiteral") {
           this.diag(
             Codes.ExtractorSigilRequired,
-            "a typed template literal is an extractor only directly after `ask`; write ..`…`<T> here.",
+            "a typed template literal is an extractor only directly after `ask` or in a call's argument list; write ..`…`<T> here.",
             node,
           );
         }
         break;
       }
       case "NolaAskExpression": {
-        if (this.inCopiedHole) {
+        if (this.holeSite !== "none") {
           this.diagCopiedHole(node);
           return;
         }
@@ -349,9 +354,8 @@ export class Lowerer {
           // An infer body threads the frame its wrapper minted; the module body
           // has no wrapper, so it hands over its scope node and the runtime
           // opens the frame.
-          if (body === "module") this.moduleAsks = true;
           const scope = body === "infer" ? FRAME_PARAM : MODULE_SCOPE_CALL;
-          this.s.appendRight(node.end, askClose(scope, ask.provider?.name, localsArg(this.visibleLocals())));
+          this.s.appendRight(node.end, askClose(scope, askSiteArg(ask.provider?.name, this.visibleLocals(), this.visibleItems())));
           this.usedRuntime = true;
         }
         this.visit(ask.argument, body, false);
@@ -369,33 +373,32 @@ export class Lowerer {
           break;
         }
 
-        this.bodies.push({ localEntries: [], scopes: [[]] });
+        this.bodies.push({ localEntries: [], scopes: [{ locals: [], items: [] }] });
         this.lowerInferFunction(fn);
         this.bodies.pop();
         return;
       }
       case "CallExpression": {
         const call = node as CallExpressionNode;
-        if (call.callee.type === "TaggedTemplateExpression") {
-          if (this.inCopiedHole) {
-            this.diagCopiedHole(node);
-            return;
-          }
-          this.lowerCallIntent(call, body);
+        // The tagged form, or the sigil-less one: extractor args imply the
+        // call intent. Simple callees only — `new`, optional calls, super(),
+        // and exotic callees (call results, parenthesized exprs) stay plain
+        // calls; the sigil form keeps its wider callee latitude.
+        const callIntent =
+          call.callee.type === "TaggedTemplateExpression" ||
+          ((call.callee.type === "Identifier" || call.callee.type === "MemberExpression") &&
+            call.arguments.some((a) => this.hasExtractorSlot(a as BaseNode)));
+        if (!callIntent) break;
+        if (this.holeSite === "copy") {
+          this.diagCopiedHole(node);
           return;
         }
-        // Sigil-less form: extractor args imply the call intent. Simple
-        // callees only — `new`, optional calls, super(), and exotic callees
-        // (call results, parenthesized exprs) stay plain calls; the sigil
-        // form keeps its wider callee latitude.
-        if (
-          (call.callee.type === "Identifier" || call.callee.type === "MemberExpression") &&
-          call.arguments.some((a) => this.hasExtractorSlot(a as BaseNode))
-        ) {
-          this.lowerCallIntent(call, body);
-          return;
-        }
-        break;
+        this.lowerCallIntent(call, body);
+        return;
+      }
+      case "NolaContextStatement": {
+        this.lowerContextStatement(node as NolaContextStatementNode, body);
+        return;
       }
       case "VariableDeclarator": {
         const id = (node as { id?: NolaVariableIdNode }).id;
@@ -405,19 +408,16 @@ export class Lowerer {
         // must not reach the generated TS, and `broken` opts the cursor
         // position out of completion exactly as the parameter marker does.
         if (id?.nolaReservedMarker) {
-          this.s.overwrite(id.nolaReservedMarker.start, id.nolaReservedMarker.end, "", { broken: true });
+          // Inside a call hint's hole the hint's copy already replaced these bytes.
+          if (this.holeSite !== "copy") {
+            this.s.overwrite(id.nolaReservedMarker.start, id.nolaReservedMarker.end, "", { broken: true });
+          }
           break;
         }
         if (id?.nolaContextual) {
           this.lowerContextualBinding(node, id, id.nolaContextual, body);
           return;
         }
-        break;
-      }
-      case "ExpressionStatement": {
-        // The module body's instruction literal is lowered after the walk (its
-        // shape depends on whether the module asks); its holes are visited then.
-        if (node === this.moduleInstruction?.stmt) return;
         break;
       }
       case "BlockStatement":
@@ -429,7 +429,7 @@ export class Lowerer {
         // inside it (a for-head's binding to the loop body) and to nothing after.
         const current = this.bodies[this.bodies.length - 1];
         if (current === undefined || body === "none") break;
-        current.scopes.push([]);
+        current.scopes.push({ locals: [], items: [] });
         try {
           for (const child of children(node)) this.visit(child, body, false);
         } finally {
@@ -462,56 +462,122 @@ export class Lowerer {
     }
   }
 
-  /**
-   * The module body's instruction literal (spec §5.3), once the walk knows
-   * whether the module asks. Prose leaves the file and becomes the init's
-   * `instruction` string; a literal with holes stays IN PLACE as the hoisted
-   * `__nola_module_tpl` — a lexical-only one is the instruction (read at the
-   * first ask), a `${.member}` one the scope's prompt template. Returns the
-   * text after `instruction: ` for the module init, or undefined.
-   */
-  private lowerModuleInstruction(): string | undefined {
-    const lit = this.moduleInstruction;
-    if (!lit) return undefined;
-    const scope = hasScopeAccess(lit.quasi);
-    if (!this.moduleAsks && !scope) return undefined;
-    const { quasi, stmt } = lit;
-    if (quasi.expressions.length === 0) {
-      this.s.remove(stmt.start, stmt.end);
-      return JSON.stringify(cookedText(quasi));
-    }
-    // A bare template statement starts AT the literal (zero-length prefix) and
-    // may end at it too (no `;`) — inserts, not overwrites, at those edges.
-    this.s.appendLeft(quasi.start, moduleTemplateOpen(scope));
-    if (stmt.end > quasi.end) this.s.overwrite(quasi.end, stmt.end, MODULE_TEMPLATE_CLOSE);
-    else this.s.appendRight(quasi.end, MODULE_TEMPLATE_CLOSE);
-    if (!scope) {
-      for (const expr of quasi.expressions) {
-        this.s.appendLeft(expr.start, FMT_OPEN);
-        this.s.appendLeft(expr.end, FMT_CLOSE);
-      }
-    }
-    // The holes: `${.member}` gets the scope parameter in place; a Nola
-    // construct has nowhere to lower to inside a hoisted plain function.
-    const prevSite = this.scopeSite;
-    const prevHole = this.inCopiedHole;
-    this.scopeSite = scope ? "inplace" : "none";
-    this.inCopiedHole = true;
-    try {
-      for (const expr of quasi.expressions) this.visit(expr, "none", false);
-    } finally {
-      this.scopeSite = prevSite;
-      this.inCopiedHole = prevHole;
-    }
-    return scope
-      ? `${JSON.stringify(rawTemplateText(this.source, quasi))}, template: ${MODULE_TEMPLATE_FN}`
-      : `${MODULE_TEMPLATE_FN}()`;
-  }
-
   /** The contextual bindings an ask at this point can see, in declaration order. */
   private visibleLocals(): string[] {
     const current = this.bodies[this.bodies.length - 1];
-    return current ? current.scopes.flat() : [];
+    return current ? current.scopes.flatMap((s) => s.locals) : [];
+  }
+
+  /** The context items an ask at this point can see, in source order (spec 2026-09-29 decision 4). */
+  private visibleItems(): string[] {
+    const current = this.bodies[this.bodies.length - 1];
+    return current ? current.scopes.flatMap((s) => s.items) : [];
+  }
+
+  /**
+   * A context statement (spec 2026-09-29 §3.3), lowered in place: the opener
+   * before the first backtick, every seam between parts rewritten into a hole
+   * boundary, `; }` over a glued `;` or appended after the last part. The
+   * text and value bytes never move (verbatim spans, so completion, hover and
+   * TS errors work inside a value) and no line terminator is added or lost:
+   * the whitespace between parts is re-emitted as written, comments dropped.
+   * Outside a scope body no frame can carry it — NOLA2017, the bytes become the
+   * inert text under a `broken` span (a callback inside an infer body too).
+   */
+  private lowerContextStatement(node: NolaContextStatementNode, body: AskBody): void {
+    const current = this.bodies[this.bodies.length - 1];
+    const unbraced = this.unbracedStatements.has(node);
+    if (body === "none" || current === undefined || unbraced) {
+      this.diag(
+        Codes.ContextOutsideScopeBody,
+        unbraced
+          ? "a context statement cannot be the unbraced body of an `if`, a loop or a label — wrap it in braces."
+          : "a context statement is only legal in a scope body — directly in an infer function or at module level.",
+        node,
+      );
+      // Inside a call hint's hole the hint's copy already replaced these bytes.
+      if (this.holeSite === "copy") return;
+      const terminators = this.source.slice(node.start, node.end).replace(/[^\r\n]/g, "");
+      this.s.overwrite(node.start, node.end, `${BROKEN_CONSTRUCT};${terminators}`, { broken: true });
+      return;
+    }
+    // A value's own bytes, parentheses included — the parser's span (a Babel
+    // node for `(x)` spans `x` alone). The parser sets it on every value and on
+    // no text part, which is also what tells text from a parenthesized template
+    // VALUE (`` `a` (`b`) ``, a TemplateLiteral too); the fallback only types.
+    const valueSpan = (p: BaseNode) => (p as NolaContextValueNode).nolaValueSpan;
+    const isText = (p: BaseNode) => p.type === "TemplateLiteral" && valueSpan(p) === undefined;
+    const span = (p: BaseNode) => valueSpan(p) ?? { start: p.start, end: p.end };
+    const parts = node.parts;
+    // A file with no scope user has only lone text statements (a statement of
+    // two or more parts makes the file one — run()'s pre-scan): plain JS, a
+    // no-op, kept byte-identical; its holes still follow the rules below.
+    if (body === "module" && !this.scopeUsers) {
+      this.visitContextParts(parts, isText);
+      return;
+    }
+    const name = contextItemName(++this.itemCounter);
+    // A RIGHT-side insert: a left-side insert at this offset belongs to the
+    // statement before — an exported type's value declaration, added after the
+    // walk — and must stay in front of the item; the wrapper opener at `{` is
+    // left-side too. Nothing overwrites from here: the opening backtick stays.
+    this.s.appendRight(node.start, contextItemOpen(name));
+    for (let i = 0; i + 1 < parts.length; i++) {
+      const a = parts[i] as BaseNode;
+      const b = parts[i + 1] as BaseNode;
+      const aEnd = isText(a) ? a.end : span(a).end;
+      const bStart = isText(b) ? b.start : span(b).start;
+      const ws = this.gapText(aEnd, bStart);
+      if (isText(a) && isText(b)) this.s.overwrite(a.end - 1, b.start + 1, ws === "" && this.gluedHole(a, b) ? TEXT_JOIN_HOLE : ws);
+      else if (isText(a)) this.s.overwrite(a.end - 1, bStart, `${ws}\${`);
+      else this.s.overwrite(aEnd, b.start + 1, `}${ws}`);
+    }
+    this.visitContextParts(parts, isText);
+    // The closers go in after the values: a value's own lowering may overwrite
+    // its last bytes (a call intent's `)`), and magic-string drops whatever was
+    // appended to a chunk it overwrites later.
+    const last = parts[parts.length - 1] as BaseNode;
+    const lastEnd = isText(last) ? last.end : span(last).end;
+    if (!isText(last)) this.s.appendLeft(lastEnd, "}`");
+    if (this.source.slice(lastEnd, node.end) === ";") this.s.overwrite(lastEnd, node.end, CONTEXT_ITEM_CLOSE);
+    else this.s.appendLeft(lastEnd, CONTEXT_ITEM_CLOSE);
+    (current.scopes[current.scopes.length - 1] as { items: string[] }).items.push(name);
+    if (body === "module" && current.scopes.length === 1) this.moduleItems.push(name);
+    this.usedRuntime = true;
+  }
+
+  /**
+   * A context statement's values and text holes: a call intent lowers (its
+   * arguments are its own slots); `ask` and a bare extractor are NOLA2010 —
+   * there is no frame here.
+   */
+  private visitContextParts(parts: readonly BaseNode[], isText: (p: BaseNode) => boolean): void {
+    const prevSite = this.holeSite;
+    this.holeSite = "context";
+    try {
+      for (const part of parts) {
+        if (isText(part)) {
+          for (const expr of (part as TemplateLiteralNode).expressions) this.visit(expr, "none", false);
+        } else {
+          this.visit(part, "none", false);
+        }
+      }
+    } finally {
+      this.holeSite = prevSite;
+    }
+  }
+
+  /** The bytes between two parts with comments dropped and every line terminator kept — what a seam re-emits. */
+  private gapText(start: number, end: number): string {
+    return this.source.slice(start, end).replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, (m) => m.replace(/[^\r\n]/g, ""));
+  }
+
+  /** Two glued texts would open a hole: the left ends with an unescaped `$`, the right starts with `{`. */
+  private gluedHole(left: BaseNode, right: BaseNode): boolean {
+    if (this.source[left.end - 2] !== "$" || this.source[right.start + 1] !== "{") return false;
+    let slashes = 0;
+    while (this.source[left.end - 3 - slashes] === "\\") slashes++;
+    return slashes % 2 === 0;
   }
 
   /**
@@ -535,7 +601,8 @@ export class Lowerer {
         "`.` contextual markers are only allowed on infer function parameters and on bindings directly in an infer body or the module body.",
         id,
       );
-      this.s.overwrite(marker.start, marker.end, "", { broken: true });
+      // Inside a call hint's hole the hint's copy already replaced these bytes.
+      if (this.holeSite !== "copy") this.s.overwrite(marker.start, marker.end, "", { broken: true });
       for (const child of children(node)) this.visit(child, body, false);
       return;
     }
@@ -546,7 +613,7 @@ export class Lowerer {
     for (const child of children(node)) this.visit(child, body, false);
     const name = id.name ?? "";
     current.localEntries.push(invocationArgEntry(name, typeExpr, false));
-    (current.scopes[current.scopes.length - 1] as string[]).push(name);
+    (current.scopes[current.scopes.length - 1] as { locals: string[] }).locals.push(name);
   }
 
   /**
@@ -577,48 +644,49 @@ export class Lowerer {
   private diagCopiedHole(node: BaseNode): void {
     this.diag(
       Codes.NolaConstructInMarker,
-      "Nola constructs are not allowed inside an infer-function marker or call-intent hint hole.",
+      "Nola constructs are not allowed inside a context statement or an instruction literal's hole; a hinted call intent used as a value must be parenthesized.",
       node,
     );
   }
 
   /**
-   * The instruction field of a copied instruction literal (marker / call hint):
-   * prose → JSON string; lexical holes → a template literal with fmt-wrapped
-   * holes; `${.member}` holes → the raw text as the instruction plus the
-   * template closure. Anchors point back at the literal's verbatim runs.
+   * The instruction field of a call hint — the one literal whose bytes cannot
+   * stay where they are (the callee's `(` follows it): prose → JSON string;
+   * holes → a template literal with fmt-wrapped holes, copied into the args
+   * head with anchors pointing back at the literal's verbatim runs.
    */
   private instructionFieldFor(
     quasi: TemplateLiteralNode,
-    hasScopeAccess: boolean,
     cooked: string,
   ): { field: string; copyText: string; anchors: EditAnchor[]; holes: BaseNode[] } {
     if (quasi.expressions.length === 0) return { field: JSON.stringify(cooked), copyText: "", anchors: [], holes: [] };
-    const scopeNodes: BaseNode[] = [];
-    if (hasScopeAccess) {
-      walk(quasi, (n) => {
-        if (n.type === "NolaScopeAccess") scopeNodes.push(n);
-      });
-    }
-    const copy = templateCopy(this.source, quasi, scopeNodes, hasScopeAccess ? "scope" : "fmt");
-    const field = hasScopeAccess
-      ? `${JSON.stringify(rawTemplateText(this.source, quasi))}, ${TEMPLATE_OPEN}${copy.text}`
-      : copy.text;
-    return { field, copyText: copy.text, anchors: copy.anchors, holes: quasi.expressions };
+    const copy = templateCopy(this.source, quasi, quasi.expressions.filter(isPlaceholderHole));
+    return { field: copy.text, copyText: copy.text, anchors: copy.anchors, holes: quasi.expressions };
   }
 
-  /** Visit the holes of a copied literal only to diagnose (NOLA2010 / NOLA2009) — the copy is already built. */
+  /** Visit the holes of a copied call hint only to diagnose (NOLA2010) — the copy is already built. */
   private visitCopiedHoles(holes: BaseNode[], body: AskBody): void {
-    const prevSite = this.scopeSite;
-    const prevHole = this.inCopiedHole;
-    this.scopeSite = "copy";
-    this.inCopiedHole = true;
+    const prevSite = this.holeSite;
+    this.holeSite = "copy";
     try {
       for (const e of holes) this.visit(e, body, false);
     } finally {
-      this.scopeSite = prevSite;
-      this.inCopiedHole = prevHole;
+      this.holeSite = prevSite;
     }
+  }
+
+  /**
+   * Drops a source range's bytes but keeps every line terminator in it, so
+   * nothing after it moves. The debugger layout invariant (2026-09-17): js-debug
+   * binds a `.tsi` breakpoint raw by URL + line on the lowered script as well
+   * as through the map, so a removed multi-line literal — a prose module or
+   * body instruction — shifted every later statement up and the raw
+   * copy of a breakpoint on the ask line landed on the statement after it.
+   */
+  private removeKeepingLines(start: number, end: number): void {
+    const terminators = this.source.slice(start, end).replace(/[^\r\n]/g, "");
+    if (terminators.length === 0) this.s.remove(start, end);
+    else this.s.overwrite(start, end, terminators);
   }
 
   private lowerInferFunction(fn: NolaFunctionNode): void {
@@ -626,9 +694,16 @@ export class Lowerer {
     if (!infer) return;
     const name = fn.id?.name ?? "anonymous";
     // Removes `infer ` including trailing whitespace up to `function`.
-    this.s.remove(infer.start, infer.end);
+    this.removeKeepingLines(infer.start, infer.end);
+    // The reserved marker (NOLA1019) reaches the lowerer in tolerant mode only
+    // — strict parsing threw. Its bytes must not reach TypeScript (the header
+    // would not parse), and `broken` opts the editor out of completing there.
+    // Line terminators stay, as everywhere a literal leaves the file.
     const marker = fn.nolaMarker;
-    if (marker) this.s.remove(marker.start, marker.end);
+    if (marker) {
+      const terminators = this.source.slice(marker.start, marker.end).replace(/[^\r\n]/g, "");
+      this.s.overwrite(marker.start, marker.end, terminators, { broken: true });
+    }
     const body = fn.body;
     if (!body) return;
 
@@ -670,54 +745,31 @@ export class Lowerer {
       argEntries.push(invocationArgEntry(paramName, typeExpr, Boolean(p.nolaContextual)));
     }
 
-    // The instruction literal — the marker, or the body's first statement (an
-    // alternate spelling, spec §2.3; both at once is NOLA2013) — cannot stay
-    // where it is; its text lands in the wrapper closer. Prose is a JSON
-    // string as before; holes make it a template literal (lexical) or a
-    // prompt-template closure (`${.member}`), both copied byte-identically
-    // with anchors so the editor keeps completion, hover and precise TS
-    // errors inside the literal.
-    const bodyLit = bodyInstruction((body as { body?: BaseNode[] }).body ?? []);
-    if (marker && bodyLit) {
-      this.diag(
-        Codes.DuplicateInstruction,
-        "this infer function already has an instruction marker — write the instruction in one place.",
-        bodyLit.quasi,
-      );
-    }
-    const useBody = bodyLit !== undefined && marker === undefined;
-    const litQuasi = marker ? marker.quasi : bodyLit?.quasi;
-    const inst = litQuasi
-      ? this.instructionFieldFor(litQuasi, marker?.hasScopeAccess === true || hasScopeAccess(litQuasi), cookedText(litQuasi))
-      : { field: JSON.stringify(marker?.instruction ?? ""), copyText: "", anchors: [], holes: [] };
-    if (useBody) this.s.remove(bodyLit.stmt.start, bodyLit.stmt.end);
-    this.s.appendRight(body.start + 1, invocationOpen(paramNames));
+    // The wrapper opener sits at `{` (spec 2026-09-29 §3.3): a context
+    // statement is a hoisted function inside the executor, passed by name to
+    // the asks that see it — nothing has to sit outside the closure any more.
+    // A LEFT-side insert: an overwrite starting at this offset (a statement
+    // glued to the brace) clears the right-side intro of its chunk, never a
+    // left-side outro.
+    this.s.appendLeft(body.start + 1, invocationOpen(paramNames));
     this.meta.nolaFunctions.push(name);
     this.usedRuntime = true;
-    this.visitCopiedHoles(inst.holes, "none");
+    // The module's top-level items above this declaration — its lexical view
+    // of the module (spec 2026-09-29 §3.3) — snapshotted before later items.
+    const moduleContext = [...this.moduleItems];
     // The body first: its contextual bindings are part of the closer's init.
-    for (const child of children(body)) {
-      if (useBody && child === bodyLit.stmt) continue;
-      this.visit(child, "infer", false);
-    }
+    for (const child of children(body)) this.visit(child, "infer", false);
     const record = this.bodies[this.bodies.length - 1];
-    const close = invocationClose(name, inst.field, argEntries, record?.localEntries ?? []);
-    const copyAt = inst.copyText ? close.indexOf(inst.copyText) : -1;
-    const anchors = copyAt >= 0 ? inst.anchors.map((a) => ({ ...a, textOffset: a.textOffset + copyAt })) : undefined;
-    this.s.appendLeft(body.end - 1, close, anchors ? { anchors } : {});
+    this.s.appendLeft(body.end - 1, invocationClose(name, argEntries, record?.localEntries ?? [], moduleContext));
   }
 
   private lowerCallIntent(call: CallExpressionNode, body: AskBody): void {
     const tagged =
       call.callee.type === "TaggedTemplateExpression" ? (call.callee as TaggedTemplateExpressionNode) : undefined;
     // The hint literal is removed with the `(` and re-emitted inside the args
-    // head — same copy-and-anchor treatment as the infer-function marker.
+    // head — the copy-and-anchor treatment; the one literal that needs it.
     const inst = tagged
-      ? this.instructionFieldFor(
-          tagged.quasi,
-          (tagged.quasi as { nolaHasScopeAccess?: boolean }).nolaHasScopeAccess === true,
-          tagged.quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join(""),
-        )
+      ? this.instructionFieldFor(tagged.quasi, tagged.quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join(""))
       : { field: '""', copyText: "", anchors: [] as EditAnchor[], holes: [] as BaseNode[] };
     for (const arg of call.arguments) this.checkCallIntentArg(arg);
     // In the tagged form the callee expression is the tag; either way its
@@ -738,7 +790,15 @@ export class Lowerer {
     this.s.overwrite(call.end - 1, call.end, CALL_INTENT_CLOSE);
     this.usedRuntime = true;
     this.visitCopiedHoles(inst.holes, body);
-    for (const arg of call.arguments) this.visit(arg, body, false);
+    // The arguments are this call's own slots — an extractor there is legal
+    // even when the call is a context statement's value.
+    const prevSite = this.holeSite;
+    this.holeSite = "none";
+    try {
+      for (const arg of call.arguments) this.visit(arg, body, false);
+    } finally {
+      this.holeSite = prevSite;
+    }
   }
 
   /**
@@ -750,7 +810,7 @@ export class Lowerer {
       if (!(arg as NolaExtractExpression).typeArgs) {
         this.diag(
           Codes.UntypedCallIntentArg,
-          "an extractor used as a call-intent argument must have an explicit <T>.",
+          "an extractor used as a call-intent argument must have an explicit type — write ..`…`: T here.",
           arg,
         );
       }
@@ -774,59 +834,26 @@ export class Lowerer {
     if (!quasi) return;
     let typeExpr = EXTRACT_DEFAULT_TYPE_EXPR;
     let typeText = EXTRACT_DEFAULT_TYPE_TEXT;
-    // The sugar (decision types spec §5) wraps the written argument —
-    // `<Choice<C>>`: the copied C is the anchor, the derivation request's
-    // lowered range is the whole wrapper (the checker must see a Choice).
-    const wrapper = node.kind ? DECISION_WRAPPERS[node.kind] : undefined;
-    const wrapPrefix = wrapper ? `${wrapper}<` : "";
     const typeNode = node.typeArgs?.params[0];
     let typeSrc = "";
     if (typeNode) {
-      const written = this.source.slice(typeNode.start, typeNode.end);
-      typeSrc = wrapper ? `${wrapPrefix}${written}>` : written;
+      typeSrc = this.source.slice(typeNode.start, typeNode.end);
       typeText = typeArgsText(typeSrc);
       // The authored <T> is a site accessor the checker fills in; the anchor
       // below is where the checker reads the type (its lowered range).
-      typeExpr = `${this.request(
-        "extract",
-        typeNode,
-        wrapper ? { loweredPad: { before: wrapPrefix.length, after: 1 } } : {},
-      )}()`;
-    } else if (node.kind === "prob") {
-      typeSrc = DECISION_WRAPPERS.prob;
-      typeText = typeArgsText(typeSrc);
-      typeExpr = PROB_BARE_TYPE_EXPR;
-    } else if (node.kind) {
-      const hint =
-        node.kind === "choice"
-          ? 'a criteria type argument — write ..choice`…`<{ label: "description" }> or ..choice`…`<"a" | "b">'
-          : 'a levels type argument — write ..scale`…`<["low", "high"]>';
-      this.diagnostics.push({
-        code: Codes.InvalidDecisionCriteria,
-        message: `\`..${node.kind}\` needs ${hint}.`,
-        file: this.file,
-        start: node.start,
-        end: node.end,
-        loc: node.loc,
-      });
+      typeExpr = `${this.request("extract", typeNode)}()`;
     }
     // Prefix up to (but not including) the template preserves the template's
     // original bytes; each ${expr} gets __nola.fmt(...) wrapped around it.
     // An authored <T> is copied into the prefix byte-identically — anchor it
     // so navigation/hover/completion work on the type text at the ask site.
-    // A `${.member}` literal is a prompt template: instruction keeps the raw
-    // text (holes verbatim) and the literal itself becomes the body of the
-    // template closure, in place — its bytes stay verbatim, only the scope
-    // parameter is inserted before each scope dot (see the NolaScopeAccess
-    // visit). Lexical holes inside a template are not fmt-wrapped: tpl formats.
-    const isTemplate = (quasi as { nolaHasScopeAccess?: boolean }).nolaHasScopeAccess === true;
-    const open = isTemplate ? extractOpenTemplate(typeText, rawTemplateText(this.source, quasi)) : extractOpen(typeText);
+    const open = extractOpen(typeText);
     const anchors = typeNode
       ? [
           {
             sourceStart: typeNode.start,
             sourceEnd: typeNode.end,
-            textOffset: open.indexOf(typeText) + 1 + wrapPrefix.length,
+            textOffset: open.indexOf(typeText) + 1,
           },
         ]
       : undefined;
@@ -838,11 +865,10 @@ export class Lowerer {
       // lands after it and finalize() coalesces the two into one replaced span.
       this.s.appendLeft(node.start, open, { anchors });
     }
-    if (!isTemplate) {
-      for (const expr of quasi.expressions) {
-        this.s.appendLeft(expr.start, FMT_OPEN);
-        this.s.appendLeft(expr.end, FMT_CLOSE);
-      }
+    for (const expr of quasi.expressions) {
+      if (isPlaceholderHole(expr)) continue; // the visit below replaces it with the inert text
+      this.s.appendLeft(expr.start, FMT_OPEN);
+      this.s.appendLeft(expr.end, FMT_CLOSE);
     }
     const def = defHash(this.displayFile, "extract", rawTemplateText(this.source, quasi), typeSrc);
     const suffix = extractClose(typeExpr, node.loc.start, def);
@@ -854,12 +880,6 @@ export class Lowerer {
       this.s.appendLeft(node.end, suffix);
     }
     this.usedRuntime = true;
-    const prevSite = this.scopeSite;
-    this.scopeSite = isTemplate ? "inplace" : "none";
-    try {
-      for (const expr of quasi.expressions) this.visit(expr, body, false);
-    } finally {
-      this.scopeSite = prevSite;
-    }
+    for (const expr of quasi.expressions) this.visit(expr, body, false);
   }
 }

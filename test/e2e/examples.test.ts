@@ -13,7 +13,9 @@ interface Example {
   dir: string;
   /** basename of the .tsi source — build must emit dist/src/<tsi>.tsi.js + .tsi.d.ts */
   tsi: string;
-  /** JSON printed by `nola run src/main.ts` under the mock provider */
+  /** what `nola run` executes; a one-file example names its .tsi (default: the plain-TS src/main.ts) */
+  entry?: string;
+  /** JSON printed by `nola run <entry>` under the mock provider */
   expected: unknown;
 }
 
@@ -119,11 +121,6 @@ const EXAMPLES: Example[] = [
     expected: { kind: "technical" },
   },
   {
-    dir: "prompt-template",
-    tsi: "triage",
-    expected: { id: "T-4711" },
-  },
-  {
     dir: "research-notes",
     tsi: "research",
     expected: {
@@ -145,17 +142,54 @@ const EXAMPLES: Example[] = [
       ],
     },
   },
+  {
+    dir: "agent-loop",
+    tsi: "main",
+    entry: "src/main.tsi",
+    // the one-file shape: a top-level while loop asks `Problem | null` until the
+    // mock's fourth reply, null, ends it; the context statement before the loop
+    // is re-read on every pass with the briefs recorded so far
+    expected: [
+      { brief: "Nightly export fails", description: 'Since yesterday the nightly export job fails with "disk quota exceeded".' },
+      { brief: "Password-reset email not delivered", description: "Two users never receive the password-reset email." },
+      { brief: "Invoice shows the old company name", description: "The August invoice still shows the old company name." },
+    ],
+  },
+  // The three examples the scaffolder's first menu leads with replay a
+  // committed nola.replay.jsonl ledger instead of the mock — it is what makes
+  // a scaffold's first run keyless. The ledger is fingerprint-keyed, so a
+  // prompt-composition change fails here (and in scaffold.test.ts) until the
+  // ledger is re-recorded.
+  {
+    dir: "feature-extraction",
+    tsi: "main",
+    entry: "src/main.tsi",
+    // both asks answered from the ledger: the extraction, then the ask that reads the `.role` binding
+    expected: { name: "Alice Smith", age: 32, employer: "Acme Corp", job: "staff engineer", seniority: "staff" },
+  },
+  {
+    dir: "function-calling",
+    tsi: "main",
+    entry: "src/main.tsi",
+    // the model filled both slots from the ledger; createTicket ran with them and its settled value is what `ask` yields
+    expected: { id: "T-1", title: "Cannot log in before a customer demo", priority: 1 },
+  },
+  {
+    dir: "typescript-interop",
+    tsi: "person",
+    expected: { name: "Alice Smith", age: 32, employer: "Acme Corp", job: "staff engineer" },
+  },
 ];
 
 beforeAll(async () => {
   await ensureBuilt(ROOT);
 }, 300_000);
 
-describe.each(EXAMPLES)("examples/$dir end-to-end", ({ dir, tsi, expected }) => {
+describe.each(EXAMPLES)("examples/$dir end-to-end", ({ dir, tsi, entry = "src/main.ts", expected }) => {
   const cwd = join(ROOT, "examples", dir);
 
   it("nola run executes the .tsi via the mock provider", { timeout: 120_000 }, async () => {
-    const stdout = await capture(process.execPath, [CLI, "run", "src/main.ts"], { cwd });
+    const stdout = await capture(process.execPath, [CLI, "run", entry], { cwd });
     expect(JSON.parse(stdout.trim())).toEqual(expected);
   });
 
@@ -215,7 +249,7 @@ describe("real OpenAI smoke (extract-person)", () => {
       `import { openai } from "@nola-lang/providers";
 import { defineConfig } from "@nola-lang/runtime";
 
-export default defineConfig({ model: { default: openai() } });
+export default defineConfig({ model: { default: openai(${JSON.stringify(process.env.NOLA_SMOKE_MODEL ?? "gpt-5-mini")}) } });
 `,
     );
     const scope = join(dir, "node_modules", "@nola-lang");

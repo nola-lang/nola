@@ -12,7 +12,7 @@ describe("extract lowering v2", () => {
       `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola_type_$1(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
     );
     expect(code).toContain('import { __nola } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(18);");
+    expect(code).toContain("__nola.useRuntime(21);");
   });
 
   it("wraps each ${} substitution in __nola.fmt and keeps the template", () => {
@@ -40,14 +40,24 @@ describe("extract lowering v2", () => {
     expect(bare.code).toContain(`def: "${defHash("x.tsi", "extract", "ticket id", "string")}"`);
   });
 
-  it("a typed template literal outside `ask` is NOLA2014 with the `..` fix", () => {
+  it("a typed template literal outside `ask` and outside a call's slots is NOLA2014 with the `..` fix", () => {
     const { diagnostics } = compileNola(
+      "declare function f(a: string): Promise<void>;\ninfer function go() {\n  const i = `x`<string>;\n  return ask f((`y`<string>));\n}\n",
+      "x.tsi",
+    );
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA2014", "NOLA2014"]);
+    expect(diagnostics[0]?.message).toContain("..`");
+    expect(diagnostics[0]?.message).toContain("call's argument list");
+    expect(diagnostics.map((d) => d.loc.start.line)).toEqual([3, 4]);
+  });
+
+  it("a typed template in a call's slot is an extractor with the `..` implied (spec 2026-09-30)", () => {
+    const { code, diagnostics } = compileNola(
       "declare function f(a: string): Promise<void>;\ninfer function go() {\n  return ask f(`x`<string>);\n}\n",
       "x.tsi",
     );
-    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA2014"]);
-    expect(diagnostics[0]?.message).toContain("..`");
-    expect(diagnostics[0]?.loc.start.line).toBe(3);
+    expect(diagnostics).toEqual([]);
+    expect(code).toContain("args: [__nola.intents.ExtractIntent<string>({ instruction: `x`");
   });
 
   it("the implied form at module level and under `ask with`", () => {
@@ -82,35 +92,16 @@ describe("extract lowering v2", () => {
   });
 });
 
-describe("extractor prompt templates (${.member})", () => {
-  it("lowers a scope-hole extractor to instruction string + template closure, in place", () => {
-    const src = "infer function go(a: string) {\n  const v = ask ..`type: ${.type} for ${a}`<string>;\n  return v;\n}\n";
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain(
-      `await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: "type: \${.type} for \${a}", template: (__nola_s) => __nola.tpl\`type: \${__nola_s.type} for \${a}\`, type: __nola_type_$2(), loc: "2:17", def: "${defHash("x.tsi", "extract", "type: ${.type} for ${a}", "string")}" }), __frame)`,
-    );
-    // a lexical hole inside a template is NOT fmt-wrapped (tpl formats)
-    expect(code).not.toContain("__nola.fmt(a)");
+describe("`${.member}` in an extractor no longer parses (spec 2026-09-28-instruction-interpolation §3.5)", () => {
+  it("strict: the ordinary syntax error and nothing lowered", () => {
+    const { diagnostics } = compileNola("const v = ..`type: ${.type}`<string>;\n", "x.tsi");
+    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
   });
 
-  it("nested scope holes and keyword members are prefixed too", () => {
-    const src = "const v = ..`${.default}\n${[1].map(n => `${n} ${.type}`)}`;\n";
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain("__nola.tpl`${__nola_s.default}\n${[1].map(n => `${n} ${__nola_s.type}`)}`");
-  });
-
-  it("a lexical-only extractor is unchanged (fmt-wrapped, no template)", () => {
+  it("a lexical extractor is unchanged: fmt-wrapped, no template field", () => {
     const src = "infer function go(a: string) {\n  const v = ask ..`v from ${a}`<string>;\n  return v;\n}\n";
     const { code } = compileNola(src, "x.tsi");
     expect(code).toContain("instruction: `v from ${__nola.fmt(a)}`, type:");
     expect(code).not.toContain("template:");
-  });
-
-  it("NOLA2009: scope access in a plain template literal", () => {
-    const { code, diagnostics } = compileNola("const s = `x ${.type}`;\n", "x.tsi", { tolerant: true });
-    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA2009"]);
-    expect(code).toContain("`x ${(undefined as never)}`");
   });
 });

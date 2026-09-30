@@ -4,6 +4,7 @@ import { mockProvider } from "./mock.js";
 import { openai } from "./openai.js";
 import { typesafe } from "./typesafe.js";
 
+export { DEFAULT_SYSTEM, type InferRequest, type InferResult, type RenderedPrompt, renderPrompt } from "@nola-lang/core";
 export { type AnthropicOptions, anthropic } from "./anthropic.js";
 export {
   constant,
@@ -14,7 +15,7 @@ export {
   roundRobin,
   withRetry,
 } from "./combinators.js";
-export { callModel, isDecisionRequest, toClassic } from "./dialect.js";
+export { isDecisionRequest } from "./decision-request.js";
 export { type GoogleOptions, google } from "./google.js";
 export { type MockOptions, type MockRequest, mockProvider } from "./mock.js";
 export { type OpenAiOptions, openai } from "./openai.js";

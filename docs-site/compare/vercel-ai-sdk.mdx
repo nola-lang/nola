@@ -1,21 +1,21 @@
 ---
 title: Nola vs Vercel AI SDK
-description: generateText with Output.object and Zod versus extractors — the same classify-then-reply task in both, where the SDK is stronger, and where a language wins.
+description: Compare structured output in the Vercel AI SDK and Nola, including schema definitions, shared context, streaming, and TypeScript integration.
 sidebar:
   order: 50
 ---
 
 ## What the AI SDK is
 
-The Vercel AI SDK (`ai` plus `@ai-sdk/*` provider packages) is the most widely used TypeScript library for calling models: a unified provider API, text and object generation, streaming, tool calling, and UI hooks for React and other frameworks. Structured output is `generateText` with `output: Output.object({ schema })` — a Zod schema that is converted to JSON Schema for the model and used to validate the reply (`generateObject` is the older form, now deprecated in favour of the `output` setting).
+The Vercel AI SDK provides TypeScript APIs for model calls, structured output, streaming, and tools, along with UI integrations. Provider packages such as `@ai-sdk/openai` connect those APIs to a model.
 
-{/* API names verified against the AI SDK docs on 2026-08-20: `generateText` + `Output.object({ schema })` is current, `generateObject` is marked deprecated, and the system-prompt option is `instructions` (renamed from `system` in AI SDK 7, which remains as a deprecated fallback). */}
+This example uses `generateText` with `Output.object({ schema })`. The SDK infers the result's TypeScript type from the schema and validates the completed output at runtime. Zod is one supported schema option. See the [Output reference](https://ai-sdk.dev/docs/reference/ai-sdk-core/output).
 
 ## The same task, side by side
 
-Classify a support message, then write a reply that depends on the category.
+Both examples classify a support message, then write a reply using the category. The snippets show the calls and output shape; project setup and credentials are omitted.
 
-**AI SDK:**
+**AI SDK:** define the output with Zod and pass the message to each call.
 
 ```ts
 // not-checked — triage.ts
@@ -42,7 +42,7 @@ const { text: reply } = await generateText({
 });
 ```
 
-**Nola:**
+**Nola:** define the output as a TypeScript type and share the message through a contextual parameter.
 
 ```tsi
 // classify.tsi
@@ -52,29 +52,35 @@ export type Triage = {
 };
 
 export infer function classifyMessage(.message: string) {
-  const triage = ask `triage the customer message`<Triage>;
-  const reply = ask `a reply for a ${triage.category} case`<string>;
+  const triage = ask `triage the customer message`: Triage;
+  const reply = ask `a reply for a ${triage.category} case`: string;
   return { ...triage, reply };
 }
 ```
 
+The SDK snippet uses the `instructions` option supported by its [current source](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/generate-text.ts). If your installed SDK expects `system`, use that option instead.
+
 ## Where the AI SDK is stronger
 
-- **Streaming and UI.** `streamText`, partial object streaming and the React hooks are a complete front-end story; Nola has no streaming primitive and is server-only in v0.
-- **Breadth and maturity.** Official adapters for many providers, tool calling, middleware, and a very large user base; Nola supports OpenAI, Anthropic, Google and Chat-Completions-compatible endpoints, and is 0.1.x.
-- **Runtimes.** The SDK runs in Node, edge runtimes and the browser; Nola needs Node ≥ 22.18 on the server.
+- **Streaming and UI.** The SDK provides text and structured-output streaming, plus UI integrations for chat and completion interfaces. Nola does not have a streaming primitive. See [AI SDK UI](https://ai-sdk.dev/docs/ai-sdk-ui/overview).
+- **Using an existing TypeScript toolchain.** The SDK is a library used from ordinary TypeScript files. It does not require support for a new source-file syntax.
+- **Provider integrations.** The SDK has a provider ecosystem beyond the adapters included with Nola. Check its [provider list](https://ai-sdk.dev/providers/ai-sdk-providers) for the models and capabilities you need.
 
 ## Where Nola is stronger
 
-- **The contract is the TypeScript type.** `Triage` is a type, not a Zod object you `z.infer` from (or maintain alongside); its schema is derived at compile time and the editor sees it in `.ts` consumers too.
-- **Context belongs to the function.** Both asks in `classifyMessage` see `.message`; the reply chains with a `${}`. With the SDK each call is its own request, so the second one re-threads the category and the original message by hand.
-- **Call intents.** `` ask createTicket(..`a short title`<string>, 2) `` lets the model fill a plain function's arguments — no tool schema to declare; see [Function calling](/docs/guides/function-calling/).
-- **Editor and type-check integration.** `nola check` type-checks the asks with the rest of the program; diagnostics point at the `.tsi` line.
+- **Reusing TypeScript types.** Nola derives the schema from `Triage` at compile time. With Zod, you can instead make the schema the source of truth and derive the TypeScript type with `z.infer`; a second handwritten type is not required.
+- **Shared context.** Both asks see `.message`. In the SDK snippet, each prompt includes the input it needs. You can also wrap SDK calls in your own functions to share request construction.
+- **Calling existing functions.** A Nola call intent can infer arguments for a plain TypeScript function. See [Function calling](/docs/guides/function-calling/).
+- **Diagnostics in Nola source.** `nola check` checks asks alongside the surrounding program and reports errors at the original `.tsi` positions.
+
+Both approaches validate responses at runtime. Nola's compile-time schema derivation does not guarantee that a model's answer is factually correct.
 
 ## When to pick which
 
-- A product UI that streams tokens, or anything that runs in the browser or at the edge → the AI SDK.
-- Server-side TypeScript where typed extraction, classification and function calling should read like language features, with the type as the only contract → Nola.
-- Mixing is fine: the SDK for streaming chat, Nola for the typed back-end steps.
+The AI SDK fits applications that need streaming interfaces or want to stay within an existing TypeScript library workflow.
+
+Nola fits server-side TypeScript code where the team wants to reuse domain types and express extraction or inferred function arguments with `ask`. It requires the Nola compiler and a supported Node runtime.
+
+You can also use the SDK for a streaming chat interface and Nola for typed processing steps on the server.
 
 Next: [Examples](/docs/examples/)

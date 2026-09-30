@@ -58,6 +58,18 @@ const topLevelKeys = (fm: string) =>
 const LINK = /\]\(([^)\s]+)\)/g;
 const IMPORT = /^import\s+[^'"]*from\s+['"]([^'"]+)['"]/gm;
 
+/** Starlight slugs a heading the github-slugger way: lowercase, punctuation dropped, spaces to hyphens. */
+const slugOf = (heading: string) =>
+  heading
+    .trim()
+    .toLowerCase()
+    .replace(/`/g, "")
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s+/g, "-");
+const pageOfRoute = new Map(pages.map((p) => [routeOf(p), p]));
+const headingSlugs = (page: string) =>
+  new Set([...stripFences(read(page)).matchAll(/^#{1,6}\s+(.+?)\s*$/gm)].map(([, h]) => slugOf(h as string)));
+
 /**
  * The sidebar groups, in reading order. The website owns the labels and order
  * (packages/nola-web/src/lib/docs-groups.ts) and builds its sidebar from these
@@ -122,6 +134,18 @@ describe("docs-site contract", () => {
     expect(broken).toEqual([]);
   });
 
+  it.each(pages)("%s links only to anchors that exist on the target page", (page) => {
+    const broken: string[] = [];
+    for (const [, target] of stripFences(read(page)).matchAll(LINK)) {
+      if (!target.startsWith("/docs/") || !target.includes("#")) continue;
+      const [path, anchor] = target.split("#") as [string, string];
+      const targetPage = pageOfRoute.get(path.endsWith("/") ? path : `${path}/`);
+      if (!targetPage) continue; // the page-existence test reports it
+      if (!headingSlugs(targetPage).has(anchor)) broken.push(target);
+    }
+    expect(broken).toEqual([]);
+  });
+
   it.each(pages)("%s does not reference the withheld internal docs tree", (page) => {
     expect(stripFences(read(page))).not.toMatch(/docs\/superpowers/);
   });
@@ -131,6 +155,20 @@ describe("docs-site contract", () => {
       .map(([, specifier]) => specifier)
       .filter((specifier) => specifier !== "@astrojs/starlight/components");
     expect(foreign).toEqual([]);
+  });
+});
+
+describe("the repository README", () => {
+  it("links only to docs pages that exist", () => {
+    const readme = readFileSync(fileURLToPath(new URL("../README.md", import.meta.url)), "utf8");
+    const broken: string[] = [];
+    for (const [, target] of stripFences(readme).matchAll(LINK)) {
+      const m = /^https:\/\/nola\.sh(\/docs\/[^#?]*)/.exec(target);
+      if (!m) continue;
+      const path = m[1] as string;
+      if (!routes.has(path.endsWith("/") ? path : `${path}/`)) broken.push(target);
+    }
+    expect(broken).toEqual([]);
   });
 });
 
@@ -172,12 +210,12 @@ describe("docs-site version literals", () => {
     },
   );
 
-  it("the lockstep version is what the scaffold stamps (caret range, scaffold.ts)", () => {
-    const scaffold = readFileSync(
-      fileURLToPath(new URL("../packages/create-nola-lang/src/scaffold.ts", import.meta.url)),
+  it("the lockstep version is what the scaffold stamps (caret range, rewriteExamplePackageJson in examples.ts)", () => {
+    const rewrite = readFileSync(
+      fileURLToPath(new URL("../packages/create-nola-lang/src/examples.ts", import.meta.url)),
       "utf8",
     );
     // keep the docs' `^x.y.z` shape honest: if the scaffold ever changes its range form, this fails first
-    expect(scaffold).toMatch(/versionRange = `\^\$\{version\}`/);
+    expect(rewrite).toMatch(/deps\[dep\] = `\^\$\{opts\.version\}`/);
   });
 });

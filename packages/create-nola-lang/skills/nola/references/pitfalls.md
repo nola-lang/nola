@@ -15,14 +15,14 @@ a parenthesized expression will not parse.
 ```tsi
 export infer function summarize(.text: string, useFast: boolean) {
   // WRONG
-  const a = ask with "fast" `a rough summary`<string>;
-  const b = ask with provider.fast `a rough summary`<string>;
+  const a = ask with "fast" `a rough summary`: string;
+  const b = ask with provider.fast `a rough summary`: string;
 
   // RIGHT — name it in nola.config.ts, then use that name
-  const c = ask with fast `a rough summary`<string>;
+  const c = ask with fast `a rough summary`: string;
 
   // RIGHT — dynamic choice
-  const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
+  const d = ask (..`a rough summary`: string).withModel(useFast ? "fast" : "careful");
 
   return { a, b, c, d };
 }
@@ -53,28 +53,27 @@ function summarize(.text: string) {
 
 // RIGHT
 export infer function summarize(.text: string) {
-  return ask `a one-sentence summary`<string>;
+  return ask `a one-sentence summary`: string;
 }
 ```
 
 If the function is genuinely plain TypeScript, drop the `.`; the parameter is
 an ordinary argument.
 
-## NOLA2013 — marker and body instruction together
+## NOLA1019 — the marker slot is reserved
 
-> this infer function already has an instruction marker — write the instruction in one place.
+> the marker after an infer function's name is reserved for a future Nola version — write the instruction as a context statement in the body: `…`.
 
 ```tsi
-// WRONG — two spellings of the same instruction
+// WRONG — the instruction in the reserved slot
 export infer function f`be terse`(.t: string) {
-  `be terse`
-  return ask `the kind`<string>;
+  return ask `the kind`: string;
 }
 
-// RIGHT — one or the other
+// RIGHT — a context statement in the body
 export infer function f(.t: string) {
   `be terse`
-  return ask `the kind`<string>;
+  return ask `the kind`: string;
 }
 ```
 
@@ -89,16 +88,16 @@ infer function — nor in a class field initializer or `static` block.
 
 ```tsi
 // WRONG
-const g = async () => ask `the kind`<string>;         // plain closure
+const g = async () => ask `the kind`: string;         // plain closure
 
 export infer function f(.t: string) {
-  const h = () => ask `the kind`<string>;             // nested closure
+  const h = () => ask `the kind`: string;             // nested closure
   return h();
 }
 
 // RIGHT — ask directly in the body, or at the top level of the module
 export infer function f(.t: string) {
-  return ask `the kind`<string>;
+  return ask `the kind`: string;
 }
 export const kind = ask f("…");
 ```
@@ -107,32 +106,158 @@ Constructing an extractor outside a body is fine — only resolving it is
 restricted:
 
 ```tsi
-export const nameIntent = ..`the user's full name`<string>;   // legal, inert
+export const nameIntent = ..`the user's full name`: string;   // legal, inert
 ```
 
-## NOLA2014 — a typed template outside `ask` needs the dots
+## NOLA2014 — a typed template outside `ask` and a call's slots needs the dots
 
-> a typed template literal is an extractor only directly after `ask`; write ..`…`<T> here.
+> a typed template literal is an extractor only directly after `ask` or in a call's argument list; write ..`…`<T> here.
 
-The `..` is implied only directly after `ask`. Anywhere else a bare template
-is an ordinary string, so an extractor there needs its sigil:
+The `..` is implied directly after `ask` and in a call's slots (an argument,
+or a value nested in plain object/array literals there). Anywhere else a bare
+template is an ordinary string, so an extractor there needs its sigil. The
+code is raised for the angle-bracket spelling; a colon-typed template in such
+a place (`` const stored = `the user's full name`: string ``) is a plain
+syntax error instead:
 
 ```tsi
 declare function createTicket(title: string): Promise<string>;
 
 infer function file(.request: string) {
-  const wrong = ask createTicket(`a short title`<string>);     // NOLA2014
-  const right = ask createTicket(..`a short title`<string>);
+  const wrong = `a short title`<string>;                        // NOLA2014 — stored: dots required
+  const right = ask createTicket(`a short title`: string);      // a slot: the dots are implied
   return right;
 }
-export const stored = ..`the user's full name`<string>;         // stored: dots required
+export const stored = ..`the user's full name`: string;         // stored: dots required
 ```
+
+## NOLA1018 — a colon type with nothing on its line
+
+> expected a type after the extractor's `:` on the same line — write `…`: T.
+
+The colon spelling `` ask `the ticket id`: string `` needs the colon glued to
+the backtick (a colon after a space is a ternary's, never the extractor's) and
+the type on the colon's line. Two more traps come with it, both from the type
+having no closing delimiter:
+
+```tsi
+interface User { name: string }
+
+infer function f(.doc: string) {
+  const a = ask `the user`: User.withRetry(2);       // the TYPE `User.withRetry`, called with 2 — TS error
+  const b = ask `the user`<User>.withRetry(2);       // RIGHT
+  const c = ask `the tags`: string[].withRetry(2);   // RIGHT — a delimited type ends the type
+  return { b, c };
+}
+```
+
+A bare type name followed by `.` continues as a qualified type name, and `<`
+after a type name opens type arguments (`` `n`: User < 5 `` is not a
+comparison). Chain intent methods after a parenthesized extractor
+(`` ask (..`the user`: User).withRetry(2) ``), after a delimited type
+(`string[]`, `Array<User>`, `{…}`, `(User)`), or after `<T>`.
+
+## NOLA1020 — a value in a context statement must be simple
+
+> a value in a context statement is a name, a call or a bracketed expression,
+> followed by text or the end of the statement — wrap anything else in
+> parentheses, or assign it to a local first (`await`, `ask` and `this` cannot
+> be values).
+
+```tsi
+export infer function total(.items: string[], a: number, b: number) {
+  // WRONG — an operator after a value
+  `total` a + b `items`;
+  // RIGHT
+  `total` (a + b) `items`;
+  return ask `a summary`: string;
+}
+```
+
+`this` is the same kind of mistake: an item is a hoisted function of its own,
+so its `this` is not the infer function's. A bare `this` after text is
+NOLA1020; in parentheses or in a `${}` hole it is TS2683 in `nola check` and
+the editor (and `undefined` at run time). Assign it to a local first:
+
+```tsi
+export infer function greet(this: { user: string }) {
+  // WRONG — NOLA1020 (bare `this`); `(this.user)` and `${this.user}` are TS2683
+  `Greet` this.user `warmly.`;
+  // RIGHT — a local, then its name
+  const user = this.user;
+  `Greet` user `warmly.`;
+  return ask `a one-line greeting`: string;
+}
+```
+
+Also:
+
+- A value never ends with a backtick: `` `x` foo<string> `more` `` and
+  `` `x` new Foo `more` `` are NOLA1020 too (the text would be read as a
+  tagged template) — write `(foo<string>)`, `(new Foo)` or `new Foo()`.
+- `typeof`, `void`, `await`, `ask`, `this`, `..`, `function` and `class`
+  right after text are NOLA1020. Parenthesize `typeof`, `void`, functions and
+  classes. `await`, `ask` and `this` cannot be values even in parentheses (an
+  item is read at each ask, outside the async body, in a function of its own:
+  `(await x)` is TS1308, `(this.x)` is TS2683, `(ask …)` is NOLA2010) —
+  compute the value into a `const` first and write its name.
+- A NAME at the start of a line begins a new statement (JavaScript's own
+  rule), so `` `analyze` `` on one line and `foo(x)` on the next are a context
+  statement and a call. Keep values on the text's line, or start the line with
+  `(` or `[`.
+- The mirror image: a CODE line that starts with `[` or `(` right after a
+  context statement continues it and becomes its value — no error, but
+  whatever the code returns (`undefined` for a `forEach`) lands in the
+  prompt, and the code runs at every ask. End the context statement with
+  `;`.
+
+## An operator after the text is not a context statement
+
+No diagnostic: `` `Page ` + oncall `` is ordinary JavaScript — a string
+concatenation whose result is dropped — so the model never sees it.
+
+```tsi
+export infer function page(.ticket: string, oncall: string) {
+  // WRONG — plain concatenation, nothing reaches the model
+  `Page ` + oncall + ` when the ticket is an outage.`;
+  // RIGHT — juxtapose the parts, or use a hole
+  `Page` oncall `when the ticket is an outage.`;
+  `Page ${oncall} when the ticket is an outage.`;
+  return ask `the severity`: string;
+}
+```
+
+## NOLA2017 — a context statement outside a scope body
+
+> a context statement is only legal in a scope body — directly in an infer
+> function or at module level.
+
+> a context statement cannot be the unbraced body of an `if`, a loop or a
+> label — wrap it in braces.
+
+```tsi
+export infer function go(.items: string[], urgent: boolean) {
+  // WRONG — inside a callback, no ask can carry it
+  items.forEach((it) => {
+    `note` it;
+  });
+  // WRONG — an unbraced body
+  if (urgent) `Answer quickly.`;
+  // RIGHT — directly in the body, before the asks that should see it
+  `items:` items;
+  return ask `a summary`: string;
+}
+```
+
+A class `static` block and a namespace body are outside a scope body too.
+Inside braces (`if (urgent) { … }`) a context statement is legal and applies
+to the asks inside them.
 
 ## NOLA2002 — a type the compiler cannot turn into a schema
 
 > unsupported type for intent schema: …
 
-An extractor's `<T>` must RESOLVE to a JSON-shaped value — the TypeScript
+An extractor's type must RESOLVE to a JSON-shaped value — the TypeScript
 checker decides, so unions (`Refund | Chargeback`, `string | null`),
 `Partial<T>` / `Pick` / `Omit`, `interface … extends`, intersections,
 `Record<string, T>`, tuples, generics applied with arguments and types from
@@ -143,16 +268,16 @@ functions and a generic declaration used without arguments (`Box<T>` — write
 ```tsi
 export infer function tally(.doc: string) {
   // WRONG
-  const wrong = ask `counts per label`<Map<string, number>>;
+  const wrong = ask `counts per label`: Map<string, number>;
 
   // RIGHT — a JSON-shaped type; convert afterwards in plain TS
-  const counts = ask `counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`: { label: string; count: number }[];
   const asMap = new Map(counts.map((c) => [c.label, c.count]));
   return asMap;
 }
 ```
 
-Always give an extractor a concrete `<T>` in an expression position. An
+Always give an extractor a concrete type in an expression position. An
 extractor is a value-producing expression; it is not a statement, a type, or a
 declaration.
 
@@ -169,18 +294,18 @@ values are serialized into the prompt.
 ```tsi
 // WRONG
 export infer function topLabel(.index: Map<string, number>) {
-  return ask `the label with the highest count`<string>;
+  return ask `the label with the highest count`: string;
 }
 
 // RIGHT — pass a JSON-shaped view as the contextual parameter
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask `the label with the highest count`<string>;
+  return ask `the label with the highest count`: string;
 }
 
 // RIGHT — keep the exotic value, but as a PLAIN parameter (the LLM never
 // sees its value, so nothing needs deriving)
 export infer function topLabel(.summary: string, index: Map<string, number>) {
-  const label = ask `the label with the highest count`<string>;
+  const label = ask `the label with the highest count`: string;
   return { label, count: index.get(label) ?? 0 };
 }
 ```
@@ -199,9 +324,9 @@ export default defineConfig({
 Keep that value a literal — the editor reads it statically and never executes
 your config.
 
-## NOLA2004 — a call-intent slot with no `<T>`
+## NOLA2004 — a call-intent slot with no type
 
-> an extractor used as a call-intent argument must have an explicit `<T>`.
+> an extractor used as a call-intent argument must have an explicit type — write ..`…`: T here.
 
 ```tsi
 declare function createTicket(title: string, priority: number): Promise<string>;
@@ -210,11 +335,15 @@ export infer function fileTicket(.request: string) {
   // WRONG — the slot has no type
   const wrong = ask createTicket(..`a short ticket title`, 2);
 
-  // RIGHT
-  const id = ask createTicket(..`a short ticket title`<string>, 2);
+  // RIGHT (the slot's `..` is implied; `..`a short ticket title`: string` works too)
+  const id = ask createTicket(`a short ticket title`: string, 2);
   return id;
 }
 ```
+
+A bare template with no type, `` createTicket(`a short ticket title`, 2) ``,
+is not a slot at all: it is a plain string argument and the call stays an
+ordinary call — no error, and no model request.
 
 ## NOLA3010 — bare `await` on a raw extract or call intent
 
@@ -285,7 +414,7 @@ import { Person } from "./models.js";         // WRONG — kept at run time; mod
 
 `__nola` and any identifier starting with `__nola` are reserved in `.tsi`.
 `__nola.ask(...)`, `__nola.intents.ExtractIntent(...)`, `__nola.types.string()`
-and `__nola_file_ctx()` are what the compiler EMITS — they are not an API you
+and `__nola_module_ctx()` are what the compiler EMITS — they are not an API you
 call, and writing them by hand is an error.
 
 ```tsi
@@ -297,28 +426,44 @@ export infer function read(.doc: string) {
   );
 
   // RIGHT
-  const v = ask `the value`<string>;
+  const v = ask `the value`: string;
   return v;
 }
 ```
 
-## NOLA2009 — `${.member}` outside a Nola instruction
+## NOLA2010 — a Nola construct inside a context statement or a hole
 
-`${.x}` is prompt-scope access and only means something inside an
-infer-function marker, an extractor's backticks, or a call-intent hint. In a
-plain template literal it is an error — use a lexical value there.
+> Nola constructs are not allowed inside a context statement or an instruction
+> literal's hole; a hinted call intent used as a value must be parenthesized.
 
-## NOLA2010 — a Nola construct inside a marker / call-hint hole
+A context statement is read at each ask, outside the async body, and call
+hints are re-emitted from source, so `ask` and `..` cannot appear in a context
+statement's parenthesized value, bracketed value or `${}` hole, nor in a call
+hint's hole (written bare right after the text, they are NOLA1020). A call
+intent is a legal value, but a HINTED one, `` fn`hint`(…) ``, must be
+parenthesized or written in a `${}` hole (an empty marker too): bare, the
+backtick after `fn` is read as the next text part and the arguments as a
+value of their own, so it is no call intent — a `` ..`x`: T `` in the
+arguments is left as a bare extractor, and that is this error (a `` `x`: T ``
+there is a syntax error at its colon, since a parenthesized group has no
+slots); plain arguments may raise no error at all and render the wrong text.
+A sigil-less call intent (`` fn(`x`: T) ``) needs no parentheses. Otherwise
+compute the value first and interpolate the result, or move the ask into the
+function body.
 
-Marker and call-hint literals are re-emitted from source, so `..`, call
-intents and `ask` cannot appear in their holes. Compute the value first and
-interpolate the result, or move the ask into the function body.
+```tsi
+declare function escalate(team: string): void;
 
-## NOLA3014 — a prompt template rendered nothing (or threw)
-
-A `${.member}` template must produce text. An empty result usually means the
-template only read members that were undefined; a throw is a bug in the
-template's own JS. Fixed at the template — there is no retry.
+export infer function route(.ticket: string) {
+  // WRONG — the hint's backtick starts the next text part: NOLA2010 at the extractor
+  `If the ticket is an outage,` escalate`page the on-call engineer`(..`the team to page`: string);
+  // RIGHT — parenthesized (or written in a `${}` hole)
+  `If the ticket is an outage,` (escalate`page the on-call engineer`(`the team to page`: string));
+  // RIGHT — no hint, no parentheses
+  `If the ticket is an outage,` escalate(`the team to page`: string);
+  return ask `the label for the ticket`: string;
+}
+```
 
 ## NOLA3015 — running `.tsi` under Bun or Deno
 
@@ -336,3 +481,6 @@ the `nola` bin is a Node script), but `bun --bun`, `bun src/main.ts` and
 - `infer` on a method, arrow function or function expression — top-level
   function declarations only.
 - `fn(..)` — the bare derive-all call form is reserved (NOLA1004).
+- `` ask `p` : T `` — a colon after a space is not the extractor's type; only a
+  colon glued to the closing backtick is (`` `p`: T ``). In a ternary the
+  spaced colon is the separator.

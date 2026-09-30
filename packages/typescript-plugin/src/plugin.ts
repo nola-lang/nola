@@ -4,7 +4,8 @@
 // createLanguageServicePlugin (Volar quickstart), createProxyLanguageService(ls)
 // -> { initialize(language), proxy }, decorateLanguageServiceHost,
 // decorateHostWithViews, decorateHostHideShadowedDeclarations,
-// decorateLanguageServiceWithDerivationDiagnostics.
+// decorateLanguageServiceWithDerivationDiagnostics,
+// decorateLanguageServiceHideGeneratedCompletions.
 import { useTypeScript } from "@nola-lang/derive";
 import { createNolaLanguagePlugin } from "@nola-lang/language-core";
 import { findProjectRoot } from "@nola-lang/node-loader/project-root";
@@ -13,6 +14,7 @@ import { createLanguageServicePlugin } from "@volar/typescript/lib/quickstart/cr
 import type ts from "typescript";
 import { decorateLanguageServiceWithDerivationDiagnostics } from "./derivation-diagnostics.js";
 import { guardProjectServiceDocumentCache } from "./document-cache-guard.js";
+import { decorateLanguageServiceHideGeneratedCompletions } from "./generated-completions.js";
 import { decorateHostForTsiResolutionWatch } from "./resolution-watch.js";
 import { decorateServerHostForViews } from "./server-host.js";
 import { decorateHostHideShadowedDeclarations } from "./shadowed-declarations.js";
@@ -29,9 +31,11 @@ export function createNolaTsPlugin(): ts.server.PluginModuleFactory {
     decorateHostHideShadowedDeclarations(typescript, info.languageServiceHost);
     // Here `info.languageService` is still the INNER service (Volar swaps in
     // its mapping proxy after this callback returns), so the lazy derivation
-    // diagnostics ride generated offsets and get mapped like TypeScript's own.
+    // diagnostics ride generated offsets and get mapped like TypeScript's own;
+    // the lowering's own names leave a .tsi's diagnostics and completion here too.
     let language: Language<string> | undefined;
     decorateLanguageServiceWithDerivationDiagnostics(typescript, info.languageService, () => language, { sourceRoot });
+    decorateLanguageServiceHideGeneratedCompletions(info.languageService);
     return {
       languagePlugins: [createNolaLanguagePlugin<string>((fileName) => fileName, { sourceRoot })],
       // setup runs AFTER Volar's decorateLanguageServiceHost: the view host

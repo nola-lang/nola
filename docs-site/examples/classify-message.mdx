@@ -1,11 +1,15 @@
 ---
 title: classify-message
-description: Classification over closed label sets in all three native TypeScript forms — a string-literal union alias, a string enum, and an inline union.
+description: Classify messages with string-literal unions, string enums, and inline unions, then use the typed results in ordinary TypeScript.
 sidebar:
   order: 40
 ---
 
-Classification against closed label sets, in all three native TS forms: a **string-literal union alias** (`Category`), a **string enum** (`Sentiment` — a runtime value too, so consumers compare with `Sentiment.Negative`), and an **inline union** (`<"yes" | "no">`) mapped to a boolean in plain TS. Each lowers to a JSON Schema `enum`, is enforced by the provider's structured outputs *and* re-validated by the runtime — a wrong label triggers a correction retry that lists the allowed values. The label set is the TypeScript type you already have; per-label descriptions (a hint attached to each variant) have no Nola equivalent yet.
+This example classifies a message three ways: a string-literal union for its category, a string enum for sentiment, and an inline union for urgency.
+
+Nola derives a JSON Schema `enum` from each type. The runtime checks the answer against the allowed values and includes them in a correction retry if the model returns an invalid label. Providers that support structured output also receive the schema.
+
+The string enum is available at runtime, so callers can compare a result with `Sentiment.Negative`. The urgency answer is converted to a boolean in the return value. Nola does not yet support a separate description for each label.
 
 ```tsi
 // src/classify.tsi
@@ -18,9 +22,9 @@ export enum Sentiment {
 }
 
 export infer function classifyMessage(.message: string) {
-  const category = ask `the category of the customer message`<Category>;
-  const sentiment = ask `the overall sentiment of the message`<Sentiment>;
-  const urgent = ask `does the message need urgent attention`<"yes" | "no">;
+  const category = ask `the category of the customer message`: Category;
+  const sentiment = ask `the overall sentiment of the message`: Sentiment;
+  const urgent = ask `does the message need urgent attention`: "yes" | "no";
   return { category, sentiment, urgent: urgent === "yes" };
 }
 ```

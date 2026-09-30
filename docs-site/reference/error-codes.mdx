@@ -1,11 +1,18 @@
 ---
 title: Error codes
-description: Every NOLA diagnostic — parse (1xxx), compile (2xxx), runtime (3xxx), bundler (4xxx) — with its message, cause, and fix. Anchors are #nola<code>.
+description: Find the cause and fix for Nola parse, compile, runtime and bundler errors. Every diagnostic has a stable code and direct link.
 sidebar:
   order: 80
 ---
 
-Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `NOLA2xxx` **compile** errors — raised by the editor, `nola check` and `nola build`; `NOLA3xxx` are **runtime** errors raised by the runtime, the loader or a provider; `NOLA4xxx` are **bundler** errors raised at build time by the bundler plugins. Each heading below is an anchor (`/docs/reference/error-codes/#nola2001`) and will not move. Codes listed as *not raised* are reserved or retired; the numbers are never reused.
+Nola diagnostics use stable codes:
+
+- `NOLA1xxx`: parse errors, reported by the editor, `nola check` and `nola build`.
+- `NOLA2xxx`: compile errors, reported by the same tools.
+- `NOLA3xxx`: runtime errors from the runtime, loader or a provider.
+- `NOLA4xxx`: build-time errors from bundler plugins.
+
+Each code has a permanent link, such as `/docs/reference/error-codes/#nola2001`. Codes marked *not raised* are reserved or retired and will not be reused.
 
 **Parse errors (NOLA1xxx)**
 
@@ -13,8 +20,8 @@ Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `
 
 > *(the parser's own message)*
 
-**Cause:** a plain syntax error — anything the parser rejects that does not carry a more specific Nola code, such as an unbalanced brace or a stray token.
-**Fix:** read the position in the message; it is an ordinary TypeScript/JavaScript syntax problem in your `.tsi` file.
+**Cause:** a syntax error without a more specific Nola code, such as an unbalanced brace or stray token.
+**Fix:** check the location in the message and correct the TypeScript or JavaScript syntax.
 
 ## NOLA1003
 
@@ -27,15 +34,17 @@ Every Nola diagnostic has a stable number. `NOLA1xxx` are **parse** errors and `
 
 > this Nola construct is reserved for a future Nola version.
 
-**Cause:** syntax the grammar recognises but does not ship yet — an `infer` generator (`infer function*`), an instruction marker on a class method or on a bodiless `declare function`, the bare derive-all call `fn(..)`; other deferred forms (see [Restrictions](/docs/language/restrictions/)). `infer` on an arrow or function *expression* never reaches this check — `infer` is a keyword only directly before `function` at statement or export position — so those are plain `NOLA1001` syntax errors.
-**Fix:** use a top-level `infer function` declaration; give every call-intent slot an explicit `` ..`…`<T> ``.
+**Cause:** syntax reserved for future use: an `infer` generator (`infer function*`), a marker on a class method, a bodiless `infer function`, or the derive-all call `fn(..)`. See [Restrictions](/docs/language/restrictions/) for other reserved forms.
+**Fix:** use a top-level `infer function` declaration and write each call-intent argument as an explicit extractor (`` ..`…`: T ``).
+
+`infer` on an arrow or function expression produces `NOLA1001` instead. It is a keyword only directly before `function` at statement or export position.
 
 ## NOLA1005
 
 > expected a template literal prompt after `..`.
 
 **Cause:** `..` followed by something other than a backtick instruction.
-**Fix:** write `` ..`instruction`<T> ``.
+**Fix:** write `` ..`instruction`: T ``.
 
 ## NOLA1006
 
@@ -43,10 +52,10 @@ Not raised — reserved (`infer` without a following `function` is reported as `
 
 ## NOLA1007
 
-> an instruction marker is only legal on an `infer function`.
+> a marker after a plain function's name is not valid — only an `infer function` has that slot, and there it is reserved (NOLA1019).
 
-**Cause:** a backtick instruction marker between a plain function's name and its parameter list.
-**Fix:** declare it `` infer function name`instruction`(…) ``, or drop the marker.
+**Cause:** a backtick literal between a plain function's name and its parameter list.
+**Fix:** drop it; a plain function takes no marker. For an infer function, write the text as a context statement in the body ([Context statements](/docs/language/context-statements/)).
 
 ## NOLA1009
 
@@ -58,8 +67,8 @@ Not raised — reserved (`infer` without a following `function` is reported as `
 ```tsi
 // not-checked — WRONG
 export infer function summarize(.text: string, useFast: boolean) {
-  const a = ask with "fast" ..`a rough summary`<string>;
-  const b = ask with (useFast ? "fast" : "careful") ..`a rough summary`<string>;
+  const a = ask with "fast" ..`a rough summary`: string;
+  const b = ask with (useFast ? "fast" : "careful") ..`a rough summary`: string;
   return { a, b };
 }
 ```
@@ -67,8 +76,8 @@ export infer function summarize(.text: string, useFast: boolean) {
 ```tsi
 // summarize.tsi — RIGHT
 export infer function summarize(.text: string, useFast: boolean) {
-  const c = ask with fast `a rough summary`<string>;
-  const d = ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful");
+  const c = ask with fast `a rough summary`: string;
+  const d = ask (..`a rough summary`: string).withModel(useFast ? "fast" : "careful");
   return { c, d };
 }
 ```
@@ -90,7 +99,7 @@ function summarize(.text: string) {
 ```tsi
 // summarize-right.tsi — RIGHT
 export infer function summarize(.text: string) {
-  return ask `a one-sentence summary`<string>;
+  return ask `a one-sentence summary`: string;
 }
 ```
 
@@ -113,7 +122,7 @@ export infer function summarize(.text: string) {
 > contextual parameters take one dot — write `.name` (`..` is the extractor sigil).
 
 **Cause:** `..name` on a parameter.
-**Fix:** one dot in, two dots out — `.name`.
+**Fix:** use one dot: `.name`. Two dots introduce an extractor.
 
 ## NOLA1014
 
@@ -122,26 +131,57 @@ export infer function summarize(.text: string) {
 **Cause:** the dot on a `var` declaration — `var` hoists to `undefined`, which no ask should see.
 **Fix:** write `const .x` or `let .x` — see [Contextual bindings](/docs/language/contextual-parameters/#contextual-bindings).
 
-## NOLA1015
-
-> incomplete scope access — write `${.member}`.
-
-**Cause:** `${.` inside an instruction with no member after the dot.
-**Fix:** finish the member (the editor completes them) — see [Prompt templates](/docs/language/prompt-templates/).
-
-## NOLA1016
-
-> `..x` — expected `choice`, `scale` or `prob` before the prompt template.
-
-**Cause:** an identifier between the extractor sigil and its template that is not one of the three decision kinds — `` ..choose`…` `` — where `` ..choice`…`<C> ``, `` ..scale`…`<L> `` or `` ..prob`…` `` was meant.
-**Fix:** write one of the three kinds, or drop the word for a plain extractor (`` ..`…`<T> ``).
-
 ## NOLA1017
 
 > the implied extractor needs whitespace before its template — write `` ask `…` `` (`` ask`…` `` reads as a tagged template).
 
-**Cause:** a template literal glued to `ask` (or to the model name after `ask with`) — `` ask`the user's name`<string> ``. Without the space it reads as a tagged template call on `ask`, which is not what runs.
-**Fix:** put at least one space (any whitespace) between `ask` and the backtick, or write the explicit sigil — `` ask ..`…`<T> ``. See [Extractors](/docs/language/extractors/).
+**Cause:** a template literal glued to `ask` (or to the model name after `ask with`) — `` ask`the user's name`: string ``. Without the space it reads as a tagged template call on `ask`, which is not what runs.
+**Fix:** put at least one space (any whitespace) between `ask` and the backtick, or write the explicit sigil — `` ask ..`…`: T ``. See [Extractors](/docs/language/extractors/).
+
+## NOLA1018
+
+> expected a type after the extractor's `:` on the same line — write `` `…`: T ``.
+
+**Cause:** a colon after an extractor's closing backtick starts its type, and nothing type-like follows it on that line — `` ask `the user id`: `` at the end of a line, or `` ask `the user id`: ; ``. The type has to start on the colon's line because TypeScript's type grammar reads across line breaks: otherwise an unfinished `:` above an existing statement would swallow that statement's first expression as a type name.
+**Fix:** write the type right after the colon — `` ask `the user id`: number `` — or use the angle-bracket spelling, `` ask `the user id`<number> ``. See [Extractors](/docs/language/extractors/#the-angle-bracket-spelling).
+
+## NOLA1019
+
+> the marker after an infer function's name is reserved for a future Nola version — write the instruction as a context statement in the body: `…`.
+
+**Cause:** a backtick literal between an infer function's name and its parameter list — `` infer function f`…`(…) ``. That slot no longer carries the instruction.
+**Fix:** write the text as a context statement in the body ([Context statements](/docs/language/context-statements/)):
+
+```tsi
+// triage.tsi
+export infer function triage(.ticket: string) {
+  `triage the ticket like a support lead`
+  return ask `the severity: low, medium or high`: "low" | "medium" | "high";
+}
+```
+
+## NOLA1020
+
+> a value in a context statement is a name, a call or a bracketed expression, followed by text or the end of the statement — wrap anything else in parentheses, or assign it to a local first (`await`, `ask` and `this` cannot be values).
+
+**Cause:** after the text of a [context statement](/docs/language/context-statements/), a token that cannot continue it on the same line: an operator or an arrow after a value (`` `total` a + b ``, `` `map` x => x ``), or `typeof`, `void`, `await`, `ask`, `this`, `..`, `function` or `class` where a value would start. Also a value that ends with a backtick, which takes the text after it for a tagged template: `` `x` foo<string> `more` ``, `` `x` new Foo `more` ``.
+**Fix:** parenthesize the expression — `` `total` (a + b) ``, `` `x` (foo<string>) `more` ``, `` `x` (new Foo) `more` `` — or put it in a `${}` hole of the text. `await`, `ask` and `this` cannot go in a value even in parentheses: a parenthesized `ask` is [`NOLA2010`](/docs/reference/error-codes/#nola2010), and a parenthesized `await` or `this` is a TypeScript error (`TS1308`, `TS2683`), because a context statement is read at each ask, outside the async body, in a hoisted function of its own. Compute the value first, assign it to a local and write its name: `const user = this.user;`, then `` `Page` user ``.
+
+```tsi
+// not-checked — WRONG
+export infer function total(.items: string[], a: number, b: number) {
+  `total` a + b `items`;                    // an operator after a value
+  return ask `a summary`: string;
+}
+```
+
+```tsi
+// total.tsi — RIGHT
+export infer function total(.items: string[], a: number, b: number) {
+  `total` (a + b) `items`;
+  return ask `a summary`: string;
+}
+```
 
 **Compile errors (NOLA2xxx)**
 
@@ -154,10 +194,10 @@ export infer function summarize(.text: string) {
 
 ```tsi
 // not-checked — WRONG
-const g = async () => ask `the kind`<string>;         // plain closure
+const g = async () => ask `the kind`: string;         // plain closure
 
 export infer function f(.t: string) {
-  const h = () => ask `the kind`<string>;             // nested closure
+  const h = () => ask `the kind`: string;             // nested closure
   return h();
 }
 ```
@@ -165,7 +205,7 @@ export infer function f(.t: string) {
 ```tsi
 // kind.tsi — RIGHT
 export infer function f(.t: string) {
-  return ask `the kind`<string>;
+  return ask `the kind`: string;
 }
 ```
 
@@ -173,20 +213,20 @@ export infer function f(.t: string) {
 
 > unsupported type for intent schema: …
 
-**Cause:** an extractor's `<T>` resolves to a type the checker-backed derivation cannot turn into a JSON Schema — `Map`, `Set`, `Promise`, `RegExp`, functions, a generic used without arguments — or a member of it does; the message names the member and the type.
+**Cause:** an extractor's type resolves to a type the checker-backed derivation cannot turn into a JSON Schema — `Map`, `Set`, `Promise`, `RegExp`, functions, a generic used without arguments — or a member of it does; the message names the member and the type.
 **Fix:** ask for a JSON-shaped type and convert afterwards in plain TypeScript. See [Schema derivation](/docs/reference/schema-derivation/).
 
 ```tsi
 // not-checked — WRONG
 export infer function tally(.doc: string) {
-  return ask `counts per label`<Map<string, number>>;
+  return ask `counts per label`: Map<string, number>;
 }
 ```
 
 ```tsi
 // tally.tsi — RIGHT
 export infer function tally(.doc: string) {
-  const counts = ask `counts per label`<{ label: string; count: number }[]>;
+  const counts = ask `counts per label`: { label: string; count: number }[];
   return new Map(counts.map((c) => [c.label, c.count]));
 }
 ```
@@ -196,14 +236,14 @@ export infer function tally(.doc: string) {
 > infer functions must be declared at module top level.
 
 **Cause:** an `infer function` declared inside another function or block.
-**Fix:** move it to module level and export it.
+**Fix:** move it to module level.
 
 ## NOLA2004
 
-> an extractor used as a call-intent argument must have an explicit `<T>`.
+> an extractor used as a call-intent argument must have an explicit type — write ..`…`: T here.
 
-**Cause:** a call-intent slot written as `` ..`…` `` with no type argument.
-**Fix:** give every slot a `<T>`.
+**Cause:** a call-intent slot written as `` ..`…` `` with no type. (A bare template with no type, `` createTicket(`a short ticket title`, 2) ``, is a plain string argument, not a slot: the call stays an ordinary call.)
+**Fix:** give every slot a type, `` `…`: T `` (or `` `…`<T> ``); the `..` is implied in a call's argument list.
 
 ```tsi
 // not-checked — WRONG
@@ -217,7 +257,7 @@ export infer function fileTicket(.request: string) {
 // file-ticket.tsi — RIGHT
 declare function createTicket(title: string, priority: number): Promise<string>;
 export infer function fileTicket(.request: string) {
-  return ask createTicket(..`a short ticket title`<string>, 2);
+  return ask createTicket(`a short ticket title`: string, 2);
 }
 ```
 
@@ -238,30 +278,43 @@ export infer function fileTicket(.request: string) {
 ```tsi
 // not-checked — WRONG
 export infer function topLabel(.index: Map<string, number>) {
-  return ask `the label with the highest count`<string>;
+  return ask `the label with the highest count`: string;
 }
 ```
 
 ```tsi
 // top-label.tsi — RIGHT
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask `the label with the highest count`<string>;
+  return ask `the label with the highest count`: string;
 }
 ```
 
-## NOLA2009
-
-> `${.member}` scope access is only allowed inside a Nola instruction template (infer-function marker, extractor prompt, call-intent hint).
-
-**Cause:** `${.x}` in a plain template literal.
-**Fix:** use a lexical value there; prompt scope exists only inside an instruction.
-
 ## NOLA2010
 
-> Nola constructs are not allowed inside an infer-function marker or call-intent hint hole.
+> Nola constructs are not allowed inside a context statement or an instruction literal's hole; a hinted call intent used as a value must be parenthesized.
 
-**Cause:** `` ..`…` ``, a call intent or `ask` inside a `${}` hole of a marker or call hint (those literals are re-emitted from source).
-**Fix:** compute the value first and interpolate the result, or move the ask into the function body.
+**Cause:** `` ..`…` `` or `ask` inside a context statement — as a parenthesized value, nested in a bracketed value or in a `${}` hole of its text — or inside a `${}` hole of a call hint. A context statement is read at each ask with no frame of its own, and a call hint is re-emitted from source. A call intent is a legal value, but a hinted one, `` fn`hint`(…) ``, written bare is read as the value `fn`, then the text `hint`, then a parenthesized group: its `` ..`…`: T `` argument is the bare extractor this code reports (written without the dots, `` (`…`: T) ``, the same group is a syntax error at the colon, since a parenthesized group has no slots). Written directly after the text, a bare `ask` or `..` is [`NOLA1020`](/docs/reference/error-codes/#nola1020) instead.
+**Fix:** compute the value first and interpolate the result, or move the ask into the function body. To use a call intent with a hint as a value, parenthesize it or write it in a `${}` hole; a plain call with an extractor argument needs no parentheses.
+
+```tsi
+// not-checked — WRONG
+declare function escalate(team: string): void;
+
+export infer function route(.ticket: string) {
+  `If the ticket is an outage,` escalate`page the on-call engineer`(..`the team to page`: string)
+  return ask `the label for the ticket`: string;
+}
+```
+
+```tsi
+// route.tsi — RIGHT
+declare function escalate(team: string): void;
+
+export infer function route(.ticket: string) {
+  `If the ticket is an outage,` (escalate`page the on-call engineer`(`the team to page`: string))
+  return ask `the label for the ticket`: string;
+}
+```
 
 ## NOLA2011
 
@@ -277,19 +330,12 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 **Cause:** a JSDoc constraint tag ([Constraints](/docs/reference/schema-derivation/#constraints)) does not fit — the keyword is for another kind of type, its value is missing or not a number, the `@format` name is unknown, the `@pattern` is not a valid regular expression, or the tag is given twice. Raised at the type for every kind of site (exported type, extractor, contextual parameter); the contextual-parameter policy does not apply, and prune mode does not drop the member.
 **Fix:** move the tag to a member of the right kind, or correct its value.
 
-## NOLA2013
-
-> this infer function already has an instruction marker — write the instruction in one place.
-
-**Cause:** an infer function carries both an instruction marker (`` infer function f`…`(…) ``) and a body instruction — a template literal as the first statement of its body ([Body instruction](/docs/language/infer-functions/#the-body-instruction)).
-**Fix:** keep one of the two; they mean the same thing.
-
 ## NOLA2014
 
-> a typed template literal is an extractor only directly after `ask`; write `` ..`…`<T> `` here.
+> a typed template literal is an extractor only directly after `ask` or in a call's argument list; write `` ..`…`<T> `` here.
 
-**Cause:** a template literal with type arguments — `` f(`x`<string>) `` — somewhere other than directly after `ask`. The two dots are implied only at the ask site; elsewhere a bare template is an ordinary string, so an extractor there needs its sigil ([Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct)).
-**Fix:** write `` ..`x`<T> `` — in a call-intent argument, a stored intent, or an object/array literal.
+**Cause:** a template literal with type arguments — `` const i = `x`<string> `` — somewhere other than directly after `ask` or in a call's slots (a direct argument, or a value nested in object/array literals there). The two dots are implied only in those two places; elsewhere a bare template is an ordinary string, so an extractor there needs its sigil ([Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct)). The colon spelling has no such code: `` const i = `x`: string `` is an ordinary syntax error.
+**Fix:** write `` ..`x`: T `` (or `` ..`x`<T> ``) — for a stored intent, or an extractor under a ternary, a spread or `new`.
 
 ## NOLA2015
 
@@ -297,6 +343,36 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 **Cause:** the criteria of a decision type are malformed — a `Choice` argument that is not a label union or a `{ label: description }` type literal of string literals and `null`, fewer than 2 or more than 255 labels; a `Scale` argument that is not a tuple of 2 to 10 string literals; a `Prob` argument that is not exactly `{ true: "…"; false: "…" }`. Raised at the type for every kind of site (exported type, extractor, contextual parameter); the contextual-parameter policy does not apply, and prune mode does not drop the member.
 **Fix:** write the criteria as literals: `` Choice<{ billing: "Payments"; sales: null }> ``, `` Scale<["Calm", "Angry"]> ``, `` Prob<{ true: "…"; false: "…" }> ``.
+
+## NOLA2017
+
+> a context statement is only legal in a scope body — directly in an infer function or at module level. · a context statement cannot be the unbraced body of an `if`, a loop or a label — wrap it in braces.
+
+**Cause:** a bare template literal statement inside a plain function, a callback (even one written inside an infer function), a class static block or a namespace body, or as the unbraced body of an `if`, `else`, loop or label (`` if (x) `text`; ``). No `ask` can run there, so nothing could carry the text to the model.
+**Fix:** move the statement directly into the infer function's body or the module body, put braces around an unbraced body, or make the text a plain string if it was never meant for the model.
+
+```tsi
+// not-checked — WRONG
+export infer function go(.items: string[], urgent: boolean) {
+  items.forEach((it) => {
+    `note` it;                              // a callback: no ask can carry it
+  });
+  if (urgent) `Answer quickly.`;            // an unbraced body
+  return ask `a summary`: string;
+}
+```
+
+```tsi
+// go.tsi — RIGHT
+export infer function go(.items: string[], urgent: boolean) {
+  `items:` items;
+  if (urgent) {
+    `Answer quickly.`
+    return ask `a short summary`: string;
+  }
+  return ask `a summary`: string;
+}
+```
 
 **Runtime errors (NOLA3xxx)**
 
@@ -318,8 +394,10 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 > *(one of several config messages, e.g.)* `a model map must include a default entry.` · `unknown config key x — allowed keys: …` · `Nola configuration is frozen after the first ask — call nolaRuntime.reset() before reconfiguring.` · `fallback([]) needs at least one model.` · `fallback() cannot wrap nola — the platform model can only be the root: it manages its own resilience (nola.infer({ retry }) for transport retry; routing and failover live on the server). record()/replay() remain available.`
 
-**Cause:** `nola.config.ts` did not validate, the process was reconfigured after the first ask, a combinator received an empty list, or `fallback` / `roundRobin` wrapped the platform-served model (one request has one shape — see [Providers API](/docs/reference/providers-api/#nola)). (A related `NolaConfigError` without a code — "No Nola model configured" — means no config was loaded at all: run through `nola run` / the loader with a `nola.config.ts`, or call `nolaRuntime.configure(…)` first.)
-**Fix:** the message names the file and field — see [Config schema](/docs/reference/config-schema/).
+**Cause:** invalid config, reconfiguration after the first ask, an empty provider list, or an attempt to wrap the platform model in `withRetry`, `fallback` or `roundRobin`.
+**Fix:** follow the file and field named in the message. See [Config schema](/docs/reference/config-schema/) and [Providers API](/docs/reference/providers-api/#nola).
+
+The related message "No Nola model configured" is a `NolaConfigError` without a code. It means no config was loaded. Use `nola run` or the loader with a `nola.config.ts`, or call `nolaRuntime.configure(…)` before the first ask.
 
 ## NOLA3004
 
@@ -339,8 +417,8 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 > `cache must be an object — write cache: {} or cache: { store: <NolaCacheStore> }.` · `cache.store is not a NolaCacheStore (need { get(fingerprint), set(fingerprint, value) }).`
 
-**Cause:** a malformed `cache` section. (The cache validates but is not wired at 0.1.x.)
-**Fix:** `cache: {}` or a store with `get` and `set`.
+**Cause:** a malformed `cache` section. Cache settings are validated but currently have no effect.
+**Fix:** use `cache: {}` or a store with `get` and `set` methods.
 
 ## NOLA3007
 
@@ -353,8 +431,8 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 > replay ledger … has no entry for fingerprint … — the prompt, schema, or context changed since the ledger was recorded. Re-record it.
 
-**Cause:** the request differs from every recorded one — you changed a prompt, a contextual value, a type, params or the provider. Replay is strict on purpose.
-**Fix:** re-record (`NOLA_RECORD=1`), or switch to a live provider.
+**Cause:** no recorded request matches the current prompt, contextual values, schema, params or inference profile. The provider name alone does not affect the match.
+**Fix:** record the changed requests (`NOLA_RECORD=1` with the setup in [Record and replay](/docs/config/record-and-replay/)), or switch to a live provider.
 
 ## NOLA3009
 
@@ -367,8 +445,8 @@ export infer function topLabel(.index: { label: string; count: number }[]) {
 
 > extract/call intents carry no construction scope — only `ask` supplies their frame.
 
-**Cause:** a raw extractor or call intent was awaited (or otherwise run) outside `ask` — typically from plain TypeScript, or after storing it in a variable.
-**Fix:** resolve it with `ask` inside an infer function; from plain TS, `await` the *infer function's* result instead.
+**Cause:** a raw extractor or call intent was awaited or run outside `ask`, often from plain TypeScript.
+**Fix:** resolve it with `ask` inside an infer function or at module level in a `.tsi` file. From plain TypeScript, `await` the infer function's result.
 
 ```ts
 // not-checked — WRONG: nothing supplies the inference context
@@ -378,7 +456,7 @@ const name = await nameIntent;
 
 ```tsi
 // person.tsi — RIGHT
-export const nameIntent = ..`the user's full name`<string>;
+export const nameIntent = ..`the user's full name`: string;
 
 export infer function whoIsIt(.text: string) {
   return ask nameIntent;
@@ -402,13 +480,6 @@ Not raised — reserved.
 
 **Cause:** an ask ran where `window` and `document` exist.
 **Fix:** call the infer function from server code.
-
-## NOLA3014
-
-> prompt template at … threw: … · prompt template at … rendered no text.
-
-**Cause:** a `${.member}` template threw, or rendered an empty string (it only read members that were undefined).
-**Fix:** fix the template — definitive, there is no retry. See [Prompt templates](/docs/language/prompt-templates/).
 
 ## NOLA3015
 
@@ -435,8 +506,8 @@ Not raised — reserved.
 
 > output property "department" is a Choice; model "openai" cannot answer decision questions — route the ask to a decision model (`ask with <name>`) or use the plain form (a literal union, or boolean).
 
-**Cause:** the ask's output type contains a `Choice`, `Scale` or `Prob`, and the model the ask resolved to does not declare the decision capability. A chat model cannot measure probabilities; letting it answer would fabricate a confidence that looks real, so the runtime refuses before any request is sent. `fallback([…])` and `roundRobin([…])` count as decision models when any inner is one and skip the others for such an ask.
-**Fix:** route the ask to a decision model (`ask with <name>` over a `model` map entry, or `.withModel()`), or use the plain forms — a literal union for the label, `boolean` for a thresholded yes/no.
+**Cause:** the output type contains `Choice`, `Scale` or `Prob`, but the selected model does not support decision questions. Nola rejects the ask before sending a request because those types require probabilities from a decision model. A `fallback` or `roundRobin` group supports decisions if at least one member does; other members are skipped for decision asks.
+**Fix:** select a decision model with `ask with <name>` or `.withModel()`. If you only need a label or yes/no answer, use a literal union or `boolean`.
 
 **Bundler errors (NOLA4xxx)**
 

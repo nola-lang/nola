@@ -61,8 +61,8 @@ describe("transformNola", () => {
     };
     // the wrapper opener and closer are unmapped (smart-step territory)
     expect(originalPositionFor(tracer, genPos("return __nola.intents.Intent(")).line).toBeNull();
-    expect(originalPositionFor(tracer, genPos("}, __nola_file_ctx()")).line).toBeNull();
-    expect(originalPositionFor(tracer, genPos("__nola_file_ctx().func(")).line).toBeNull();
+    expect(originalPositionFor(tracer, genPos("}, __nola_module_ctx()")).line).toBeNull();
+    expect(originalPositionFor(tracer, genPos("__nola_module_ctx().func(")).line).toBeNull();
     // body statements keep their precise mappings (breakpoints must bind)
     expect(originalPositionFor(tracer, genPos("await __nola.ask("))).toMatchObject({ line: 2 });
     expect(originalPositionFor(tracer, genPos("return v;"))).toMatchObject({ line: 3 });
@@ -89,7 +89,7 @@ describe("transformNola keeps the lowered layout (js-debug binds .tsi breakpoint
   // js-debug sets a .tsi breakpoint twice: through the inline map, and by raw
   // URL + line on the compiled script — whose URL IS the .tsi path. If type
   // stripping collapsed lines (esbuild dropped a 6-line interface), raw line 8
-  // landed inside the appendix's __nola_file_ctx, which the ask calls: F10 over
+  // landed inside the appendix's __nola_module_ctx, which the ask calls: F10 over
   // a top-level ask then paused in unmapped code and degraded into a continue.
   const src = [
     "export interface Person {",
@@ -129,6 +129,144 @@ describe("transformNola keeps the lowered layout (js-debug binds .tsi breakpoint
     ] as const) {
       expect(lineOf(needle)).toBe(line);
       expect(originalPositionFor(tracer, { line, column: 0 })).toMatchObject({ line });
+    }
+  });
+
+  it("a multi-line context statement (module or infer body) keeps its lines, so later statements keep theirs", async () => {
+    // The statement stays in place as a hoisted function spanning the same
+    // lines (spec 2026-09-29 §3.7): js-debug's raw copy of a breakpoint on the
+    // ask line binds to the ask line, and one on the statement's line binds to
+    // its `void` read, the statement's own step location.
+    const moduleSrc = [
+      "`",
+      "You are a UI resolver for a workflow builder.",
+      "`",
+      "",
+      "const result = ask `find the users`<string>",
+      "",
+      "console.log(result);",
+      "",
+    ].join("\n");
+    const { code, map } = await transformNola(moduleSrc, "main.tsi");
+    const lines = code.split("\n");
+    expect(lines[0]).toBe("void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`");
+    expect(lines[1]).toBe("You are a UI resolver for a workflow builder.");
+    expect(lines[2]).toBe("`; }");
+    expect(lines[3]).toBe("");
+    expect(lines[4]).toMatch(/^const result = await __nola\.ask\(/);
+    expect(lines[4]).toContain("__nola_module_ctx(), { context: [__nola_ctx_1] })");
+    expect(lines[6]).toBe("console.log(result);");
+    const { TraceMap, originalPositionFor } = await import("@jridgewell/trace-mapping");
+    const tracer = new TraceMap(JSON.parse(map));
+    expect(originalPositionFor(tracer, { line: 5, column: 0 })).toMatchObject({ line: 5 });
+    expect(originalPositionFor(tracer, { line: 7, column: 0 })).toMatchObject({ line: 7 });
+    // the statement's own lines are mapped too: a breakpoint on the text line binds through the map, not only raw
+    expect(originalPositionFor(tracer, { line: 2, column: 0 })).toMatchObject({ line: 2 });
+    expect(originalPositionFor(tracer, { line: 3, column: 0 })).toMatchObject({ line: 3 });
+
+    // text and value parts over two lines, in a body: every line keeps its number
+    const bodySrc = [
+      "export infer function go(.q: string, oncall: string) {",
+      "  `Page` oncall",
+      "  `when the ticket is an outage.`",
+      "  const v = ask `the value`<string>;",
+      "  return v;",
+      "}",
+      "",
+    ].join("\n");
+    const body = await transformNola(bodySrc, "go.tsi");
+    const bodyLines = body.code.split("\n");
+    // the wrapper opener adds one line after the header; the body's own lines hold
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the lowered text contains a literal ${} hole
+    expect(bodyLines[2]).toBe("  void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`Page ${oncall}");
+    expect(bodyLines[3]).toBe("  when the ticket is an outage.`; }");
+    const askAt = bodyLines.findIndex((l) => l.includes("const v = await __nola.ask("));
+    expect(askAt).toBe(4);
+    const bodyTracer = new TraceMap(JSON.parse(body.map));
+    expect(originalPositionFor(bodyTracer, { line: askAt + 1, column: 2 })).toMatchObject({ line: 4 });
+    expect(originalPositionFor(bodyTracer, { line: askAt + 2, column: 2 })).toMatchObject({ line: 5 });
+    // the statement's own line is mapped (source line 2 = generated line 3), and so is its continuation line
+    // (source line 3 = generated line 4): it begins inside replaced text — the gap re-emitted between the value
+    // and the next text — but carries the statement's own text, so it is no wrapper line
+    expect(originalPositionFor(bodyTracer, { line: 3, column: 2 })).toMatchObject({ line: 2 });
+    expect(originalPositionFor(bodyTracer, { line: 4, column: 2 })).toMatchObject({ line: 3 });
+  });
+
+  it("a column-0 context statement's own line is mapped: a breakpoint on the file's first line binds through the map at the statement's own position", async () => {
+    // Playground report (2026-09-29): a breakpoint on a module-level statement at column 0 opened the
+    // generated script instead of the .tsi. The in-place opener is an INSERT at the statement's first
+    // byte, so its line begins inside replaced text like the infer opener/closer lines do — but unlike
+    // them it carries the statement's verbatim text, and that text must keep its segments.
+    const src = [
+      "`You are a request solver.`;",
+      "",
+      "const .query = `two orders`;",
+      "",
+      "const requests: string[] = [];",
+      "",
+      "`Processed orders:` requests;",
+      "",
+      "while (requests.length < 2) {",
+      "  `return null once every order is processed`",
+      "  const next = ask `the next order`<string | null>;",
+      "  if (next) requests.push(next);",
+      "  else break;",
+      "}",
+      "",
+    ].join("\n");
+    const { code, map } = await transformNola(src, "main.tsi");
+    const lines = code.split("\n");
+    expect(lines[0]).toBe("void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`You are a request solver.`; }");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the lowered text contains a literal ${} hole
+    expect(lines[6]).toBe("void __nola_ctx_2; function __nola_ctx_2() { return __nola.ctx`Processed orders: ${requests}`; }");
+    expect(lines[9]).toBe("  void __nola_ctx_3; function __nola_ctx_3() { return __nola.ctx`return null once every order is processed`; }");
+    const { TraceMap, originalPositionFor } = await import("@jridgewell/trace-mapping");
+    const tracer = new TraceMap(JSON.parse(map));
+    // js-debug binds the breakpoint at column 0 — the `void __nola_ctx_N;` read, the statement's step
+    // location (templates.ts `contextItemOpen`), where V8 resolves it and pauses in source order; F11 into
+    // an ask can still land on the `return` inside the item — both positions must display the statement's line
+    for (const [line, needle] of [
+      [1, "return __nola.ctx`You"],
+      [7, "return __nola.ctx`Processed"],
+      [10, "return __nola.ctx`return"],
+    ] as const) {
+      expect(originalPositionFor(tracer, { line, column: 0 }), `line ${line} at column 0`).toMatchObject({ line });
+      const column = lines[line - 1].indexOf(needle);
+      expect(column, `line ${line} holds ${needle}`).toBeGreaterThan(0);
+      expect(originalPositionFor(tracer, { line, column }), `line ${line} at the item's return`).toMatchObject({ line });
+    }
+  });
+
+  it("a context statement mid-body, inside a block, keeps every line: source line N is generated line N + 1 (spec 2026-09-29 §6)", async () => {
+    // The hoisted function sits in the for block on the statement's own line, and the ask beside it sees it.
+    const src = [
+      "export infer function go(.q: string, steps: string[]) {",
+      "  const seen: string[] = [];",
+      "  for (const s of steps) {",
+      "    `Steps so far:` seen;",
+      "    const v = ask `the next step`<string>;",
+      "    seen.push(v);",
+      "  }",
+      "  return seen;",
+      "}",
+      "",
+    ].join("\n");
+    const { code, map } = await transformNola(src, "mid.tsi");
+    const lines = code.split("\n");
+    // the wrapper opener adds one line after the header; every body line N is generated line N + 1
+    expect(lines[2]).toMatch(/^ {2}const seen/);
+    expect(lines[3]).toBe("  for (const s of steps) {");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the lowered text contains a literal ${} hole
+    expect(lines[4]).toBe("    void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`Steps so far: ${seen}`; }");
+    expect(lines[5]).toContain("const v = await __nola.ask(");
+    expect(lines[5]).toContain("__frame, { context: [__nola_ctx_1] })");
+    expect(lines[6]).toBe("    seen.push(v);");
+    expect(lines[7]).toBe("  }");
+    expect(lines[8]).toBe("  return seen;");
+    const { TraceMap, originalPositionFor } = await import("@jridgewell/trace-mapping");
+    const tracer = new TraceMap(JSON.parse(map));
+    for (const line of [2, 3, 4, 5, 6, 7, 8]) {
+      expect(originalPositionFor(tracer, { line: line + 1, column: 2 }), `generated line ${line + 1}`).toMatchObject({ line });
     }
   });
 

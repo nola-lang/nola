@@ -4,23 +4,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { scaffold } from "../src/index.js";
-import { envExample, vendorEnvVar } from "../src/scaffold.js";
+import { featuredNames } from "../src/registry.js";
+import { envExample, providerConfigUrl, vendorEnvVar } from "../src/scaffold.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-scaffold-provider-"));
 
 describe("scaffold and the inference provider", () => {
-  it("nola: skips the replay ledger, writes the platform config, renders the trial README notes", async () => {
+  it("nola: skips the replay ledger and writes the platform config; the README is the example's own, the provider story is the config's comment", async () => {
     const root = join(await tmp(), "trial-app");
     const result = await scaffold(root, { provider: "nola" });
     expect(existsSync(join(root, "nola.replay.jsonl"))).toBe(false);
     expect(result.files).not.toContain("nola.replay.jsonl");
-    expect(await readFile(join(root, "nola.config.ts"), "utf8")).toContain('model: "nola"');
+    const config = await readFile(join(root, "nola.config.ts"), "utf8");
+    expect(config).toContain('model: "nola"');
+    expect(config).toContain("npx nola-lang account");
+    expect(config).not.toContain("platform.nola.sh");
     const readme = await readFile(join(root, "README.md"), "utf8");
-    expect(readme).toContain("uses your 25 free Nola runs (key in .env)");
-    expect(readme).toContain("npx nola-lang account");
-    expect(readme).not.toContain("platform.nola.sh");
-    expect(readme).not.toContain("__START_NOTE__");
-    expect(readme).not.toContain("__PROVIDER_NOTE__");
+    expect(readme).toMatch(/^# feature-extraction/);
+    expect(readme).not.toContain("__");
   });
 
   it.each([
@@ -28,7 +29,7 @@ describe("scaffold and the inference provider", () => {
     ["anthropic", 'anthropic("claude-sonnet-4-5")', "ANTHROPIC_API_KEY"],
     ["google", 'google("gemini-2.5-flash")', "GEMINI_API_KEY"],
     ["typesafe", "typesafe()", "TYPESAFE_API_KEY"],
-  ] as const)("%s: skips the ledger, writes that vendor's config, README names the env var", async (provider, model, envVar) => {
+  ] as const)("%s: skips the ledger, writes that vendor's config naming the env var, and the key's .env.example slot", async (provider, model, envVar) => {
     const root = join(await tmp(), `${provider}-app`);
     const result = await scaffold(root, { provider });
     expect(result.files).not.toContain("nola.replay.jsonl");
@@ -36,11 +37,6 @@ describe("scaffold and the inference provider", () => {
     expect(config).toContain(`model: ${model}`);
     expect(config).toContain(`import { ${provider} } from "@nola-lang/providers"`);
     expect(config).toContain(envVar);
-    const readme = await readFile(join(root, "README.md"), "utf8");
-    expect(readme).toContain(`set ${envVar} in .env first`);
-    expect(readme).toContain(".env.example");
-    expect(readme).not.toContain("nola.replay.jsonl");
-    expect(readme).not.toContain("__PROVIDER_NOTE__");
     // the key's slot, ready to copy to .env (the .gitignore keeps .env.example trackable)
     expect(result.files).toContain(".env.example");
     expect(await readFile(join(root, ".env.example"), "utf8")).toBe(envExample(envVar));
@@ -48,12 +44,15 @@ describe("scaffold and the inference provider", () => {
     expect(envExample(envVar)).toMatch(/^# .*\.env/m);
   });
 
-  it("a vendor on every builtin template and on an example writes .env.example for that vendor's key", async () => {
-    for (const template of ["feature-extraction", "function-calling", "typescript-interop", "empty", "extract-resume"]) {
+  it("a vendor on every first-menu template and on an example writes that vendor's config and .env.example — examples included, their own config gives way", async () => {
+    for (const template of [...featuredNames(), "extract-resume"]) {
       const root = join(await tmp(), `${template}-openai`);
       const result = await scaffold(root, { template, provider: "openai" });
       expect(result.files, template).toContain(".env.example");
       expect(await readFile(join(root, ".env.example"), "utf8"), template).toContain("OPENAI_API_KEY=");
+      // the vendor's config verbatim — never the example's own (a ledger, a mock, typesafe())
+      expect(await readFile(join(root, "nola.config.ts"), "utf8"), template).toBe(await readFile(providerConfigUrl("openai"), "utf8"));
+      expect(result.files, template).not.toContain("nola.replay.jsonl");
     }
   });
 
@@ -91,18 +90,17 @@ describe("scaffold and the inference provider", () => {
     expect(config).not.toContain("openai");
   });
 
-  it("none (the default): keeps the ledger, the template's own config and the offline README notes", async () => {
+  it("none (the default): keeps the ledger and the template's own config", async () => {
     const root = join(await tmp(), "offline-app");
     await scaffold(root);
     expect(existsSync(join(root, "nola.replay.jsonl"))).toBe(true);
     expect(await readFile(join(root, "nola.config.ts"), "utf8")).toContain('replay("./nola.replay.jsonl")');
     const readme = await readFile(join(root, "README.md"), "utf8");
-    expect(readme).toContain("works offline, no API key needed");
     expect(readme).toContain("nola.replay.jsonl");
-    expect(readme).not.toContain("__START_NOTE__");
+    expect(readme).toContain("no API key");
   });
 
-  it("both builtin .gitignore files list .env and .env.*", async () => {
+  it("the scaffold's .gitignore lists .env and .env.* for an example and for empty alike", async () => {
     for (const template of ["typescript-interop", "empty"]) {
       const root = join(await tmp(), template);
       await scaffold(root, { template });

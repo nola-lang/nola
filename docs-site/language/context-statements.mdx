@@ -1,0 +1,130 @@
+---
+title: Context statements
+description: Put text and values in front of the model anywhere in a scope body. Context statements are read at each ask, in source order, and follow JavaScript line rules.
+sidebar:
+  order: 35
+---
+
+A bare template literal on its own line, in an infer function's body or in the module body, is a **context statement**. Its text reaches every `ask` written after it. You can write as many as you like, at any depth of braces:
+
+```tsi
+// inbox.tsi
+`You triage a support inbox.`
+
+export infer function escalate(.ticket: string, oncall: string) {
+  `Page` oncall `when the ticket is an outage.`
+  const steps: string[] = [];
+  `Steps taken so far:` steps;
+  while (steps.length < 3) {
+    const next = ask `the next step`: string;
+    steps.push(next);
+  }
+  return steps;
+}
+```
+
+## Text and values
+
+A context statement starts with text in backticks and may continue with **values**: a name (`oncall`, `user.name`), a call (`problems.map(x => x.brief)`), or a bracketed literal (`[weather, create]`, `{ a: 1 }`, `(a + b)`). A `[` or `(` group is a value together with everything attached to it: in `` `pick from` [a, b].filter(ok) ``, the value is `[a, b].filter(ok)`, the filtered list. Text and values alternate; two values are never next to each other. The whitespace between parts is kept exactly as written, so `` `Name: "`name`"` `` glues the quotes to the value, and a line break between parts is a line break in the prompt.
+
+A value is spliced into your words the way `${expr}` is. A string is written as it is and anything else as JSON; `undefined` is written `undefined`. A function is written as its name (`(anonymous)` when it has none) and an intent as its description: a call intent is its callee with its arguments, `send({"to":"the recipient"})`. `` `Page` oncall `when …` `` and `` `Page ${oncall} when …` `` mean the same thing. An expression with an operator goes in parentheses: `` `total` (a + b) `items` ``.
+
+A call intent is a legal value. A plain call with an extractor argument needs nothing more: `` `If the ticket is an outage,` escalate(`the team to page`: string) ``. A call intent with a hint, `` fn`hint`(…) ``, must be parenthesized or written in a `${}` hole; so must one with an empty marker. Bare, the backtick after `fn` reads as the next text part of the statement and the arguments as a value of their own, so it is not read as a call intent: a typed template among the arguments is then a syntax error at its colon (with the dots, a bare extractor, which is [`NOLA2010`](/docs/reference/error-codes/#nola2010)), and plain arguments may raise no error at all, only the wrong text. In parentheses the call intent stays whole:
+
+```tsi
+// escalate.tsi
+declare function escalate(team: string): void;
+
+export infer function route(.ticket: string) {
+  `If the ticket is an outage,` (escalate`page the on-call engineer`(`the team to page`: string))
+  return ask `the label for the ticket`: string;
+}
+```
+
+Values are **your words**, not data. A `.ticket` parameter is data: it renders as an `<input name="ticket">` block that the system turn marks as not to be followed. Write `.ticket` for anything a user or a document supplied, and a value only for text you control. See [Contextual parameters](/docs/language/contextual-parameters/) and [The prompt](/docs/language/prompt/).
+
+## Lines
+
+A context statement follows JavaScript's own rules for where a statement ends:
+
+- A line that starts with a backtick, `[` or `(` continues the statement.
+- A line that starts with a name, a keyword, a number or `{` begins a new statement, exactly as it would in a `.ts` file. So `` `analyze` `` followed by `console.log("hi")` on the next line is one context statement and one call.
+- A `;` always ends the statement, on the same line or on a line of its own.
+
+So two lines that both start with a backtick are one statement, and the second line's indentation stays in the text. End the first line with `;` to write two statements.
+
+Two multi-line forms, both fine:
+
+```tsi
+// labels.tsi
+export infer function route(.ticket: string, labels: string[], team: string) {
+  `The allowed labels are` labels
+  `and the ticket goes to the` team `team.`
+  return ask `the label for the ticket`: string;
+}
+```
+
+```tsi
+// labels-2.tsi
+export infer function route(.ticket: string, labels: string[], escalate: (team: string) => void) {
+  `The allowed labels are`
+    [...labels].sort()
+    `and an escalation looks like`
+    (escalate(`the team to page`: string));
+  return ask `the label for the ticket`: string;
+}
+```
+
+Putting `escalate(…)` alone at the start of a line would begin a new statement, because a name starts a statement in JavaScript. Start every line of a context statement with a backtick, `[` or `(`.
+
+The same rule works the other way. A code line that starts with `[` or `(` right after a context statement continues it, as JavaScript would continue any statement, so the line becomes the statement's value. End the context statement with `;` when the next line is code:
+
+```tsi
+// lines.tsi
+export infer function run(.request: string, log: (line: string) => void) {
+  `Work through the request.`;
+  ["start", "ask"].forEach(log);
+  return ask `the answer`: string;
+}
+```
+
+Without the `;`, `["start", "ask"].forEach(log)` would be the statement's value: it would run at every ask, and its result, `undefined`, would be written into the prompt.
+
+## What an ask sees
+
+An `ask` sees every context statement written **before it**, in its block or an enclosing one — the same rule as a `const .x` binding, and the same rule as a `const` itself: visibility follows the braces, not the execution. A statement inside an `if` or a loop body applies only to the asks inside that block; an ask after the block does not see it, whether or not the block ran.
+
+At module level, a top-level statement applies to the asks below it and to the infer functions **declared** below it. The top-level statements written above a function's declaration are the function's **own view** of the module. A function declared above a statement does not see it on its own (an `await fn()` starts a detached root that sees only the function's own view). When module code below the statement, or an infer function declared below it, asks that function with `ask fn()`, the module block is rendered once, with what the caller saw added to the function's own view. A statement inside a block at module level is part of no function's own view: it reaches a function only through an `ask fn()` written inside that block.
+
+Every statement is **read at each ask** that sees it. In the first example, `` `Steps taken so far:` steps `` shows the current list on every pass through the loop. A value must be initialized by the time an ask reads it: a `let` or `const` declared after the ask is a `ReferenceError` at that ask.
+
+A statement **never accumulates**. An ask inside a loop sees the loop body's statement exactly once on every pass, however many passes came before: three iterations do not put three copies in front of the model, and the model never sees earlier renderings. What changes from pass to pass is the values a statement reads, not the set of statements.
+
+```tsi
+// passes.tsi
+export infer function collect(.doc: string) {
+  const found: string[] = [];
+  while (found.length < 3) {
+    `Found so far:` found;
+    `Answer "done" when nothing is left.`
+    const next = ask `the next item in the document`: string;
+    if (next === "done") break;
+    found.push(next);
+  }
+  return ask `a one-line summary of the items`: string;   // sees neither statement above
+}
+```
+
+On the third pass, the ask inside the loop sees `Found so far: ["a","b"]` and the `done` line, once each. The summary ask after the loop sees no statement at all: both are scoped to the loop's braces.
+
+In the prompt, the visible statements are the first lines of the scope's `<context>` block, in source order, followed by its `<input>` blocks. The module's `<context module="…">` block appears once, ahead of the function blocks, and holds the module statements of every position in the call chain: the asking function's own view plus what each caller saw.
+
+## Rules
+
+- **Where.** Directly in an infer function's body or in the module body, at any depth of braces: a `while` body, an `if` branch. Inside a plain function, a callback, a class `static` block or a namespace body it is [`NOLA2017`](/docs/reference/error-codes/#nola2017): no ask can carry it there. So is a statement that is the unbraced body of an `if`, a loop or a label (`` if (x) `text`; ``): put braces around it. In a file with no `ask` and no infer function, a lone text statement at module level is left as written: plain JavaScript, with no effect. A statement of two or more parts (text and a value, or two texts) at module level in such a file makes the file use the runtime, and every context statement in it is then an item.
+- **What counts.** A statement that *is* a bare template literal, alone or continued with values and more text. `` `x`.trim() ``, `` (`x`) ``, `` tag`x` ``, `` f(`x`) ``, `` return `x` ``, `` const s = `x` `` and `` `Page ` + oncall `` are ordinary code. A quoted string stays a JavaScript directive. The last one is the habit to watch: an operator directly after the text makes the whole line a JavaScript expression, here a string concatenation whose result is thrown away, so the model never sees it. Write `` `Page` oncall `` or `` `Page ${oncall}` ``.
+- **Values.** A name, a call or a bracketed literal, followed by text or the end of the statement; a plain number, string or `true` works too. Parenthesize anything else: after a value, an operator or an arrow is [`NOLA1020`](/docs/reference/error-codes/#nola1020). A value never ends with a backtick, so `` foo<string> `more` `` and `` new Foo `more` `` are `NOLA1020` too: write `(foo<string>)`, `(new Foo)` or `new Foo()`. `.ticket` is not a value: written after text it is a property lookup on the text, and TypeScript reports it. `this` is not a value either: a bare `this` after text is `NOLA1020`, so assign it to a local first (`const user = this.user;`, then `` `Page` user ``), because an item is a hoisted function of its own; for the same reason `this` in parentheses or inside a `${}` hole of a context statement is a TypeScript error (`TS2683`).
+- **No `ask` and no `await` inside.** A context statement is read at each ask, outside the async body, with no frame of its own. `ask`, `..` or `await` directly after text is `NOLA1020`. Parenthesized, nested in a bracketed value or written in a `${}` hole, `ask` and `..` are [`NOLA2010`](/docs/reference/error-codes/#nola2010), and `await` is a TypeScript error (`TS1308`). Compute the value first and write its name. A call intent — `` escalate(`the team to page`: string) `` — is a legal value: it renders as the callee and its arguments. One with a hint, `` fn`hint`(…) ``, must be parenthesized or written in a `${}` hole; bare, it is not read as a call intent (see [Text and values](#text-and-values)).
+- **Holes.** `${expr}` works inside the text parts as in any instruction literal.
+
+Next: [Extractors](/docs/language/extractors/)

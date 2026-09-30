@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 // Askable/Intent interfaces — tests subclass it via its direct path
 import { Intent } from "../src/intents/intent.js";
 
-const scope = () => nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go", instruction: "" });
+const scope = () => nolaRuntime.current().moduleContext("x.tsi").scope({ fn: "go" });
 const frameOf = (infer: InferContext): Frame => Frame.open(infer);
 
 /** Minimal concrete subclass — Intent itself is abstract (clone is per-subclass). */

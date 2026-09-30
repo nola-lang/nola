@@ -23,10 +23,10 @@ const FIXTURES: Record<string, string> = {
     "",
   ].join("\n"),
   "module-level-intent.ts": ["export const nameIntent = ..`user name`<string>;", ""].join("\n"),
-  "decision-sugar.ts": [
+  "decision-inline.ts": [
     "export infer function f(.t: string) {",
-    '  const d = ask ..choice`q`<{ a: "A"; b: null }>;',
-    "  const p = ask ..prob`q`;",
+    '  const d = ask `q`<Choice<{ a: "A"; b: null }>>;',
+    "  const p = ask `q`<Prob>;",
     "  return { label: d.choice, p };",
     "}",
     "",
@@ -40,19 +40,18 @@ const FIXTURES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-  "marker-template.ts": [
-    "export infer function go`${.default}",
-    "Args: ${.args.map(a => `${a.name}=${JSON.stringify(a.value)} (${a.type ?? \"?\"}) ${a.contextual}`)}",
-    "${.fn} ${.signature} ${.file ?? \"\"} ${.nested} ${.hasContext}",
-    "${.next}`(.m: string, n: number) {",
+  "body-holes.ts": [
+    "export infer function go(.m: string, n: number) {",
+    "  `At most ${n} words. Today is ${new Date().toISOString()}.",
+    "${m.length > 10 ? \"long\" : \"short\"}`",
     "  const v = ask ..`v`<string>;",
     "  return v;",
     "}",
     "",
   ].join("\n"),
-  "extract-template.ts": [
+  "extract-holes.ts": [
     "export infer function go(a: string) {",
-    "  const v = ask ..`${.default}\\nType is ${.type}; schema ${.schema}; ctx ${.hasContext}; ${a}`<string>;",
+    "  const v = ask ..`${a.trim()} and ${[1, 2].map((n) => n * 2)}`<string>;",
     "  return v;",
     "}",
     "",
@@ -185,6 +184,21 @@ describe("lowered output is tsc-clean under strict", () => {
     expect(typecheckLowered({ "flow2.ts": code })).toEqual([]);
   });
 
+  it("a call intent with implied-sigil slots is type-clean and yields the callee's settled type", () => {
+    const source = [
+      "declare function createTicket(title: string, o: { priority: number }): Promise<string>;",
+      "export infer function f() {",
+      "  const id = ask createTicket(`a short title`: string, { priority: `priority 1-5`<number> });",
+      "  const s: string = id;",
+      "  return s;",
+      "}",
+      "",
+    ].join("\n");
+    const { code, diagnostics } = compileNola(source, "slots.tsi");
+    expect(diagnostics).toEqual([]);
+    expect(typecheckLowered({ "slots.ts": code })).toEqual([]);
+  });
+
   it("pruned contextual-param output is type-clean too", () => {
     const source = [
       "type User = { name: string; greet: () => string };",
@@ -200,15 +214,13 @@ describe("lowered output is tsc-clean under strict", () => {
     expect(typecheckLowered({ "pruned.ts": code })).toEqual([]);
   });
 
-  it("an unknown scope member in a template is a TS2339 at the member", () => {
-    const source = ["export infer function f() {", "  const n = ask ..`x ${.nope}`<number>;", "  return n;", "}", ""].join(
-      "\n",
-    );
-    const { code, diagnostics } = compileNola(source, "badtpl.tsi");
+  it("an unknown name in a body-instruction hole is a TS2304 at the hole", () => {
+    const source = ["export infer function f() {", "  `x ${nope}`", "  const n = ask ..`x`<number>;", "  return n;", "}", ""].join("\n");
+    const { code, diagnostics } = compileNola(source, "badhole.tsi");
     expect(diagnostics).toEqual([]);
-    const errors = typecheckLowered({ "badtpl.ts": code });
+    const errors = typecheckLowered({ "badhole.ts": code });
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("TS2339");
+    expect(errors[0]).toContain("TS2304");
     expect(errors[0]).toContain("nope");
   });
 

@@ -13,7 +13,10 @@ const FIXTURES = [
   "const i = ..`get a name`<string>;\n",
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
   "infer function go(input: string) {\n  return ask ..`extract ${input} now`<string>;\n}\n",
-  "infer function go`do the thing`(input: string) {\n  return ask ..`p`;\n}\n",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+  "infer function go(input: string) {\n  `${input}\nBe terse.`\n  return ask ..`p`;\n}\n",
+  // a context statement's seams (spec 2026-09-29 §3.3): text → value → text, the value verbatim between rewrites
+  "infer function go(user: string) {\n  `Page` user `now`;\n  return ask ..`p`;\n}\n",
 ];
 
 describe("meta.spans agree with the v3 source map", () => {

@@ -1,30 +1,39 @@
 ---
 title: Examples
-description: Twelve runnable example projects, one canonical LLM-programming task each — what every example demonstrates and the npm create nola template that scaffolds it.
+description: Browse the runnable Nola examples — extraction, classification, context statements, recursive types, constraints, function calling and an agent loop.
 sidebar:
   order: 0
 ---
 
-The repository ships twelve standalone example projects, each built around one canonical LLM-programming task. Every one has the same layout — `src/*.tsi`, a plain `src/main.ts` consumer, a `nola.config.ts` on the deterministic mock provider — so all of them run without an API key, except `triage-ticket`, which is one `src/main.tsi` with a top-level `ask` and whose config names the vendor it demonstrates.
+The repository includes the example projects below. Most pair a `.tsi` module with a plain TypeScript entry point in `src/main.ts` and use a mock provider, so you can run them without an API key.
+
+Four examples are a single `.tsi` file with `src/main.tsi` as the entry point: `feature-extraction` and `function-calling`, which replay recorded answers from a committed ledger, `agent-loop`, which runs on the mock provider, and `triage-ticket`, whose default config calls typesafe.ai (the example explains how to switch to a mock provider).
+
+The scaffolder's templates are these examples. Every template except `empty` is copied from the repository at the release tag that matches the CLI's version, so `npm create nola` needs network access for them; the first menu lists `feature-extraction`, `function-calling`, `agent-loop`, `typescript-interop` and `triage-ticket`, and *More examples…* the rest of the ones with a scaffold command below.
+
+Every example types its asks with the colon spelling, `` ask `…`: T ``; `<T>` means the same thing. See [Extractors](/docs/language/extractors/#the-angle-bracket-spelling).
 
 | Example | Demonstrates | Scaffold |
 | --- | --- | --- |
-| [extract-person](/docs/examples/extract-person/) | Typed extraction of an object — the hello world | `npm create nola my-app -- --template typescript-interop` (the `typescript-interop` template is this example on a committed replay ledger instead of the mock; the default `extraction` template is the same extraction as one top-level `.tsi` script) |
+| [feature-extraction](https://github.com/nola-lang/nola/tree/main/examples/feature-extraction) | Typed extraction as one top-level `.tsi` script: a context statement, `const .message` and `const .role` bindings, and two asks, the second reading the first's answer | `npm create nola my-app` (the default template; replays a recorded ledger offline) |
+| [function-calling](https://github.com/nola-lang/nola/tree/main/examples/function-calling) | A call intent as one top-level `.tsi` script: the model fills the arguments of an async function in a neighboring `.ts` file, and the call runs with them | `npm create nola my-app -- --template function-calling` (replays a recorded ledger offline) |
+| [typescript-interop](https://github.com/nola-lang/nola/tree/main/examples/typescript-interop) | An `infer function` in `person.tsi`, imported and awaited from plain TypeScript | `npm create nola my-app -- --template typescript-interop` (replays a recorded ledger offline) |
+| [extract-person](/docs/examples/extract-person/) | Extract an object and call a TypeScript helper | — (`typescript-interop` is this program without the helper, on a replay ledger) |
 | [extract-resume](/docs/examples/extract-resume/) | Nested arrays of objects, JSDoc schema descriptions | `npm create nola my-app -- --template extract-resume` |
 | [extract-invoice](https://github.com/nola-lang/nola/tree/main/examples/extract-invoice) | Same-file type references, optional fields | `npm create nola my-app -- --template extract-invoice` |
 | [classify-message](/docs/examples/classify-message/) | Closed label sets: union alias, string enum, inline union | `npm create nola my-app -- --template classify-message` |
-| [chain-of-thought](https://github.com/nola-lang/nola/tree/main/examples/chain-of-thought) | Two-step reasoning: a free-text ask interpolated into a typed ask | `npm create nola my-app -- --template chain-of-thought` |
-| [research-notes](https://github.com/nola-lang/nola/tree/main/examples/research-notes) | TS control flow orchestrating nola functions | `npm create nola my-app -- --template research-notes` |
+| [chain-of-thought](https://github.com/nola-lang/nola/tree/main/examples/chain-of-thought) | Two-step reasoning: a free-text ask carried into a typed ask by a context statement with a value | `npm create nola my-app -- --template chain-of-thought` |
+| [research-notes](https://github.com/nola-lang/nola/tree/main/examples/research-notes) | TypeScript control flow around Nola functions | `npm create nola my-app -- --template research-notes` |
 | [contextual-args](https://github.com/nola-lang/nola/tree/main/examples/contextual-args) | `.param` contextual parameters and the `system.message` config key | — |
 | [cross-file-types](https://github.com/nola-lang/nola/tree/main/examples/cross-file-types) | A type imported from another file (a view of plain TypeScript), self-recursive; `schema.ts` prints its JSON Schema | — |
 | [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
-| [prompt-template](https://github.com/nola-lang/nola/tree/main/examples/prompt-template) | Prompt templates: `${.default}` in the marker, `${.type}` in the extractor | — |
-| [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` (the `function-calling` template is this feature as one top-level `.tsi` script) |
+| [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` (the `function-calling` example is this feature as one top-level `.tsi` script) |
+| [agent-loop](https://github.com/nola-lang/nola/tree/main/examples/agent-loop) | An agent loop as one top-level `.tsi` script: a `while` loop whose ask is typed as a `Problem` or `null`, and a context statement before the loop that is read again on every pass | `npm create nola my-app -- --template agent-loop` (on the first template menu) |
 | [triage-ticket](/docs/examples/triage-ticket/) | Ticket triage on typesafe.ai's Jev as one top-level `.tsi` script: literal unions and booleans as typed questions | `npm create nola my-app -- --template triage-ticket` (on the first template menu; skips the provider question; needs `TYPESAFE_API_KEY`) |
 
 ## Running an example
 
-Scaffold one with its template (above), or run it inside a clone of the repository — the examples are workspaces of the monorepo, so build once at the root first:
+Use a scaffold command from the table, or run an example from a repository checkout. The examples are npm workspaces, so install and build at the root first:
 
 ```sh
 git clone https://github.com/nola-lang/nola
@@ -33,6 +42,6 @@ cd examples/extract-person
 npx nola-lang run src/main.ts      # mock provider, deterministic
 ```
 
-Most examples' `nola.config.ts` carry the commented one-line switch to a real provider (`openai({ model: "gpt-5-mini" })` with `OPENAI_API_KEY` set); for the rest, replace the `mockProvider(...)` default with that call — see [Providers](/docs/config/providers/).
+To use a real model, open the example's `nola.config.ts`. Most include a commented config for `openai({ model: "gpt-5-mini" })`, which reads `OPENAI_API_KEY`. For the others, replace `mockProvider(...)` with your chosen provider. See [Providers](/docs/config/providers/).
 
 Next: [extract-person](/docs/examples/extract-person/)

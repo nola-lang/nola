@@ -1,11 +1,15 @@
 ---
 title: extract-person
-description: The hello world of Nola — typed extraction of a Person object, with a plain-TS helper imported into the .tsi via the NodeNext ./format.js specifier.
+description: Extract a typed Person object from text and pass it to a plain TypeScript helper, using a standard NodeNext import inside the Nola module.
 sidebar:
   order: 10
 ---
 
-Typed extraction of a nested object — the "hello world" of Nola. The JSON Schema is derived from the `Person` interface at compile time and the extraction is one typed expression: no runtime type-to-schema library, no re-declared model class. `src/format.ts` is plain TypeScript, value-imported from the `.tsi` with the standard NodeNext `./format.js` specifier — existing TS code mixes into a nola module with no extra setup.
+This example extracts a `Person` from a message, then passes the result to a TypeScript helper that trims the name and employer. Nola derives the JSON Schema from the `Person` interface at compile time and validates the model's response at runtime.
+
+The helper lives in `src/format.ts`. The `.tsi` file imports it using the NodeNext `./format.js` specifier, just as another TypeScript module would.
+
+The line in backticks above the `ask` is a [context statement](/docs/language/context-statements/): text every ask below it sees. The `.message` parameter is data the model reads; the statement is your words.
 
 ```tsi
 // src/person.tsi
@@ -19,7 +23,10 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask `the person described in the text`<Person>;
+  // A bare template literal on its own line is a context statement: text every
+  // ask below it sees. `.message` is data; the statement is your words.
+  `Answer from the text alone; never invent facts.`
+  const person = ask `the person described in the text`: Person;
   return normalizePerson(person);
 }
 ```
@@ -45,7 +52,7 @@ npx nola-lang run src/main.ts                      # mock provider (deterministi
 
 Prints `{"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}`.
 
-**Scaffold:** `npm create nola my-app` — the starter template is this example minus the `format.ts` helper, running on a committed replay ledger (`nola.replay.jsonl`) instead of the mock provider.
+**Scaffold:** `npm create nola my-app -- --template typescript-interop`. This template omits the `format.ts` helper and runs on a committed replay ledger (`nola.replay.jsonl`). The default `feature-extraction` template demonstrates extraction in a single `.tsi` script.
 **Source:** [examples/extract-person](https://github.com/nola-lang/nola/tree/main/examples/extract-person) on GitHub.
 
 Next: [extract-resume](/docs/examples/extract-resume/)

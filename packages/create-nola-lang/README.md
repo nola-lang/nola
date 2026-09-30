@@ -25,8 +25,13 @@ symlink to it for Claude Code) are written without a question; `--ide none` and
 
 You get one template per feature — `feature-extraction` (the default) is one
 `src/main.tsi` with a top-level `ask`, `function-calling` the same with a call
-intent over an async function in `src/tickets.ts`, `typescript-interop` is
-`src/person.tsi` plus a plain-TS consumer — with `nola.config.ts`, tsconfig,
-and a recorded replay ledger so the first run works without any API key. `npm create nola`
+intent over an async function in `src/tickets.ts`, `agent-loop` a top-level
+`while` around an ask, `typescript-interop` is `src/person.tsi` plus a plain-TS
+consumer, `triage-ticket` the one-file shape on typesafe.ai — each with
+`nola.config.ts` and a tsconfig, and the first two and `typescript-interop`
+with a recorded replay ledger so the first run works without any API key.
+Every template but `empty` is one of the curated examples in the Nola
+repository, fetched at the release tag matching this package's version;
+`empty` (config, tsconfig and a stub entry) ships inside the package. `npm create nola`
 is a short alias of this package (`create-nola`); `nola init` (from the
 `nola-lang` package) lays down the same templates.

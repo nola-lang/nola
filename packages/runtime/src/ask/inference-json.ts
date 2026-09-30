@@ -22,7 +22,7 @@ export class JsonInference extends Inference {
     return schema ? validate(schema, value) : { ok: true, value };
   }
 
-  /** The correction turn is data on the model; renderClassic phrases it for chat dialects. */
+  /** The correction turn is data on the intent; the provider's rendering phrases it. */
   protected override correctionRequest({ response, error }: CorrectionRequest, model: InferenceModel): InferenceModel {
     return { ...model, correction: { response, error } };
   }

@@ -10,8 +10,8 @@ export function openTestFrame(init?: {
   data?: Record<string, unknown>;
   options?: IntentOptions;
 }): Frame {
-  const file = nolaRuntime.current().fileContext(init?.file ?? "x.tsi");
-  const data = init?.data ?? { fn: "go", instruction: "" };
+  const file = nolaRuntime.current().moduleContext(init?.file ?? "x.tsi");
+  const data = init?.data ?? { fn: "go" };
   const infer =
     typeof data.fn === "string" ? file.func(data as unknown as FunctionScopeInit) : file.scope(data);
   return Frame.open(infer, init?.options);

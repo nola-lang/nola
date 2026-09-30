@@ -1,11 +1,13 @@
 ---
 title: nola.config.ts
-description: The config file — defineConfig, the frozen two-specifier import surface, validation and freezing, and how the config reaches nola run, nola build and bundlers.
+description: Set up nola.config.ts with a model, tracing and runtime options, and learn how the config loads in development, builds and bundlers.
 sidebar:
   order: 10
 ---
 
-`nola.config.ts` lives at the project root and default-exports one `defineConfig({...})` call. `model` is required — one model, or a named map whose `default` entry is required (see [Models and providers](/docs/config/providers/)); everything else is optional. The Nola platform needs no import at all: `model: "nola"` lets it serve inference, and a URL in `telemetry` — `telemetry: "http://127.0.0.1:4141"` — sends traces to a Nola console. Both strings are short for the [`nola`](/docs/reference/providers-api/#nola) factories, `nola.infer()` and `nola.tracer(url)`, which you call yourself only to pass options.
+Create `nola.config.ts` at your project root and default-export a `defineConfig({...})` call. Set `model` to one model or a named map with a `default` entry. Every other setting is optional.
+
+To use the Nola platform, set `model: "nola"`. To send traces to a local Nola console, add `telemetry: "http://127.0.0.1:4141"`. These strings are shorthand for the [`nola` factories](/docs/reference/providers-api/#nola): `nola.infer()` and `nola.tracer(url)`. Use the factories when you need to pass options.
 
 ```ts
 // nola.config.ts — Nola serves inference
@@ -30,27 +32,31 @@ export default defineConfig({
 
 ## The import surface is frozen
 
-Use exactly these two specifiers:
+Configuration imports come from two packages:
 
 ```ts
 import { defineConfig, nola, terminalTrace } from "@nola-lang/runtime";
 import { openai, mockProvider, withRetry } from "@nola-lang/providers";
 ```
 
-`defineConfig`, the [`nola`](/docs/reference/providers-api/#nola) namespace (`nola.infer()`, [`nola.tracer()`](/docs/reference/providers-api/#tracer) — needed only for their options; the plain cases are the strings `"nola"` and a URL), `terminalTrace()` and everything app-facing come from `@nola-lang/runtime`. Everything bring-your-own — vendor factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience combinators (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and record/replay (`record`, `replay`) — comes from `@nola-lang/providers`.
+Import `defineConfig`, `terminalTrace` and the [`nola` namespace](/docs/reference/providers-api/#nola) from `@nola-lang/runtime`.
 
-Never import `nola` from the providers package or a vendor factory from the runtime, never import `defineConfig` from the providers package, and never reach for a subpath (`@nola-lang/runtime/config`, `@nola-lang/runtime/providers`, `nola-lang/runtime`) — those do not exist. `@nola-lang/providers` deliberately does not depend on the runtime, which is what keeps a second copy of the runtime out of the install tree.
+Import vendor factories (`openai`, `anthropic`, `google`, `mockProvider`), resilience helpers (`withRetry`, `fallback`, `roundRobin`, `constant`, `exponential`) and `record`/`replay` from `@nola-lang/providers`.
+
+Use the package imports shown above. Subpaths such as `@nola-lang/runtime/config`, `@nola-lang/runtime/providers` and `nola-lang/runtime` do not exist. The providers package has no runtime dependency, which helps avoid installing a second copy of the runtime.
 
 ## Validated and frozen
 
-The config is loaded once, validated, and frozen. An unknown top-level key or a `model` map without `default` is rejected with [`NOLA3003`](/docs/reference/error-codes/#nola3003), naming the file and the field; the reserved `plugins` key is [`NOLA3005`](/docs/reference/error-codes/#nola3005). There is no runtime mutation API: the resolved config latches on the first ask, and reconfiguring after that is an error (`nolaRuntime.reset()` exists for tests). Every key, its type, default and whether the runtime reads it: [Config schema](/docs/reference/config-schema/).
+Nola validates and freezes the config when it loads. An unknown top-level key or a model map without `default` produces [`NOLA3003`](/docs/reference/error-codes/#nola3003); the message names the file and field. The reserved `plugins` key produces [`NOLA3005`](/docs/reference/error-codes/#nola3005).
+
+You can configure the runtime before the first ask. After that, reconfiguration is an error. Tests can call `nolaRuntime.reset()` to start again. See [Config schema](/docs/reference/config-schema/) for each setting's type, default and current support.
 
 ## How it reaches run time
 
-- **`nola run` / `node --import nola-lang/register`** — the loader bundles and evaluates `nola.config.ts` for the project, applies a project-root `.env` first, and configures the process before your entry runs.
-- **`nola build`** — for app projects (the default) it bundles the config into `dist/nola.config.js` with a self-configuring wrapper and appends an import of it to every built `.tsi.js` module, so the built modules run under plain `node` with no loader and no manual configuration. (`nola build` compiles `.tsi` only — see [Deploying](/docs/guides/deploying/) for the entry-point recipe.)
-- **`build.target: "lib"`** opts out of that wiring: pure lowered JS, and the consuming app's process supplies the config.
-- **Bundler plugins** (`@nola-lang/vite`, `webpack`, `rollup`, `rolldown`, `esbuild`, `rspack`, and `@nola-lang/next`) wire the config into the server bundle themselves — see [The nola CLI](/docs/tooling/cli/) and the plugin READMEs on npm.
+- **`nola run` / `node --import nola-lang/register`** load the project-root `.env`, bundle and evaluate `nola.config.ts`, then configure the process before your entry runs.
+- **`nola build`** bundles the config into `dist/nola.config.js` for app projects, the default build target. Each built `.tsi.js` module imports that config, so it runs under plain `node` without manual setup. The command compiles `.tsi` files only; see [Deploying](/docs/guides/deploying/) for the entry-point setup.
+- **`build.target: "lib"`** skips config bundling. The app that consumes the library supplies the config.
+- **Bundler plugins** (`@nola-lang/vite`, `webpack`, `rollup`, `rolldown`, `esbuild`, `rspack` and `@nola-lang/next`) include the config in the server bundle. See [The nola CLI](/docs/tooling/cli/) and the plugin READMEs on npm.
 
 ## Rules
 
@@ -64,11 +70,11 @@ The config is loaded once, validated, and frozen. An unknown top-level key or a 
 | --- | --- | --- |
 | `model` | one model, or a named map with a required `default`; `"nola"` is the platform | [Models and providers](/docs/config/providers/) |
 | `project` | names this app in traces and platform requests; defaults to the `package.json` name | [Config schema](/docs/reference/config-schema/) |
-| `forceModel` | hermetic override — every ask goes here | [Models and providers](/docs/config/providers/) |
+| `forceModel` | sends every ask to the named model | [Models and providers](/docs/config/providers/) |
 | `telemetry` | the observer list — terminal, tracers, your observers, receipts | [Telemetry](/docs/config/observability/) |
 | `ask`, `system` | per-invocation timeout, extra system text | [Ask options](/docs/config/ask-options/) |
 | `compiler`, `build` | `underivableContextType`; `build.target` | [Config schema](/docs/reference/config-schema/) |
-| `middleware`, `cache` | validate but are **not wired** at 0.1.x | [Config schema](/docs/reference/config-schema/) |
+| `middleware`, `cache` | accepted and validated, but currently have no effect | [Config schema](/docs/reference/config-schema/) |
 | `plugins` | reserved — rejected at load | — |
 
 Next: [Providers](/docs/config/providers/)

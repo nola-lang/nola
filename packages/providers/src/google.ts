@@ -1,6 +1,6 @@
-import type { JsonSchema, LanguageModel } from "@nola-lang/core";
-import { NolaProviderError, parseRetryAfter } from "@nola-lang/core";
-import { ENVELOPE_NOTE, envelope, resolveRootRef } from "./wire.js";
+import type { InferRequest, JsonSchema, LanguageModel, RenderedPrompt } from "@nola-lang/core";
+import { NolaProviderError, parseRetryAfter, renderPrompt } from "@nola-lang/core";
+import { ENVELOPE_NOTE, envelope, resolveRootRef, schemaNote } from "./wire.js";
 
 export interface GoogleOptions {
   apiKey?: string;
@@ -10,6 +10,12 @@ export interface GoogleOptions {
   model: string;
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
+  /**
+   * Default true: the schema rides the API's structured-output field. false:
+   * nothing is sent on the wire and the schema is rendered into the system
+   * turn as a <schema> block — for a proxy or server that cannot enforce it.
+   */
+  structuredOutputs?: boolean;
 }
 
 /** A bare model string is shorthand for `{ model }` — every other option defaulted. */
@@ -20,7 +26,7 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
   const model = options.model;
   return {
     name: "google",
-    async complete(req) {
+    async infer(req: InferRequest) {
       const requestedAt = Date.now();
       const envName = options.apiKeyEnv ?? "GEMINI_API_KEY";
       const apiKey = options.apiKey ?? process.env[envName];
@@ -30,13 +36,17 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
           { definitive: true },
         );
       }
-      const { system: baseSystem, messages, output } = req.payload;
+      const { system: baseSystem, messages } = renderPrompt(req.intent);
+      const output = req.intent.output;
       const reqSchema = output.syntax === "json" ? output.schema : undefined;
       const rootShape = reqSchema === undefined ? undefined : resolveRootRef(reqSchema);
       const enveloped = rootShape !== undefined && !("$ref" in rootShape) && !("type" in rootShape && rootShape.type === "object");
       const transport: JsonSchema | undefined =
         reqSchema === undefined ? undefined : enveloped ? envelope(reqSchema) : reqSchema;
-      const system = enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem;
+      // structuredOutputs: false — the schema goes into the system turn instead of the wire field
+      const enforce = options.structuredOutputs !== false;
+      const system = (enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem) + (!enforce && transport ? schemaNote(transport) : "");
+      const sent: RenderedPrompt = { system, messages };
       const body: Record<string, unknown> = {
         system_instruction: { parts: [{ text: system }] },
         contents: messages.map((m) => ({
@@ -44,7 +54,7 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
           parts: [{ text: m.content }],
         })),
       };
-      if (transport) {
+      if (transport && enforce) {
         body.generationConfig = { responseMimeType: "application/json", responseJsonSchema: transport };
       }
       const res = await doFetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
@@ -70,7 +80,7 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
       if (!part) throw new NolaProviderError("Google response had no candidate text.");
       const content = part.text as string;
       const durationMs = Date.now() - requestedAt;
-      if (!reqSchema) return { text: content, durationMs };
+      if (!reqSchema) return { text: content, durationMs, sent };
       let parsed: unknown;
       try {
         parsed = JSON.parse(content);
@@ -78,7 +88,7 @@ export function google(optionsOrModel: GoogleOptions | string): LanguageModel {
         throw new NolaProviderError("Google returned non-JSON despite structured output.", { cause: e });
       }
       const value = enveloped ? (parsed as { value?: unknown }).value : parsed;
-      return { text: JSON.stringify(value), durationMs };
+      return { text: JSON.stringify(value), durationMs, sent };
     },
   };
 }

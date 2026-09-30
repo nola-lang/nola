@@ -5,7 +5,7 @@ sidebar:
   order: 20
 ---
 
-You have a TypeScript project; this adds `.tsi` support to it without scaffolding a new one.
+Run Nola's setup command in your existing TypeScript project to add the packages and configuration for `.tsi` files.
 
 ## Run the retrofit
 
@@ -13,22 +13,27 @@ You have a TypeScript project; this adds `.tsi` support to it without scaffoldin
 npm create nola -- --add
 ```
 
-A bare interactive `npm create nola` offers the same thing when it finds a `package.json` in the current directory ("Add Nola to this project"). `--add` and `--template` are mutually exclusive — the first retrofits, the second scaffolds. (`nola init --add` is the identical flow, but it lives in the `nola-lang` package — so it only exists once that is installed; `npm create nola` is the form that works from nothing.)
+A bare interactive `npm create nola` also offers *Add Nola to this project* when it finds a `package.json` in the current directory. Use `--add` for an existing project or `--template` for a new one; they cannot be combined. If `nola-lang` is already installed, `nola init --add` runs the same setup.
 
-Optional flags, all also offered interactively:
+The setup includes editor files, a coding-agent skill and a provider choice:
 
-- The editor setup — `.vscode/launch.json` (F5 debugging of `.tsi` files) and `.vscode/extensions.json` (recommends the Nola extension) — is written by default; `--ide none` skips it. See [Editor setup](/docs/start/editor-setup/).
-- The Nola skill for your coding assistant is written by default — self-contained, version-stamped: the skill directory under `.agents/skills/` (read by Cursor, Copilot, Codex, Gemini CLI and most other agents) and `.claude/skills/nola` as a symlink to it (the directory Claude Code reads). `--agents claude,universal,agents-md` also embeds the skill body in `AGENTS.md`; `--agents none` skips the skill. `nola skill install` does the same later, and `nola skill install --force` refreshes them after an upgrade.
-- `--provider nola|openai|anthropic|google|typesafe|none` answers *Select an inference provider:* (asked first interactively; `--trial` / `--no-trial` are shorthands for `nola` / `none`). `nola` takes the 25 free Nola API runs: the retrofit requests an anonymous key, writes `NOLA_API_KEY` into `.env` (appended if the file exists, never overwriting an existing entry), makes sure `.gitignore` lists `.env` and `.env.*`, and — when it wrote the config — uses `model: "nola"` (the platform serves inference). If this machine already took the free runs, choosing *nola: dev* signs you in (browser) and mints the key on your Nola account instead of a second trial. A vendor writes that vendor's config instead (its key stays yours to put in `.env`); the typesafe.ai row is bracketed *literal unions and booleans only*, since `typesafe()` serves no other output type. An existing `nola.config.ts` is left alone with a note naming the `model:` line to set yourself.
+- **Editor files:** `.vscode/launch.json` enables F5 debugging and `.vscode/extensions.json` recommends the Nola extension. Use `--ide none` to skip them. See [Editor setup](/docs/start/editor-setup/).
+- **Coding-agent skill:** setup writes `.agents/skills/nola/` and links `.claude/skills/nola` to it for Claude Code. Use `--agents none` to skip it, or `--agents claude,universal,agents-md` to also embed the skill in `AGENTS.md`. You can install it later with `nola skill install` and refresh it after an upgrade with `nola skill install --force`.
+- **Provider:** choose interactively or pass `--provider nola|openai|anthropic|google|typesafe|none`. `--trial` and `--no-trial` are shortcuts for `nola` and `none`.
+
+Choosing Nola requests a key for 25 free hosted runs, saves `NOLA_API_KEY` in `.env` and adds `.env` and `.env.*` to `.gitignore`. Existing `.env` entries are preserved. If this machine already has a trial key, the browser opens for sign-in and the new key belongs to your Nola account.
+
+Choosing a vendor writes a config for that provider; add its key to `.env` yourself. The typesafe.ai option supports only literal unions and booleans. If `nola.config.ts` already exists, setup keeps it and prints the `model` setting you can apply manually.
 
 ## What it writes, merges, and leaves alone
 
 | | Files | Detail |
 | --- | --- | --- |
-| **Written** | `nola.config.ts` | The chosen provider's config: `model: "nola"` for Nola, `openai("gpt-5-mini")` / `anthropic("claude-sonnet-4-5")` / `google("gemini-2.5-flash")` for a vendor (each with an offline `mockProvider` alternative in a comment); `none` writes the OpenAI one. Skipped — and left untouched — if one already exists. |
-| **Merged** | `package.json` | Adds `@nola-lang/runtime` and `@nola-lang/providers` to `dependencies`, `nola-lang` and `typescript` to `devDependencies`. The Nola packages get the same lockstep version; `typescript` gets `^5.6.0`. Existing entries are never rewritten, and the file is only touched when something was added. |
-| **Suggested, not touched** | `package.json` scripts, `tsconfig.json` | The command prints its next steps: install the packages, an optional `"start": "nola run src/main.ts"` script, and the tsconfig tip below. |
-| **Untouched** | everything else | Unless Nola is the provider nothing else is read or written; with it, `.env` and `.gitignore` are appended to as described above. |
+| **Written if absent** | `nola.config.ts` | Uses `model: "nola"` for Nola or the chosen vendor factory. With `none`, it writes an OpenAI config with a commented `mockProvider` alternative. |
+| **Merged** | `package.json` | Adds `@nola-lang/runtime` and `@nola-lang/providers` to `dependencies`, and `nola-lang` and `typescript` to `devDependencies`. The Nola packages use matching versions. Existing entries are preserved; the file changes only if a package was added. |
+| **Written by default** | `.vscode/` settings, Nola agent skill | Adds the editor and agent setup described above. Existing VS Code settings files are skipped. |
+| **Updated for a Nola key** | `.env`, `.gitignore` | Adds the key and environment-file ignore rules. Existing key entries are preserved. |
+| **Suggested** | `package.json` scripts, `tsconfig.json` | Prints install instructions, an optional `"start": "nola run src/main.ts"` script and the tsconfig settings below. These files are not changed for you. |
 
 Then run your package manager's install.
 
@@ -52,16 +57,16 @@ Then run your package manager's install.
 
 Three settings matter for Nola:
 
-- **`module` / `moduleResolution`: `NodeNext`** — plain-TS imports use the `./x.js` specifier (even though the file on disk is `x.ts`); `.tsi` imports keep their literal extension.
+- **`module` / `moduleResolution`: `NodeNext`** — in this Node setup, plain TypeScript imports use `./x.js` even when the source file is `x.ts`. Imports of `.tsi` files keep the `.tsi` extension.
 - **`allowArbitraryExtensions: true`** — required so TypeScript accepts the declaration pairs Nola emits for `.tsi` modules.
-- **`include` is directory-style** — `["src"]`, never `["src/**/*.ts"]`. The directory form lets the editor tooling admit `.tsi` files into the program while plain `tsc` ignores them; under the glob form `.tsi` files fall out of the program and auto-import stops offering your infer functions.
+- **Directory-style `include`** — use `["src"]` so the editor can include `.tsi` files. A glob such as `["src/**/*.ts"]` excludes them and prevents auto-import from finding your infer functions.
 
 ## First .tsi file
 
 ```tsi
 // src/hello.tsi
 export infer function summarize(.text: string) {
-  return ask `a one-sentence summary`<string>;
+  return ask `a one-sentence summary`: string;
 }
 ```
 
@@ -79,6 +84,10 @@ npx nola-lang check              # type-check .tsi and .ts together
 
 ## Existing build pipelines
 
-Plain `tsc` cannot parse `.tsi`; `nola check` is the type-check path and `nola build` the compile path. If a `tsc` or framework build must *resolve* `.tsi` imports (for example `next build` or `tsc --noEmit` in CI), keep `allowArbitraryExtensions` on and run `nola declarations` to write adjacent `<name>.d.tsi.ts` files (gitignore them — the editor hides them next to a live `.tsi`, and `nola check` ignores them). The bundler plugins (`@nola-lang/vite`, `webpack`, `rollup`, `rolldown`, `esbuild`, `rspack`) and `@nola-lang/next` do the lowering inside the bundler instead — see [The nola CLI](/docs/tooling/cli/).
+Use `nola check` to type-check `.tsi` source and `nola build` to compile it. Plain `tsc` cannot parse the added syntax.
+
+If a framework build or `tsc --noEmit` needs to resolve `.tsi` imports, enable `allowArbitraryExtensions` and run `nola declarations`. It writes adjacent `<name>.d.tsi.ts` files for TypeScript to read. Add `*.d.tsi.ts` to `.gitignore`; the editor hides these declarations beside the source, and `nola check` ignores them.
+
+For a bundled application, use the matching Nola plugin: `@nola-lang/vite`, `@nola-lang/webpack`, `@nola-lang/rollup`, `@nola-lang/rolldown`, `@nola-lang/esbuild`, `@nola-lang/rspack` or `@nola-lang/next`. It handles lowering during the build. See [The nola CLI](/docs/tooling/cli/).
 
 Next: [Editor setup](/docs/start/editor-setup/)

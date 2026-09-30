@@ -11,8 +11,9 @@ import { type CapturedError, capture, ensureBuilt } from "./helpers/ensure-built
 // throwaway copy of the example and runs `nola check`, proving the `.tsi`
 // types flow into plain TS (the annotations below fail to type-check if an
 // infer function's return ever degrades to `any` or loses a member).
-// triage-ticket is absent on purpose: it is the one-file shape (a top-level
-// ask in src/main.tsi) and exports no infer function to consume.
+// feature-extraction, function-calling, agent-loop and triage-ticket are
+// absent on purpose: they are the one-file shape (a top-level ask in
+// src/main.tsi) and export no infer function to consume.
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "packages", "nola-lang", "dist", "main.js");
@@ -31,6 +32,16 @@ const CASES: TypedConsumer[] = [
 export async function typedConsumer(): Promise<number> {
   const person = await extractPerson("Alice Smith, 32, staff engineer at Acme Corp.");
   return person.age; // typed as number across the .tsi boundary
+}
+`,
+  },
+  {
+    dir: "typescript-interop",
+    consumer: `import { extractPerson } from "./person.tsi";
+
+export async function typedConsumer(): Promise<string> {
+  const person = await extractPerson("Alice Smith, 32, staff engineer at Acme Corp.");
+  return person.employer; // typed as string across the .tsi boundary — the scaffold's default library shape
 }
 `,
   },
@@ -123,9 +134,12 @@ export async function typedConsumer(): Promise<string> {
 /** Copy an example into a tmp dir and link the workspace runtime/providers. */
 async function copyExample(dir: string): Promise<string> {
   const copy = join(await mkdtemp(join(tmpdir(), "nola-example-types-")), "app");
+  // `*-on-disk.tsi` are the LSP e2e's scratch files (editor-lsp.test.ts writes a
+  // deliberately type-broken one into this same example and removes it only
+  // in afterAll); copied mid-run they failed `nola check` here (2026-09-22).
   await cp(join(ROOT, "examples", dir), copy, {
     recursive: true,
-    filter: (src) => !/node_modules|[\\/]dist([\\/]|$)/.test(src),
+    filter: (src) => !/node_modules|[\\/]dist([\\/]|$)|-on-disk\.tsi$/.test(src),
   });
   const scope = join(copy, "node_modules", "@nola-lang");
   mkdirSync(scope, { recursive: true });

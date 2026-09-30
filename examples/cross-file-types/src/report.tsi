@@ -1,6 +1,6 @@
 import type { Person } from "./models.js";
 
-export infer function extractPerson(text: string) {
-  const person = ask `the person described in: ${text}`<Person>;
+export infer function extractPerson(.text: string) {
+  const person = ask `the person described in the text`: Person;
   return person;
 }

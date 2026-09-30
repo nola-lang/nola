@@ -1,6 +1,7 @@
 /**
- * The Node floor the docs state. Plain `.ts` (the templates' `src/main.ts`)
- * is loaded by Node's native type stripping, which is on by default only from
+ * The Node floor the docs state. Plain `.ts` (an example's `src/main.ts`, or the
+ * plain modules a `.tsi` entry imports) is loaded by Node's native type
+ * stripping, which is on by default only from
  * 22.18 on the 22 line and 23.6 on the 23 line; before that it sits behind
  * `--experimental-strip-types` and the default loader rejects `.ts` outright
  * (ERR_UNKNOWN_FILE_EXTENSION) — `npm start` and the F5 launch both die on
@@ -45,7 +46,7 @@ export function nodeVersionWarning(version: string = process.versions.node): str
   if (nodeSupportsTypeStripping(version)) return undefined;
   const lines = [
     `Node ${version} is older than Nola needs: Node >= ${NODE_FLOOR}, the first release that runs .ts files natively.`,
-    "On this Node, `npm start` and the VS Code F5 launch fail with ERR_UNKNOWN_FILE_EXTENSION for src/main.ts.",
+    "On this Node, `npm start` and the VS Code F5 launch fail with ERR_UNKNOWN_FILE_EXTENSION on the first plain .ts file they load.",
   ];
   if (hasStripTypesFlag(version)) {
     lines.push(

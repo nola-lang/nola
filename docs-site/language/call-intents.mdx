@@ -1,11 +1,11 @@
 ---
 title: Call intents
-description: Let the model fill a function's arguments — the hint, empty-marker and sigil-less spellings, the detection rule, typed slots, and what the result is.
+description: Use call intents to infer a function’s arguments in one model request, then run the function and receive its result.
 sidebar:
   order: 60
 ---
 
-A call intent lets the model fill some of a function's arguments, then calls the function with them. All slots of one call intent resolve in ONE provider call.
+A call intent asks the model to fill selected arguments, then calls your function with them. All extractor arguments in one call intent are resolved in a single provider request.
 
 ## Three spellings
 
@@ -15,7 +15,7 @@ declare function createTicket(title: string, priority: number): Promise<string>;
 
 export infer function file(.request: string) {
   // 1. sigil-less — a plain call whose arguments contain an extractor
-  const a = ask createTicket(..`a short ticket title`<string>, 2);
+  const a = ask createTicket(`a short ticket title`: string, 2);
 
   // 2. empty marker — identical lowering; the only spelling for a call
   //    intent whose arguments are all plain
@@ -23,19 +23,25 @@ export infer function file(.request: string) {
 
   // 3. hint marker — the ONLY carrier of instruction text for the call
   const c = ask createTicket`file the ticket the customer asked for`(
-    ..`a short ticket title`<string>,
-    ..`priority 1-5, 1 is most urgent`<number>,
+    `a short ticket title`: string,
+    `priority 1-5, 1 is most urgent`: number,
   );
 
   return { a, b, c };
 }
 ```
 
-Use the sigil-less form by default; reach for the hint marker when the call needs its own instruction. The empty marker on a call with no extractor arguments wraps it as an intent — it gets the uniform `ask` shape, a receipt and a history entry — but makes **no provider call**: with nothing to fill, the callee simply runs with the literal arguments.
+Use the plain call form when an argument contains an extractor. Add a hint marker when the call needs its own instruction.
+
+In a call's argument list the extractor's `..` is implied, as it is directly after `ask`: a typed template literal that starts an argument is an extractor, and so is one that starts a property value or an element of an object or array literal written there. `` ..`a short ticket title`: string `` in the same position stays legal and means the same. An untyped template is a plain string argument, so `` log(`done`) `` is an ordinary call. See [Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct).
+
+In the prompt the call is the task block, `<task call="fn">` with the hint inside; the arguments to fill are described by the schema. See [The prompt](/docs/language/prompt/).
+
+For a call with no extractor arguments, the empty marker wraps the call as an intent. It produces a receipt and a history entry, but makes no provider request: the function runs with the arguments you supplied.
 
 ## The detection rule
 
-A plain call becomes a call intent when BOTH hold:
+Nola recognizes a plain call as a call intent when both conditions hold:
 
 - the callee is an identifier or a member expression (any nesting, computed included), and
 - at least one well-formed extractor appears in a slot position — a direct argument, or nested at any depth inside plain object or array literals.
@@ -46,22 +52,24 @@ declare const api: { save(order: { qty: number; note: string }): Promise<string>
 
 export infer function place(.request: string) {
   // member callee + extractor nested in an object literal → call intent
-  return ask api.save({ qty: 1, note: ..`a one-line note for the warehouse`<string> });
+  return ask api.save({ qty: 1, note: `a one-line note for the warehouse`: string });
 }
 ```
 
 ## What stays a plain call
 
-These are ordinary calls, and the extractor is just a value argument: an extractor inside a ternary, a logical expression, a spread element or a template substitution; a nested call — in `` outer(inner(..`x`<T>)) `` the *inner* call is the intent and `outer` receives an `Askable`; `new Foo(…)`, `super(…)`, `import(…)`, optional calls (`fn?.(…)`, `a?.b(…)`); and exotic callees (`getFn()(…)`, IIFEs). The marker form rescues the first group — a ternary, logical, spread, template-substitution or nested position, or an exotic callee — but not `new`, `super`, `import()` or optional calls: those can never be call intents.
+Automatic detection does not look through ternaries, logical expressions, spread elements or template substitutions; a typed template in those positions needs its `..` (`` f(cond ? ..`x`: T : fallback) ``), and the call it sits in stays a plain call receiving that extractor as a value. In `` outer(inner(`x`: T)) ``, only `inner` becomes a call intent; `outer` receives that intent as a value. Calls such as `getFn()(…)` and immediately invoked function expressions also stay ordinary calls. Use an explicit marker to make these calls into intents.
 
-Do not parenthesize an extractor argument — `` fn((..`x`<T>)) `` is not supported. To pass an intent as a plain value, bind it to a variable first:
+`new Foo(…)`, `super(…)`, `import(…)` and optional calls (`fn?.(…)`, `a?.b(…)`) cannot be call intents, even with a marker. `new Foo(…)` has no implied `..` either: an extractor written there needs the dots.
+
+Do not parenthesize an extractor argument — `` fn((..`x`: T)) `` is not supported, and `` fn((`x`: T)) `` is a syntax error. To pass an intent as a plain value, bind it to a variable first:
 
 ```tsi
 // plain-value.tsi
 declare function helper(x: unknown): void;
 
 export infer function demo(.text: string) {
-  const i = ..`a short title`<string>;
+  const i = ..`a short title`: string;
   helper(i);                       // plain call — helper receives the Askable
   return ask i;
 }
@@ -69,16 +77,16 @@ export infer function demo(.text: string) {
 
 ## Typed slots
 
-Every extractor used as a call-intent slot must carry an explicit `<T>` — [`NOLA2004`](/docs/reference/error-codes/#nola2004). The bare derive-all form `fn(..)` is reserved ([`NOLA1004`](/docs/reference/error-codes/#nola1004)).
+Every extractor used as a call-intent slot must carry an explicit type — [`NOLA2004`](/docs/reference/error-codes/#nola2004). The bare derive-all form `fn(..)` is reserved ([`NOLA1004`](/docs/reference/error-codes/#nola1004)).
 
 ## The result is the settled value
 
-`ask fn(…)` yields the callee's SETTLED value, exactly like `await fn(…)` would: if the function returns a promise (or any thenable), the intent awaits it before resolving. Its static type is `Awaited<ReturnType<typeof fn>>`. Never write `await ask fn(…)` — the extra `await` is a no-op.
+`ask fn(…)` returns the function’s settled result. If the function returns a promise or another thenable, the intent waits for it. The result type is `Awaited<ReturnType<typeof fn>>`, so an additional `await` is unnecessary.
 
-Two consequences:
+This affects errors, retries and timeouts:
 
-- The callee runs INSIDE the ask. A rejected promise fails the ask at the call site with the callee's own error, unwrapped (a `NolaResolutionError` is raised only when the target is not a function), and `.withRetry(n)` re-runs the WHOLE ask, callee included. Do not put `.withRetry` on a call intent whose target is not idempotent.
-- The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider round trips only. Once the arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
+- The function runs as part of the ask. If it rejects, the ask fails with the original error. `NolaResolutionError` is raised only when the target is not a function. `.withRetry(n)` repeats the whole ask, including the function call, so use it only when repeating the operation is safe.
+- The invocation timeout (`ask.timeoutMs` or `.withTimeout`) applies to provider requests. Once the arguments are filled, it does not interrupt the function’s own promise.
 
 ## A real helper
 
@@ -102,16 +110,16 @@ import { createTicket } from "./tickets.js";
 export infer function fileTicket(.request: string) {
   // Sigil-less: the extractor argument makes this call an intent. `2` is a
   // plain argument and is passed through untouched.
-  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  const id = ask createTicket(`a short ticket title for the request`: string, 2);
   return id;   // a string, not a Promise<string>
 }
 
 export infer function fileTicketCarefully(.request: string) {
   return ask createTicket`file the ticket exactly as the customer described it`(
-    ..`a short ticket title`<string>,
-    ..`priority 1-5, where 1 is most urgent`<number>,
+    `a short ticket title`: string,
+    `priority 1-5, where 1 is most urgent`: number,
   );
 }
 ```
 
-Next: [Prompt templates](/docs/language/prompt-templates/)
+Next: [The prompt](/docs/language/prompt/)

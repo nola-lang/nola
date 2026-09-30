@@ -6,12 +6,12 @@ import { typecheckLowered } from "./helpers/typecheck.js";
 const SRC = ["infer function go() {", "  const v = ask with fast ..`v`<string>;", "  return v;", "}", ""].join("\n");
 
 describe("ask with <identifier> lowering", () => {
-  it("passes the alias as the third ask argument", () => {
+  it("passes the alias as the options object's model", () => {
     const { code, diagnostics } = compileNola(SRC, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
       "await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: `v`, " +
-        `type: __nola_type_$1(), loc: "2:27", def: "${defHash("x.tsi", "extract", "v", "string")}" }), __frame, "fast");`,
+        `type: __nola_type_$1(), loc: "2:27", def: "${defHash("x.tsi", "extract", "v", "string")}" }), __frame, { model: "fast" });`,
     );
   });
 
@@ -19,14 +19,14 @@ describe("ask with <identifier> lowering", () => {
     const src = "infer function go() {\n  const v = ask with default ..`v`<string>;\n  return v;\n}\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('__frame, "default");');
+    expect(code).toContain('__frame, { model: "default" });');
   });
 
   it("routes a stored-intent operand through the alias", () => {
     const src = "infer function go(i: unknown) {\n  return ask with fast i;\n}\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('await __nola.ask(i, __frame, "fast")');
+    expect(code).toContain('await __nola.ask(i, __frame, { model: "fast" })');
   });
 
   it("plain ask keeps the two-argument ask call", () => {
@@ -41,10 +41,10 @@ describe("ask with <identifier> lowering", () => {
     expect(diagnostics.map((d) => d.code)).toContain("NOLA2001");
   });
 
-  it("the alias rides a module-body ask as the third argument too", () => {
+  it("the alias rides a module-body ask's options object too", () => {
     const { code, diagnostics } = compileNola("const v = ask with fast ..`v`<string>;\n", "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toMatch(/__nola\.ask\(.*, __nola_module_ctx\(\), "fast"\);/);
+    expect(code).toMatch(/__nola\.ask\(.*, __nola_module_ctx\(\), \{ model: "fast" \}\);/);
   });
 
   it("lowered ask-with output is tsc-clean under strict", () => {

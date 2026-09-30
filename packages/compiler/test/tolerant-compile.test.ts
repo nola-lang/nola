@@ -131,16 +131,6 @@ describe("compileNola tolerant mode", () => {
       expect(r.code).toContain("FunctionCallIntent");
     });
   });
-
-  it("a half-typed `${.` in an extractor lowers with the scope prefix so TS can complete after the dot", () => {
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
-    const src = "infer function go() {\n  const v = ask ..`x ${.}`;\n  return v;\n}\n";
-    const { code, diagnostics, meta } = compileNola(src, "x.tsi", { tolerant: true });
-    expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1015"]);
-    expect(meta.mode).not.toBe("bailed");
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in lowered output
-    expect(code).toContain("__nola.tpl`x ${__nola_s.}`");
-  });
 });
 
 // `person.` mid-typing: no Nola construct is involved, but the parser used to
@@ -222,5 +212,57 @@ describe("expression expected at end of file", () => {
   it("strict mode bails to source", () => {
     const r = compileNola("const r = ask `p`;<T>\n", "t.tsi");
     expect(r.meta.mode).toBe("bailed");
+  });
+});
+
+// A stray `${.` mid-typing inside ANY instruction literal: the parser's
+// lone-dot recovery mints an extractor placeholder in the hole. The lowering
+// must replace it with the inert text (balanced — no fmt wrapper around a
+// placeholder) and add no diagnostic of its own, or TypeScript answers the
+// `.`-trigger with the whole global scope and a misleading NOLA2010 appears.
+describe("a placeholder inside an instruction hole", () => {
+  it("lowers to the inert text in a context statement, an extractor and a call hint, with only the parser's diagnostic", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+    const body = compileNola("infer function go() {\n  `CTX ${.}`\n  return 1;\n}\n", "x.tsi", { tolerant: true });
+    expect(body.diagnostics.map((d) => d.code)).toEqual(["NOLA1005"]);
+    expect(body.meta.mode).not.toBe("bailed");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in lowered output
+    expect(body.code).toContain("void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`CTX ${(undefined as never)}`; }");
+
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+    const extractor = compileNola("infer function go() {\n  const v = ask ..`x ${.}`;\n  return v;\n}\n", "x.tsi", { tolerant: true });
+    expect(extractor.diagnostics.map((d) => d.code)).toEqual(["NOLA1005"]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in lowered output
+    expect(extractor.code).toContain("instruction: `x ${(undefined as never)}`");
+
+    const hint = compileNola(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+      "declare function f(a: string): void;\ninfer function go() {\n  return ask f`use ${.}`(..`a`<string>);\n}\n",
+      "x.tsi",
+      { tolerant: true },
+    );
+    expect(hint.diagnostics.map((d) => d.code)).toEqual(["NOLA1005"]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in lowered output
+    expect(hint.code).toContain("instruction: `use ${(undefined as never)}`");
+  });
+});
+
+// A context statement where no frame can carry it (spec 2026-09-29 decision 8),
+// mid-typing: a callback inside an infer body, its value a dangling `x.` (the
+// member recovery keeps it). The file keeps lowering, NOLA2017 is recorded, and
+// the statement becomes the inert text under a broken span — no dot reaches
+// TypeScript and the output type-checks.
+describe("a context statement outside a scope body (NOLA2017)", () => {
+  it("records the diagnostic and lowers the statement to the inert text under a broken span", () => {
+    const src = "infer function go(xs: string[]) {\n  xs.forEach((x) => {\n    `note` x.\n  });\n  return ask ..`v`<string>;\n}\n";
+    const r = compileNola(src, "x.tsi", { tolerant: true });
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA2017"]);
+    expect(r.code).toContain("  xs.forEach((x) => {\n    (undefined as never);\n  });\n");
+    const stmt = src.indexOf("`note` x.");
+    expect(r.meta.spans.filter((s) => s.kind === "broken").map((s) => [s.sourceStart, s.sourceEnd])).toEqual([
+      [stmt, stmt + "`note` x.".length],
+    ]);
+    expect(typecheckLowered({ "x.ts": r.code })).toEqual([]);
   });
 });

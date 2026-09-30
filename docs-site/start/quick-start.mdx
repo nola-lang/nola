@@ -7,7 +7,7 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-This page takes you from nothing to a running Nola program — and the first run needs no account and no provider key.
+Create a project, run a small extraction and check the result. Choose the default `feature-extraction` template and skip the provider to try it offline with recorded answers.
 
 ## 1. Create a project
 
@@ -34,13 +34,32 @@ This page takes you from nothing to a running Nola program — and the first run
   </TabItem>
 </Tabs>
 
-The scaffolder asks for a name (Enter keeps `nola-app`) and a template. The first menu is the builtin templates, one per feature — `feature-extraction` (the default: one `.tsi` file whose top-level `ask` extracts typed data; runs offline), `function-calling` (one `.tsi` file whose top-level `ask` calls an async function from a `.ts` file next to it; runs offline), `typescript-interop` (an `infer function` in a `.tsi` file, imported and awaited from plain TypeScript; runs offline), `triage-ticket` (one `.tsi` file whose top-level `ask` triages a ticket on typesafe.ai's non-chat model; needs `TYPESAFE_API_KEY`) and `empty` (`package.json`, `tsconfig.json` and `.gitignore` plus a stub `src/main.ts` — no `.tsi`, no replay ledger) — and a *More examples…* row that opens the curated examples. Non-interactive: `npm create nola my-app -- --template extract-resume` names any of them directly. Nola needs **Node ≥ 22.18** — on an older Node the scaffolder prints a warning with the fix.
+Nola requires **Node ≥ 22.18**. The scaffolder warns if your Node version is too old.
 
-The editor and your coding agents are set up without a question. Every new project gets a `launch.json` for F5 debugging and a recommendation for the Nola extension — see [Editor setup](/docs/start/editor-setup/) — and the Nola skill for coding agents: one copy at `.agents/skills/nola/`, the open Agent Skills location that Cursor, Copilot, Codex, Gemini CLI and most other agents read, with `.claude/skills/nola` a relative symlink to it for Claude Code — see [The nola CLI](/docs/tooling/cli/#nola-skill-install). `--ide none` skips the editor files, `--agents none` the skill, and `--agents claude,universal,agents-md` adds an `AGENTS.md` for agents that read only that file.
+Enter a project name, or press Enter to use `nola-app`, then choose a template:
 
-Right after the template it asks *Select an inference provider:* — **nola: dev** (highlighted: 25 free hosted runs, no API key required, suited for dev experiments), **OpenAI**, **Anthropic**, **Gemini**, **typesafe.ai** (bracketed *does not support every construct in feature-extraction: literal unions and booleans only*, since `typesafe()` serves no other output type), or *Skip for now*. Choose *nola: dev* and the scaffolder gets an anonymous trial key from the Nola API, writes it to `.env` as `NOLA_API_KEY` (git-ignored), and writes a config with `model: "nola"` — the platform serves inference and picks the model. Choose a vendor and the config names that vendor's model (`openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")` or `typesafe()`) and reads its key from `.env` — the scaffold writes a `.env.example` with that variable's slot (`OPENAI_API_KEY=`, or `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `TYPESAFE_API_KEY`); copy it to `.env` and fill in the key before the first run. Skip and the project runs offline from its replay ledger instead. Non-interactive runs never call the network unless you pass `--provider nola` (`--trial` is the same; `--provider none` / `--no-trial` skips explicitly). A machine gets one anonymous trial. On your next project here the *nola: dev* row says so — *Trial key already issued. Get another? Enter to sign in.* — and Enter on it opens the browser right there, before the remaining questions (`npx nola-lang login` does the same on its own); the key is then minted on your account, which has its own free runs and balance and lists every key you make. If the sign-in fails, the menu comes back so you can skip or pick a vendor.
+| Template | What it demonstrates |
+| --- | --- |
+| `feature-extraction` (default) | Extract typed data with top-level asks in one `.tsi` file. Includes recorded answers for offline use. |
+| `function-calling` | Let an ask fill the arguments of an async function in a neighboring `.ts` file. Includes recorded answers. |
+| `agent-loop` | Run a top-level `while` loop whose ask is typed as a `Problem` or `null`, with a context statement read again on every pass. Uses a mock provider. |
+| `typescript-interop` | Import an `infer function` from plain TypeScript and await its result. Includes recorded answers. |
+| `triage-ticket` | Triage a ticket with typesafe.ai. Requires `TYPESAFE_API_KEY`. |
+| `empty` | Start with configuration and a stub `src/main.tsi` to write your program in. Includes no replay ledger. |
 
-Unless you passed `--ide none`, the scaffolder ends with one more question once the files are written — *Install dependencies and open VS Code?* — and a yes runs the install for you and opens the new folder in VS Code with the entry file (`src/main.tsi`, or `src/main.ts` for `typescript-interop`) as the active editor (so the `cd` / install below are already done). Without VS Code's `code` command on your PATH the question is just *Install dependencies?* and nothing is opened. That file opens with your next steps as a comment: F5 runs it, a breakpoint on the `ask` line plus another F5 steps through the ask, and the recommended Nola extension (VS Code offers it on open) brings IntelliSense and go-to-definition to `.tsi` files.
+*More examples…* opens the remaining curated examples. Every template except `empty` is one of the [examples](/docs/examples/) in the Nola repository, fetched at the release tag that matches your CLI version, so scaffolding them needs network access. You can also name a template directly: `npm create nola my-app -- --template extract-resume`.
+
+The next prompt, *Select an inference provider:*, determines where answers come from:
+
+- **nola: dev** gives you 25 free hosted runs. The scaffolder requests a trial key, saves it as `NOLA_API_KEY` in the git-ignored `.env` file and sets `model: "nola"`. Nola's service chooses the model.
+- **OpenAI**, **Anthropic**, **Gemini** or **typesafe.ai** configures that vendor. Copy the generated `.env.example` to `.env` and add your key before running the project. The configs use `openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")` or `typesafe()`. The typesafe.ai option supports only literal unions and booleans, so it cannot run every ask in `feature-extraction`.
+- **Skip for now** keeps the template's configuration. `feature-extraction`, `function-calling` and `typescript-interop` use a replay ledger and `agent-loop` a mock provider, so all four work offline.
+
+Each machine can request one anonymous trial. If yours already has a trial key, choosing *nola: dev* opens the browser to sign you in and creates a key on your account instead. If sign-in fails, the provider menu returns. You can also sign in later with `npx nola-lang login`. For a non-interactive run, pass `--provider nola` to request a key or `--provider none` to skip; `--trial` and `--no-trial` are equivalent shortcuts.
+
+By default, the project includes VS Code debugging settings and the Nola skill for coding agents. The skill lives at `.agents/skills/nola/`, with a relative symlink at `.claude/skills/nola` for Claude Code. Use `--ide none` to skip editor files, `--agents none` to skip the skill, or `--agents claude,universal,agents-md` to also embed the skill in `AGENTS.md`. See [Editor setup](/docs/start/editor-setup/) and [The nola CLI](/docs/tooling/cli/#nola-skill-install).
+
+The final prompt offers to install dependencies and open VS Code. If you accept, the entry file opens with a comment explaining how to run it with F5 and set a breakpoint. Without the `code` command on your PATH, the prompt offers only to install dependencies.
 
 ## 2. Run it
 
@@ -50,7 +69,9 @@ npm install
 npm start
 ```
 
-`npm start` runs `nola run src/main.tsi`. With Nola as the provider, `nola.config.ts` sets `model: "nola"` and the answers come from the Nola API on your free runs; with a vendor, they come from that vendor on the key in `.env`; if you skipped, the config is `replay("./nola.replay.jsonl")` and the answers come from a ledger committed with the project — no key, no network. This is the whole program:
+Use your chosen folder name in place of `my-app`. If the scaffolder already installed dependencies, you can skip `npm install`.
+
+For `feature-extraction`, `npm start` runs `nola run src/main.tsi`. Answers come from the provider you chose, or from `nola.replay.jsonl` if you skipped provider setup. Here is the program:
 
 ```tsi
 // src/main.tsi
@@ -67,11 +88,11 @@ interface Person {
 const .message = "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.";
 
 // `ask` works at the top level: this file is the whole program.
-const person = ask `the person described in the text`<Person>;
+const person = ask `the person described in the text`: Person;
 
 // A binding declared after an ask is visible to the asks that follow, so one answer feeds the next.
 const .role = person.job;
-const seniority = ask `the seniority level the role implies`<"junior" | "mid" | "senior" | "staff">;
+const seniority = ask `the seniority level the role implies`: "junior" | "mid" | "senior" | "staff";
 
 console.log(JSON.stringify({ ...person, seniority }));
 ```
@@ -82,15 +103,15 @@ Expected output:
 {"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer","seniority":"staff"}
 ```
 
-- The template literal on the first line is the **instruction** for the whole file — the model reads it before every ask.
-- `const .message` and `const .role` are **contextual bindings** — their values are shown to the model at every `ask` after them. `.role` is declared after the first ask, so only the second ask sees it: that is how one answer feeds the next.
-- `` ask `…`<Person> `` is an **extractor**: it asks the model for a `Person`, and `ask` resolves it — legal directly in the file, no function to declare or call first. Raw intents are resolved with `ask`, never a bare `await`.
+- The template literal on the first line is a **[context statement](/docs/language/context-statements/)**: every ask below it, here both, sees its text.
+- `const .message` and `const .role` are **contextual bindings**. Their values are available to subsequent asks. Only the second ask sees `.role`, which was declared after the first ask returned.
+- `` ask `…`: Person `` is an **extractor**. Nola derives a schema from `Person`, asks for a matching value and validates the reply. Extractors can be resolved at the top level with `ask`; a bare `await` cannot resolve a raw extractor.
 
-The `function-calling` template is the other feature in the same one-file shape: its top-level `ask` is a [call intent](/docs/guides/function-calling/) — the model fills the extractor-shaped arguments of `createTicket`, an ordinary async function in `src/tickets.ts`, and the call runs with them. The `typescript-interop` template is the same extraction as a library: the `ask` lives in an `infer function` in `src/person.tsi`, and a plain `src/main.ts` imports it (with the literal `.tsi` extension) and `await`s the returned intent — that is what runs the inference. Reach for it when the script outgrows one file; both shapes are shown side by side in [Project anatomy](/docs/start/project-anatomy/).
+The `function-calling` template uses a [call intent](/docs/guides/function-calling/) to fill the arguments of `createTicket` in `src/tickets.ts` and run it. The `typescript-interop` template puts extraction in an `infer function`, which `src/main.ts` imports and awaits. Use that structure when you want to call the same inference from other parts of an application. [Project anatomy](/docs/start/project-anatomy/) explains both layouts.
 
 ## 3. Switch on a real provider
 
-Bring your own key whenever you like — the Nola API is a convenience, never a requirement. Edit `nola.config.ts`:
+To use your own OpenAI key, edit `nola.config.ts`:
 
 ```ts
 // nola.config.ts
@@ -103,9 +124,11 @@ export default defineConfig({
 });
 ```
 
-Put `OPENAI_API_KEY=…` in a `.env` file at the project root (a vendor scaffold ships a `.env.example` to copy; the dev loader reads `.env`, production reads the real environment) and run `npm start` again. `anthropic({ model })` and `google({ model })` work the same way — see [Providers](/docs/config/providers/).
+Put `OPENAI_API_KEY=…` in `.env` at the project root, then run `npm start` again. If the scaffold supplied `.env.example`, copy it to `.env` first. The development loader reads this file; built applications use the process environment. See [Providers](/docs/config/providers/) for `anthropic({ model })`, `google({ model })` and other options.
 
-Need a key in another project? `npx nola-lang key` gets one — signing you in first once this machine's trial is used — and offers to write it to that project's `.env` (`--print` shows only the key); see [The nola CLI](/docs/tooling/cli/#nola-key). When the free runs are used up, an ask fails with the quota message (`Your 25 free Nola runs are complete.`) — `npx nola-lang account` signs you in when needed and opens your account page on the console (balance, top-ups, your keys), and nothing in the project changes; see [The nola CLI](/docs/tooling/cli/#nola-account). If you scaffolded offline instead, the replay ledger is strict: once you edit a prompt or a type, the recorded entry no longer matches and replay fails with `NOLA3008` instead of silently calling the network — switch to a live provider or re-record, see [Record and replay](/docs/config/record-and-replay/).
+To get a Nola key for another project, run [`npx nola-lang key`](/docs/tooling/cli/#nola-key). It signs you in if the machine's trial has been used and offers to save the key in that project's `.env`; `--print` prints only the key. After the free runs are used, asks fail with `Your 25 free Nola runs are complete.` Run [`npx nola-lang account`](/docs/tooling/cli/#nola-account) to open your account, manage keys or add balance.
+
+If you started offline, editing a prompt or type changes the request fingerprint. The recorded answer then no longer matches, and replay fails with `NOLA3008`. Switch to a live provider or [record a new ledger](/docs/config/record-and-replay/) before continuing.
 
 ## 4. Check and build
 
@@ -114,14 +137,16 @@ npx nola-lang check          # type-checks .tsi and .ts together, positions mapp
 npx nola-lang build          # lowers every .tsi into dist/ (+ a self-configuring dist/nola.config.js)
 ```
 
-`nola build` writes `dist/src/main.tsi.js` (with a source map and a `.tsi.d.ts` next to it) and a `dist/nola.config.js` that the built modules import, so `node dist/src/main.tsi.js` runs with no loader. It compiles `.tsi` files only — a plain `.ts` entry like `typescript-interop`'s `src/main.ts` is not part of its output; see [Deploying](/docs/guides/deploying/) for the production recipe.
+`nola build` writes `dist/src/main.tsi.js`, its source map and declaration file, and `dist/nola.config.js`. The built module imports the config, so you can run it with `node dist/src/main.tsi.js`.
+
+The build compiles `.tsi` files only. If you chose `typescript-interop`, its plain `.ts` entry needs a separate build step. [Deploying](/docs/guides/deploying/) shows how to arrange the output.
 
 `nola-lang` is a devDependency; the app itself depends on `@nola-lang/runtime` and `@nola-lang/providers`.
 
 ## What to read next
 
 - [Project anatomy](/docs/start/project-anatomy/) — what every file in the scaffold is for.
-- [Add Nola to an existing project](/docs/start/add-to-existing-project/) — retrofit instead of scaffold.
+- [Add Nola to an existing project](/docs/start/add-to-existing-project/) — use Nola in an application you already have.
 - [Editor setup](/docs/start/editor-setup/) — IntelliSense and F5 debugging in `.tsi`.
 - [The mental model](/docs/language/mental-model/) — the five ideas the language rests on.
 - [Examples on GitHub](https://github.com/nola-lang/nola/tree/main/examples) — ten runnable projects.

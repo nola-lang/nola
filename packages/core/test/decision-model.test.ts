@@ -1,19 +1,13 @@
 import type { JsonSchema } from "@nola-lang/core";
-import { DECISION_MODEL, findDecisionQuestions, isDecisionModel, isInferModel } from "@nola-lang/core";
+import { DECISION_MODEL, findDecisionQuestions, isDecisionModel } from "@nola-lang/core";
 import { describe, expect, it } from "vitest";
 
-describe("decision capability and dialect predicates", () => {
+describe("decision capability predicate", () => {
   it("isDecisionModel reads the brand and nothing else", () => {
-    expect(isDecisionModel({ name: "x", complete: async () => ({ text: "" }), [DECISION_MODEL]: true })).toBe(true);
-    expect(isDecisionModel({ name: "x", complete: async () => ({ text: "" }) })).toBe(false);
+    expect(isDecisionModel({ name: "x", infer: async () => ({ text: "" }), [DECISION_MODEL]: true })).toBe(true);
+    expect(isDecisionModel({ name: "x", infer: async () => ({ text: "" }) })).toBe(false);
     expect(isDecisionModel(null)).toBe(false);
     expect(DECISION_MODEL).toBe(Symbol.for("nola.decisionModel"));
-  });
-
-  it("isInferModel is the method name, no brand", () => {
-    expect(isInferModel({ name: "x", infer: async () => ({ text: "" }) })).toBe(true);
-    expect(isInferModel({ name: "x", complete: async () => ({ text: "" }) })).toBe(false);
-    expect(isInferModel(undefined)).toBe(false);
   });
 });
 

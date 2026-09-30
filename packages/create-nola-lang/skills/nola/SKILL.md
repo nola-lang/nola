@@ -22,24 +22,39 @@ import type { Person } from "./types.js";
 // thenable Intent<T>. `await`ing it (or `ask`) runs the inference.
 infer function extractPerson(.text: string) {
   // `ask` resolves an intent the way `await` resolves a promise.
-  const person = ask `Extract the person described in the text`<Person>;
+  const person = ask `Extract the person described in the text`: Person;
   return person;
 }
 ```
 
-- `infer function name(...)` — declares a nola function. An optional
-  backtick instruction goes between name and params:
-  `` infer function name`instruction`(...) ``. `await` is legal in the body.
+- `infer function name(...)` — declares a nola function. Any bare template
+  literal on its own line in the body is a CONTEXT STATEMENT: text every
+  later `ask` in the invocation sees, read at each ask. It may continue with
+  values: `` `Page` oncall `when the ticket is an outage.` `` (a name, a call
+  or a bracketed literal; anything else in parentheses — but `await`, `ask`
+  and `this` cannot be values: assign them to a local first). Several are
+  legal, anywhere in the body; one before a loop shows the current state on
+  every pass. Visibility is lexical, like a `const`: a statement inside a
+  block reaches only the asks inside those braces, and statements never
+  accumulate across loop passes — each ask sees every statement visible at
+  its position exactly once, rendered at that ask. `await` is legal in the
+  body.
 - `.name: T` parameters are CONTEXT parameters: their values are shown to
   the LLM. Plain (no dot) parameters are ordinary values the LLM never
   sees. `.` is only legal on infer-function parameters. Rule of thumb:
   one dot marks a value flowing INTO the model (`.name`); a template after
   `ask` is a value coming OUT.
-- `` ask `prompt`<T> `` — an extractor: asks the LLM for a `T`.
-  `${...}` interpolation works inside the backticks. Anywhere that is NOT
-  directly after `ask` — a stored intent, a call-intent argument, an
-  object/array literal — spell it `` ..`prompt`<T> `` (a typed template
-  there without the dots is NOLA2014); `` ask ..`prompt` `` is still legal.
+- `` ask `prompt`: T `` — an extractor: asks the LLM for a `T`. The colon
+  is glued to the closing backtick; `` ask `prompt`<T> `` is the same
+  construct (write `: T` unless a page shows otherwise).
+  `${...}` interpolation works inside the backticks. The `..` is implied
+  directly after `ask` and in a call's argument list — a typed template
+  that starts an argument, or a value nested in a plain object/array
+  literal there, is an extractor: `` createTicket(`a short title`: string, 2) ``.
+  Anywhere else — a stored intent, a ternary, a spread, `new` — spell it
+  `` ..`prompt`: T `` (a typed `` `x`<T> `` elsewhere is NOLA2014, a
+  `` `x`: T `` a syntax error); `` ask ..`prompt` `` and `` fn(..`x`: T) ``
+  are still legal.
 - `` ask fn`hint`(...) `` — or a plain call whose arguments contain an
   extractor — is a call intent (the LLM fills the extractor-shaped
   arguments, then the function runs). Only `` fn`hint`(...) `` carries
@@ -48,12 +63,29 @@ infer function extractPerson(.text: string) {
   from `nola.config.ts`. The name must be a static identifier. When the
   platform serves inference (`model: "nola"`) any unconfigured
   name is legal — it is sent to the platform as a free-form inference profile.
-- Prompt templates: inside ANY instruction backticks (marker, extractor,
-  call hint) a hole that starts with a single dot — `${.member}` — reads
-  the intent's prompt scope; a literal containing one REPLACES that
-  intent's prompt block (`${.default}` is the built-in block, `${.next}`
-  the rest of the prompt). Every other `${expr}` is a lexical value.
-  See `references/syntax.md` → "Prompt templates".
+- Values in an instruction — two spellings, one rule: `.name` (a contextual
+  parameter or `const .name` binding) is DATA, rendered as an `<input
+  name>` block the system turn marks as data; a value after text in a
+  context statement (`` `Page` oncall ``) or a `${expr}` hole in ANY
+  instruction backticks is part of the developer's words, spliced where it
+  stands (a string verbatim, a function its name, a call intent its callee
+  and arguments, anything else JSON) — the model FOLLOWS it, so interpolate
+  only text the developer controls (a team name, a count, a date) and put
+  anything a user or a document supplied in `.name`. A context statement is
+  read at EACH ask that sees it (module or body alike); an extractor's or
+  hint's text when the ask runs. A Nola construct (`ask`, `..`) inside a
+  context statement's value or hole, or in a call hint's hole, is NOLA2010
+  (written bare right after the text, NOLA1020); a call intent is a legal
+  value (a HINTED `` fn`hint`(…) `` one only in parentheses or a `${}` hole —
+  bare it is no call intent, and its extractor argument is NOLA2010). There
+  is no `${.member}` prompt scope (a dot cannot start a hole's expression).
+  See `references/syntax.md` → "Context statements" and "Values in an
+  instruction".
+- The prompt itself is the developer's words in four tags — `<context
+  function|module>` with `<input name>` blocks, then `<task>` (`<task
+  call="fn">` for a call intent); the schema rides structured output, never
+  the prompt; `system.message` REPLACES the default system text. See
+  `references/syntax.md` → "The prompt".
 
 ## Where Nola diverges from TypeScript — hard rules
 
@@ -72,7 +104,7 @@ infer function extractPerson(.text: string) {
   with an exported type's name (NOLA2011). `./x.tsi` with no `x.tsi` on disk
   is the VIEW of `x.ts`: the same module plus those values — import plain-TS
   types that way when you need their schema. Keep one basename per module.
-- An extractor's `<T>` should be a named, JSON-shaped type. The schema comes
+- An extractor's type should be a named, JSON-shaped type. The schema comes
   from the RESOLVED type, so unions (a `kind` key makes them discriminated),
   `Partial<T>`, `extends`, `Record<string, T>` and types from packages all
   work; `Date` is revived to a real `Date`. `Map`/`Set`/`Promise`, functions

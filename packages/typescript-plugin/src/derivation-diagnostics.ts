@@ -1,3 +1,4 @@
+import { isGeneratedNameDiagnostic } from "@nola-lang/compiler";
 import { derivationDiagnostics } from "@nola-lang/derive";
 import { NolaVirtualCode } from "@nola-lang/language-core";
 import type { Language } from "@volar/language-core";
@@ -11,6 +12,13 @@ import type ts from "typescript";
  * SourceFile and Volar's proxy maps them back to the .tsi like TypeScript's
  * own. NOLA codes ride `code` as their number (2002 / 2008 / 2007) with
  * `source: "nola"` and the code spelled in the message.
+ *
+ * On a .tsi both getSemanticDiagnostics and getSuggestionDiagnostics also drop
+ * TypeScript's unused-declaration report on a generated name — an error under
+ * noUnusedLocals, greyed-out unused code without it (a context item no ask
+ * sees was the case, before its `void` step-location read referenced it). The
+ * author cannot act on either. A plain .ts file's names are all the author's,
+ * so it is left alone.
  */
 export function decorateLanguageServiceWithDerivationDiagnostics(
   typescript: typeof ts,
@@ -18,10 +26,16 @@ export function decorateLanguageServiceWithDerivationDiagnostics(
   getLanguage: () => Language<string> | undefined,
   options: { sourceRoot: string },
 ): void {
+  const withoutGeneratedNames = <D extends ts.Diagnostic>(diagnostics: D[]): D[] => {
+    const kept = diagnostics.filter(
+      (d) => !isGeneratedNameDiagnostic(d.code, typescript.flattenDiagnosticMessageText(d.messageText, "\n")),
+    );
+    return kept.length === diagnostics.length ? diagnostics : kept;
+  };
   const prior = languageService.getSemanticDiagnostics.bind(languageService);
   languageService.getSemanticDiagnostics = (fileName) => {
-    const base = prior(fileName);
-    if (!fileName.endsWith(".tsi")) return base;
+    if (!fileName.endsWith(".tsi")) return prior(fileName);
+    const base = withoutGeneratedNames(prior(fileName));
     const program = languageService.getProgram();
     const root = getLanguage()?.scripts.get(fileName)?.generated?.root;
     if (!program || !(root instanceof NolaVirtualCode)) return base;
@@ -47,5 +61,10 @@ export function decorateLanguageServiceWithDerivationDiagnostics(
       }),
     );
     return extra.length > 0 ? [...base, ...extra] : base;
+  };
+  const priorSuggestions = languageService.getSuggestionDiagnostics.bind(languageService);
+  languageService.getSuggestionDiagnostics = (fileName) => {
+    const suggestions = priorSuggestions(fileName);
+    return fileName.endsWith(".tsi") ? withoutGeneratedNames(suggestions) : suggestions;
   };
 }

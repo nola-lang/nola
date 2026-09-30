@@ -14,13 +14,13 @@ const OUT = [
   "  return __nola.intents.Intent(async (__frame) => { void a;",
   `  const v = await __nola.ask(__nola.intents.ExtractIntent<string>({ instruction: \`v from \${__nola.fmt(a)}\`, type: __nola_type_$2(), loc: "2:17", def: "${defHash("x.tsi", "extract", "v from ${a}", "string")}" }), __frame);`,
   "  return v;",
-  '  }, __nola_file_ctx().func({ fn: "go", instruction: "", args: [{ name: "a", type: __nola_type_$1() }] }));',
+  '  }, __nola_module_ctx().func({ fn: "go", args: [{ name: "a", type: __nola_type_$1() }] }));',
   "}",
   "",
   ";",
   'import { __nola } from "@nola-lang/runtime";',
-  "__nola.useRuntime(18);",
-  'function __nola_file_ctx() { return __nola.context.file("x.tsi", 18); }',
+  "__nola.useRuntime(21);",
+  'function __nola_module_ctx() { return __nola.context.module("x.tsi", 21); }',
   'function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> | undefined { return (undefined as never); }',
   'function __nola_type_$2(): import("@nola-lang/runtime").InferType<unknown> { return (undefined as never); }',
   "",
@@ -34,15 +34,13 @@ describe("infer function lowering", () => {
     expect(meta.nolaFunctions).toEqual(["go"]);
   });
 
-  it("carries the marker instruction into the scope", () => {
-    const src = "export infer function getUser`extract the user`(m: string) {\n  return ask ..`u from ${m}`;\n}\n";
+  it("the body's first statement is a context item the ask passes", () => {
+    const src = "export infer function getUser(m: string) {\n  `extract the user`\n  return ask ..`u from ${m}`;\n}\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("export function getUser(m: string) {");
-    expect(code).toContain(
-      '.func({ fn: "getUser", instruction: "extract the user", args: [{ name: "m", type: __nola_type_$1() }] })',
-    );
-    expect(code).not.toContain("`extract the user`");
+    expect(code).toContain("export function getUser(m: string) {\n  return __nola.intents.Intent(async (__frame) => { void m;\n  void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`extract the user`; }\n");
+    expect(code).toContain("}), __frame, { context: [__nola_ctx_1] });");
+    expect(code).toContain('.func({ fn: "getUser", args: [{ name: "m", type: __nola_type_$1() }] })');
   });
 
   it("NOLA2001: ask inside a plain function", () => {
@@ -84,8 +82,8 @@ describe("infer function lowering", () => {
     expect(diagnostics).toEqual([]);
   });
 
-  it("the emitted file context is reachable from a same-module top-level call", async () => {
-    // The file-context accessor is appended at EOF, after the call site. A `const`
+  it("the emitted module accessor is reachable from a same-module top-level call", async () => {
+    // The module accessor is appended at EOF, after the call site. A `const`
     // (or `var`) there is in its TDZ (or `undefined`) when an infer function is
     // invoked during its own module's evaluation — only a hoisted function
     // declaration initializes early enough.
@@ -96,7 +94,7 @@ describe("infer function lowering", () => {
     const scopes: Array<Record<string, unknown>> = [];
     const __nola = {
       intents: { Intent: (_e: unknown, scope: unknown) => ({ scope }) },
-      context: { file: (file: string) => ({ func: (d: Record<string, unknown>) => ({ file, ...d }) }) },
+      context: { module: (file: string) => ({ func: (d: Record<string, unknown>) => ({ file, ...d }) }) },
       useRuntime: () => {},
     };
     // Evaluate the lowered module body with the runtime import stripped, mirroring
@@ -104,7 +102,34 @@ describe("infer function lowering", () => {
     const body = code.replace(/^import \{ __nola \}.*$/m, "").replace(/^export const/m, "const");
     const run = new Function("__nola", "scopes", `${body}\nscopes.push(eager.scope);`);
     expect(() => run(__nola, scopes)).not.toThrow();
-    expect(scopes[0]).toEqual({ file: "x.tsi", fn: "go", instruction: "" });
+    expect(scopes[0]).toEqual({ file: "x.tsi", fn: "go" });
+  });
+
+  it("an eager call in a module with a context item reaches the node with its init — nothing evaluates early", () => {
+    const src = "`Be terse.`\ninfer function go() {\n  return ask ..`v`;\n}\nexport const eager = go();\n";
+    const { code, diagnostics } = compileNola(src, "x.tsi");
+    expect(diagnostics).toEqual([]);
+    const inits: unknown[] = [];
+    const scopes: Array<Record<string, unknown>> = [];
+    const __nola = {
+      intents: { Intent: (_e: unknown, scope: unknown) => ({ scope }) },
+      context: {
+        module: (file: string, _emit: number, init?: () => Record<string, unknown>) => {
+          inits.push(init?.());
+          return { func: (d: Record<string, unknown>) => ({ file, ...d }) };
+        },
+      },
+      ctx: (strings: TemplateStringsArray) => strings.join(""),
+      useRuntime: () => {},
+    };
+    const body = code.replace(/^import \{ __nola \}.*$/m, "").replace(/^export const/m, "const");
+    const run = new Function("__nola", "scopes", `${body}\nscopes.push(eager.scope);`);
+    expect(() => run(__nola, scopes)).not.toThrow();
+    // the item is a hoisted declaration: the init and the function's view reference it, and it renders when read
+    const init = inits[0] as { context: Array<() => string> };
+    expect(init).toEqual({ context: [expect.any(Function)] });
+    expect(init.context.map((item) => item())).toEqual(["Be terse."]);
+    expect(scopes[0]).toEqual({ file: "x.tsi", fn: "go", moduleContext: init.context });
   });
 
   it("harvests params: name + site accessor for annotated ones, contextual+value for `..` params", () => {
@@ -118,7 +143,7 @@ describe("infer function lowering", () => {
     const { code, diagnostics, meta } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain(
-      '.func({ fn: "analyze", instruction: "", args: [' +
+      '.func({ fn: "analyze", args: [' +
         '{ name: "user", type: __nola_type_$1(), contextual: true, value: user }, ' +
         '{ name: "limit", type: __nola_type_$2() }] })',
     );
@@ -137,7 +162,7 @@ describe("infer function lowering", () => {
     const src = "infer function go(x, cb: () => void) {\n  return 1;\n}\n";
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('.func({ fn: "go", instruction: "", args: [{ name: "x" }, { name: "cb", type: __nola_type_$1() }] })');
+    expect(code).toContain('.func({ fn: "go", args: [{ name: "x" }, { name: "cb", type: __nola_type_$1() }] })');
   });
 
   it("the executor captures every param — unused ones stay debug-hoverable", () => {
@@ -166,7 +191,7 @@ describe("infer function lowering", () => {
 
   it("zero-param functions emit no args key (fingerprint-stable shape)", () => {
     const { code } = compileNola("infer function go() {\n  return 1;\n}\n", "x.tsi");
-    expect(code).toContain('.func({ fn: "go", instruction: "" }));');
+    expect(code).toContain('.func({ fn: "go" }));');
     expect(code).not.toContain("args:");
   });
 
@@ -184,35 +209,9 @@ describe("infer function lowering", () => {
 // packages/compiler/test/finalize.test.ts. Phase 1 only records the policy on
 // the request (see "harvests params" above).
 
-describe("infer-function marker templates (${.member})", () => {
-  it("copies a scope-hole marker into a template closure at the body close; instruction keeps the raw text", () => {
-    const src = "infer function go`CTX ${.signature}\n${.args.map(a => `- ${a.name}`)}\n${.next}`(.m: string) {\n  return m;\n}\n";
-    const { code, diagnostics, meta } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain("function go(m: string) {");
-    expect(code).toContain(
-      '.func({ fn: "go", instruction: "CTX ${.signature}\\n${.args.map(a => `- ${a.name}`)}\\n${.next}", template: (__nola_s) => __nola.tpl`CTX ${__nola_s.signature}\n${__nola_s.args.map(a => `- ${a.name}`)}\n${__nola_s.next}`, args: [{ name: "m", type: __nola_type_$1(), contextual: true, value: m }] })',
-    );
-    // the marker's verbatim runs are anchored back to the source
-    const anchored = meta.anchors.map((a) => src.slice(a.sourceStart, a.sourceEnd));
-    expect(anchored).toContain("`CTX ${");
-    expect(anchored).toContain(".signature}\n${");
-    // and every anchor's generated range holds the same bytes
-    for (const a of meta.anchors) {
-      expect(code.slice(a.generatedStart, a.generatedEnd)).toBe(src.slice(a.sourceStart, a.sourceEnd));
-    }
-  });
-
-  it("a lexical-only marker lowers to a per-invocation template literal with fmt", () => {
-    const src = "const G = 'g';\ninfer function go`follow ${G}`() {\n  return 1;\n}\n";
-    const { code, diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics).toEqual([]);
-    expect(code).toContain('.func({ fn: "go", instruction: `follow ${__nola.fmt(G)}` })');
-  });
-
-  it("NOLA2010: a Nola construct inside a marker hole", () => {
-    const src = "infer function go`${..`x`} ${.next}`() {\n  return 1;\n}\n";
-    const { diagnostics } = compileNola(src, "x.tsi");
-    expect(diagnostics.map((d) => d.code)).toContain("NOLA2010");
+describe("context statement holes (spec 2026-09-29 §3.3)", () => {
+  it("NOLA2010: a Nola construct inside a context statement's hole", () => {
+    const src = "infer function go() {\n  `${..`x`} rules`\n  return 1;\n}\n";
+    expect(compileNola(src, "x.tsi").diagnostics.map((d) => d.code)).toContain("NOLA2010");
   });
 });

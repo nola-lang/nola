@@ -1,4 +1,5 @@
 import { type ConsoleTask, createDebugTask, NolaResolutionError, Site } from "@nola-lang/core";
+import { fmt } from "../../ask/fmt.js";
 import { JsonInference } from "../../ask/inference-json.js";
 import type { InferContext } from "../../infer-context/infer-context.js";
 import { type Frame, type NolaRuntime, nolaRuntime } from "../../runtime/index.js";
@@ -38,6 +39,19 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
   /** Preserve the concrete type so options (e.g. a provider pin) reach execute(). */
   protected override clone(patch: Partial<IntentOptions>): Intent<T> {
     return new FunctionCallIntent<T>(this.init, this.runtime, { ...this.options, ...patch });
+  }
+
+  /**
+   * `foo(user r): only if needed` — the callee, each argument, the hint after
+   * a colon when there is one. Every argument is formatted by `fmt`, the one
+   * value formatter: a slot as its prompt (nested in an object or array too), a
+   * function as its name, a string verbatim — so no intent internals, and no
+   * install path, ever reach the text (it is scope instruction and fingerprint
+   * input).
+   */
+  override describe(): string {
+    const { name, instruction, args } = this.init;
+    return `${name}(${args.map((a) => fmt(a)).join(", ")})${instruction ? `: ${instruction}` : ""}`;
   }
 
   private fail(message: string, infer: InferContext, raw = ""): NolaResolutionError {

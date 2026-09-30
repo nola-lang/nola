@@ -144,3 +144,44 @@ describe("tsserver plugin: lazy derivation diagnostics on a .tsi (emit 15)", () 
     expect(String(context?.text)).toContain("Map<string, number>");
   });
 });
+
+// The lowered text of a .tsi declares names the author never wrote: `__nola`,
+// the executor's `__frame`, `__nola_module_ctx`, `__nola_ctx_N`. The plugin keeps
+// them out of identifier completion, and out of the unused-code reports a
+// context statement no ask sees would otherwise raise (its `__nola_ctx_N` is
+// never read); the author's own names are untouched.
+describe("tsserver plugin: the lowering's own names stay out of a .tsi", () => {
+  const NOTES = join(FIXTURE, "src", "generated-names.tsi");
+  const CONTENT = [
+    "export infer function escalate(.ticket: string, oncall: string) {",
+    "  const step = ask `the next step`<string>;",
+    "  `Page` onc",
+    "  const unused = 1;",
+    "  return step;",
+    "}",
+    "",
+  ].join("\n");
+
+  it("no unused-code report on a generated name; the author's unused name keeps its own", { timeout: 120_000 }, async () => {
+    server.send("open", { file: NOTES, projectRootPath: FIXTURE, fileContent: CONTENT });
+    const suggestions = await server.request<TsDiagnostic[]>("suggestionDiagnosticsSync", { file: NOTES });
+    expect(suggestions.filter((d) => d.code === 6133).map((d) => d.text)).toEqual([
+      "'unused' is declared but its value is never read.",
+    ]);
+    expect(suggestions.filter((d) => String(d.text).includes("__nola"))).toEqual([]);
+  });
+
+  it("identifier completion inside a context statement's value offers no generated name", { timeout: 120_000 }, async () => {
+    const completions = await server.request<{ entries: Array<{ name: string }> }>("completionInfo", {
+      file: NOTES,
+      line: 3,
+      offset: "  `Page` onc".length + 1,
+    });
+    server.send("close", { file: NOTES });
+    const names = new Set(completions.entries.map((e) => e.name));
+    expect(names.has("oncall")).toBe(true);
+    for (const generated of ["__nola", "__frame", "__nola_module_ctx", "__nola_ctx_1"]) {
+      expect(names.has(generated), generated).toBe(false);
+    }
+  });
+});

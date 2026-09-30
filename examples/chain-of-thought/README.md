@@ -1,9 +1,11 @@
 # chain-of-thought
 
 Two sequential asks in one nola function: the first is untyped (free-text
-reasoning), the second interpolates that reasoning into its prompt with plain
-`${}` and extracts the typed answer. The chain is ordinary TypeScript data
-flow — a `const` from one ask used in the next — not a prompt-DSL construct.
+reasoning), the second extracts the typed answer with that reasoning in view.
+What carries it across is a context statement — `` `Reasoning so far:`
+reasoning; `` — text followed by a value, read when the second ask runs. The
+chain is ordinary TypeScript data flow — a `const` from one ask shown to the
+next — not a prompt-DSL construct.
 
 Prompt-DSL frameworks usually express this as one prompt with a reasoning
 preamble parsed out of the reply — a function there is a single prompt→parse

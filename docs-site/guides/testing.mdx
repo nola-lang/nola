@@ -5,11 +5,11 @@ sidebar:
   order: 60
 ---
 
-Nola code is deterministic to test when the provider is: a `mockProvider` or a replay ledger answers every ask, `forceModel` guarantees nothing escapes to the network, and your test runner imports the `.tsi` file like any other module. Every recipe on this page was run against a fresh `typescript-interop` project.
+Use `mockProvider` or a replay ledger to give your asks repeatable answers without calling a live model. `forceModel` can route every Nola ask to that test model, including asks with their own model selection. The examples below use the `typescript-interop` template's `extractPerson` function.
 
 ## mockProvider
 
-`mockProvider` takes a **queue** of values (one per provider call, in order — an ask whose first reply fails validation takes a second entry for its correction turn) or a **function** of the request:
+`mockProvider` accepts a queue of response values or a function that receives the request. Each provider call consumes one queue entry, so a validation correction needs another entry:
 
 ```ts
 // nola.config.ts
@@ -20,18 +20,18 @@ export default defineConfig({
   model: {
     default: openai({ model: "gpt-5-mini" }),
     mock: mockProvider([{ name: "Alice Smith", age: 32, employer: "Acme Corp", job: "engineer" }]),
-    echo: mockProvider((req) => ({ prompt: req.payload.messages[0]?.content })),
+    echo: mockProvider((req) => ({ prompt: req.prompt.messages[0]?.content })),
   },
   // hermetic: with NOLA_TEST=1 EVERY ask goes to `mock`, even ones pinned with ask with / .withModel()
   forceModel: process.env.NOLA_TEST === "1" ? "mock" : undefined,
 });
 ```
 
-`forceModel` is the one runtime-enforced switch: a provider pinned inside a dependency cannot leak a real call into a test run. Values returned by a mock are still validated against the extractor's schema, so a mock that returns the wrong shape fails the test — useful in itself.
+`forceModel` overrides model selections made with `ask with` or `.withModel()`, including those inside dependencies. Mock replies still go through schema validation and the correction attempt, so you can test how your code handles invalid responses as well as valid ones.
 
 ## A test under the loader (node:test)
 
-Node's built-in runner plus the Nola loader needs no extra package:
+Node's built-in test runner can load `.tsi` files through the Nola loader:
 
 ```ts
 // not-checked — test/person.test.ts
@@ -49,11 +49,11 @@ test("extracts a person from prose", async () => {
 NOLA_TEST=1 node --import nola-lang/register --test "test/**/*.test.ts"
 ```
 
-The loader lowers `.tsi` in memory and applies `nola.config.ts` (and `.env`) before the tests run. Pass test files or a glob — not a bare directory.
+The loader compiles `.tsi` in memory and applies `nola.config.ts` and `.env` before the tests run. Pass test file paths or a glob to the runner.
 
 ## Configuring in code
 
-When a test wants its own provider without touching `nola.config.ts`, configure the runtime programmatically and reset it afterwards:
+For a test-specific model, configure the runtime in the test and reset it afterward:
 
 ```ts
 // not-checked — test/mock.test.ts
@@ -73,11 +73,11 @@ test("configure in code with a mock provider", async () => {
 });
 ```
 
-`configure()` after the first ask throws [`NOLA3003`](/docs/reference/error-codes/#nola3003) ("configuration is frozen"); `reset()` first.
+The configuration freezes after the first ask. Call `reset()` before replacing it; otherwise `configure()` throws [`NOLA3003`](/docs/reference/error-codes/#nola3003).
 
 ## vitest
 
-Vitest transforms modules through Vite, so the `@nola-lang/vite` plugin lowers `.tsi` for it and wires `nola.config.ts` in:
+Vitest uses Vite to transform modules. Add `@nola-lang/vite` to compile `.tsi` files and load `nola.config.ts` during tests:
 
 ```sh
 npm i -D vitest @nola-lang/vite
@@ -110,7 +110,7 @@ NOLA_TEST=1 npx vitest run
 
 ## Record once, replay forever
 
-For tests against a real model's answers, record a ledger once and replay it in CI:
+To test with recorded model responses, capture a ledger during a live run and replay it in CI:
 
 ```ts
 // nola.config.ts
@@ -126,12 +126,12 @@ export default defineConfig({
 });
 ```
 
-Commit `nola.replay.jsonl`. Replay is strict: an ask whose prompt, contextual values, type or params changed since recording fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008) instead of silently going live — re-record with `NOLA_RECORD=1` and commit the new ledger. Details: [Record and replay](/docs/config/record-and-replay/).
+Commit `nola.replay.jsonl`. If a prompt, contextual value, type or parameter changes, the request fingerprint changes too. A request without a matching recording fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008). Run with `NOLA_RECORD=1` to update the ledger, review the recorded responses and commit it. See [Record and replay](/docs/config/record-and-replay/).
 
 ## What to assert
 
-- Assert on the **typed value** an infer function returns, not on prompt text — prompts are an implementation detail the toolchain may recompose.
-- When routing or retries matter, register a hook in the test config and assert on the **receipt**: `servedBy`, `attempts`, `fingerprint` — see [Observability](/docs/config/observability/).
-- Keep mocks shape-true: a mock answer that violates the schema fails validation exactly like a real one would.
+- Assert on the typed value returned by an infer function. Avoid depending on exact prompt wording unless prompt composition is what you are testing.
+- To test routing or retries, register a hook and inspect receipt fields such as `servedBy`, `attempts` and `fingerprint`. See [Observability](/docs/config/observability/).
+- Use valid response shapes for successful cases, and deliberately invalid responses to exercise correction and error handling.
 
 Next: [Error handling](/docs/guides/error-handling/)

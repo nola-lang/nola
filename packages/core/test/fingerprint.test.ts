@@ -1,70 +1,68 @@
-import type { ClassicPrompt, InferenceModel, InferenceScope } from "@nola-lang/core";
-import { CORRECTION_PROMPT, canonicalize, FINGERPRINT_VERSION, fingerprintRequest, renderClassic, sha256Hex } from "@nola-lang/core";
+import type { InferenceModel, InferenceScope } from "@nola-lang/core";
+import { canonicalize, DEFAULT_SYSTEM, FINGERPRINT_VERSION, fingerprintRequest, renderPrompt, sha256Hex } from "@nola-lang/core";
 import { describe, expect, it } from "vitest";
 
-const model: InferenceModel = {
+const intent: InferenceModel = {
   intent: "extract",
   input: { instruction: "user name" },
   scope: { fn: "go", file: "x.tsi", instruction: "", args: [{ name: "m", type: "string", contextual: true, value: "v" }] },
   output: { syntax: "json", schema: { type: "string" } },
 };
 
-describe("fingerprintRequest (v5: over the classic rendering, whatever the payload dialect)", () => {
-  it("is version 5 and 64-char hex", () => {
-    expect(FINGERPRINT_VERSION).toBe(5);
-    expect(fingerprintRequest({ payload: model })).toMatch(/^[0-9a-f]{64}$/);
+describe("fingerprintRequest (v6: over the intent — the ask as data, never its rendering)", () => {
+  it("is version 6 and 64-char hex", () => {
+    expect(FINGERPRINT_VERSION).toBe(6);
+    expect(fingerprintRequest({ intent })).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("is stable (golden hash — FINGERPRINT_VERSION compatibility gate)", () => {
     // toMatchInlineSnapshot pins the exact hash on first run; a later serialization
     // change fails here and forces a FINGERPRINT_VERSION bump.
-    expect(fingerprintRequest({ payload: model })).toMatchInlineSnapshot(`"688a0153a54d4b0df0f0eae61a0305a7f11cff60313bbce0273a41ae9e5a92d2"`);
+    expect(fingerprintRequest({ intent })).toMatchInlineSnapshot(`"072dfa4d2b11291a4ce813bd80402c5871c90760ae637bf799176d7a9948c658"`);
   });
 
-  it("keys a model and its classic rendering identically — one ledger serves nola() and chat providers alike", () => {
-    expect(fingerprintRequest({ payload: renderClassic(model) })).toBe(fingerprintRequest({ payload: model }));
+  it("does not depend on the rendering: the default system text is not hashed", () => {
+    // renderPrompt's wording changes in stage 2 of the prompt-rendering spec; this hash must not.
+    expect(renderPrompt(intent).system).toBe(DEFAULT_SYSTEM);
+    expect(canonicalize({ v: FINGERPRINT_VERSION, intent, params: null })).not.toContain(DEFAULT_SYSTEM.slice(0, 20));
   });
 
-  it("is insensitive to key order and to extra request fields (signal, trace)", () => {
-    const reordered = { output: model.output, scope: model.scope, input: model.input, intent: model.intent } as InferenceModel;
-    expect(fingerprintRequest({ payload: reordered })).toBe(fingerprintRequest({ payload: model }));
+  it("is insensitive to key order and to extra request fields (signal, trace, project)", () => {
+    const reordered = { output: intent.output, scope: intent.scope, input: intent.input, intent: intent.intent } as InferenceModel;
+    expect(fingerprintRequest({ intent: reordered })).toBe(fingerprintRequest({ intent }));
     expect(
-      fingerprintRequest({ payload: model, signal: new AbortController().signal, trace: { askId: "a", invocationId: "i", spanPath: ["i"] } }),
-    ).toBe(fingerprintRequest({ payload: model }));
+      fingerprintRequest({
+        intent,
+        signal: new AbortController().signal,
+        trace: { askId: "a", invocationId: "i", spanPath: ["i"] },
+        project: "app",
+      }),
+    ).toBe(fingerprintRequest({ intent }));
   });
 
   it("changes with instruction, scope values, schema, system, template text, or params", () => {
-    const base = fingerprintRequest({ payload: model });
-    expect(fingerprintRequest({ payload: { ...model, input: { instruction: "other" } } })).not.toBe(base);
-    const scope = model.scope as InferenceScope;
-    expect(fingerprintRequest({ payload: { ...model, scope: { ...scope, args: [{ name: "m", type: "string", contextual: true, value: "w" }] } } })).not.toBe(base);
-    expect(fingerprintRequest({ payload: { ...model, output: { syntax: "json", schema: { type: "number" } } } })).not.toBe(base);
-    expect(fingerprintRequest({ payload: { ...model, system: "Be terse." } })).not.toBe(base);
-    expect(fingerprintRequest({ payload: { ...model, input: { instruction: "user name", text: "override" } } })).not.toBe(base);
-    expect(fingerprintRequest({ payload: model, params: { temperature: 0 } })).not.toBe(base);
-    expect(fingerprintRequest({ payload: model, params: { providerOptions: { top_p: 0.5 } } })).not.toBe(base);
+    const base = fingerprintRequest({ intent });
+    expect(fingerprintRequest({ intent: { ...intent, input: { instruction: "other" } } })).not.toBe(base);
+    const scope = intent.scope as InferenceScope;
+    expect(
+      fingerprintRequest({ intent: { ...intent, scope: { ...scope, args: [{ name: "m", type: "string", contextual: true, value: "w" }] } } }),
+    ).not.toBe(base);
+    expect(fingerprintRequest({ intent: { ...intent, output: { syntax: "json", schema: { type: "number" } } } })).not.toBe(base);
+    expect(fingerprintRequest({ intent: { ...intent, system: "Be terse." } })).not.toBe(base);
+    expect(fingerprintRequest({ intent: { ...intent, input: { instruction: "user name", text: "override" } } })).not.toBe(base);
+    expect(fingerprintRequest({ intent, params: { temperature: 0 } })).not.toBe(base);
+    expect(fingerprintRequest({ intent, params: { providerOptions: { top_p: 0.5 } } })).not.toBe(base);
   });
 
-  it("keys a profile distinctly, and only when present — profile-free asks keep their v5 hashes", () => {
-    const base = fingerprintRequest({ payload: model });
-    expect(fingerprintRequest({ payload: model, profile: "fast" })).not.toBe(base);
-    expect(fingerprintRequest({ payload: model, profile: "fast" })).not.toBe(fingerprintRequest({ payload: model, profile: "careful" }));
-    // absent and explicitly-undefined profile serialize identically — no ledger re-keying
-    expect(fingerprintRequest({ payload: model, profile: undefined })).toBe(base);
+  it("keys a profile distinctly, and only when present", () => {
+    const base = fingerprintRequest({ intent });
+    expect(fingerprintRequest({ intent, profile: "fast" })).not.toBe(base);
+    expect(fingerprintRequest({ intent, profile: "fast" })).not.toBe(fingerprintRequest({ intent, profile: "careful" }));
+    expect(fingerprintRequest({ intent, profile: undefined })).toBe(base);
   });
 
-  it("ignores a model's correction turn — the ask's identity is the request as first composed", () => {
-    expect(fingerprintRequest({ payload: { ...model, correction: { response: "x", error: "e" } } })).toBe(fingerprintRequest({ payload: model }));
-  });
-
-  it("ignores a classic prompt's correction turns the same way", () => {
-    const first = renderClassic(model);
-    const corrected: ClassicPrompt = {
-      ...first,
-      messages: [...first.messages, { role: "assistant", content: "x" }, { role: "user", content: CORRECTION_PROMPT("e") }],
-    };
-    expect(fingerprintRequest({ payload: corrected })).toBe(fingerprintRequest({ payload: first }));
-    expect(fingerprintRequest({ payload: corrected })).toBe(fingerprintRequest({ payload: { ...model, correction: { response: "x", error: "e" } } }));
+  it("ignores the correction turn — the ask's identity is the intent as first composed", () => {
+    expect(fingerprintRequest({ intent: { ...intent, correction: { response: "x", error: "e" } } })).toBe(fingerprintRequest({ intent }));
   });
 });
 

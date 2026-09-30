@@ -1,21 +1,21 @@
 ---
 title: Nola vs BAML
-description: BAML is the closest cousin — a typed prompt DSL behind a codegen boundary. The same classify-then-reply task in both, and when each fits.
+description: Compare typed extraction and a follow-up reply in BAML and Nola, including schema ownership, generated clients, context, and prompt tooling.
 sidebar:
   order: 10
 ---
 
 ## What BAML is
 
-BAML is a domain-specific language for LLM functions: you declare `class`es and `function`s with typed inputs and outputs in `.baml` files, write the prompt next to the signature, and `baml-cli generate` emits a client (TypeScript, Python, Ruby and others) whose calls return parsed, validated values. The return type renders the output format into the prompt (`ctx.output_format`), and a VS Code extension with a playground and test runner comes with it.
+BAML is a language for defining LLM functions in `.baml` files. You declare inputs, output types, and prompts, then generate a client for your application. The client parses responses into the declared types. The `ctx.output_format` macro adds output-format instructions to a prompt. See [BAML's prompting guide](https://docs.boundaryml.com/guide/baml-basics/prompting-with-baml).
 
-{/* BAML syntax and client usage verified against the BAML docs (function/class/prompt/ctx.output_format, baml_client `b.Fn()`) on 2026-08-20. */}
+Both BAML and Nola return typed values. The main difference in this example is where the output type lives: a BAML class with a generated client, or a TypeScript type used by a Nola extractor.
 
 ## The same task, side by side
 
-Classify a support message into a category plus order ids, then write a reply that depends on the category.
+Both examples classify a support message into a category and order IDs, then write a reply using that category. These snippets focus on the two calls; provider credentials and project setup are omitted.
 
-**BAML** — the `.baml` source, a `generators.baml` that tells `baml-cli generate` to emit the TypeScript client, and the TypeScript that calls it.
+**BAML:** define two functions in `.baml`, configure a TypeScript generator, and call the generated client.
 
 ```txt
 // baml_src/triage.baml
@@ -50,7 +50,7 @@ const triage = await b.ClassifyMessage(message);
 const reply = await b.WriteReply(triage.category, message);
 ```
 
-**Nola** — one file, no generated client:
+**Nola:** define the type and both asks in a `.tsi` module.
 
 ```tsi
 // classify.tsi
@@ -60,28 +60,29 @@ export type Triage = {
 };
 
 export infer function classifyMessage(.message: string) {
-  const triage = ask `triage the customer message`<Triage>;
-  const reply = ask `a reply for a ${triage.category} case`<string>;
+  const triage = ask `triage the customer message`: Triage;
+  const reply = ask `a reply for a ${triage.category} case`: string;
   return { ...triage, reply };
 }
 ```
 
 ## Where BAML is stronger
 
-- **Multi-language clients.** One `.baml` definition serves TypeScript, Python, Ruby and more; Nola is TypeScript only.
-- **Tooling around the prompt.** The playground, the built-in `test` blocks and the mature structured-output parser are a complete workflow for iterating on prompts.
-- **Maturity.** BAML is established and widely used; Nola is 0.1.x.
+- **Clients in several languages.** A BAML definition can generate clients for TypeScript, Python, Ruby, and other targets. This is useful when services in different languages share prompts and types. See the [generator reference](https://docs.boundaryml.com/ref/baml/generator).
+- **Prompt testing.** BAML's VS Code extension provides a playground and runs `test` blocks alongside function definitions. See [Testing functions](https://docs.boundaryml.com/guide/baml-basics/testing-functions).
 
 ## Where Nola is stronger
 
-- **No second language, no codegen step.** `Triage` is the TypeScript type you already have — usable from plain TS, refactorable with the editor, no `generate` between an edit and its effect. In BAML, `Triage` is a BAML class that TypeScript sees only after `baml-cli generate`.
-- **Context belongs to the function.** Both asks in `classifyMessage` see `.message`; the reply is chained with a `${}`. In BAML each function is one prompt-to-parse round trip, so the follow-up is a second function you hand the category and the message to again.
-- **Plain TypeScript orchestration.** Loops, branches, `await`, call intents over your own functions — all in the same file, type-checked together by `nola check`.
+- **Reusing TypeScript types.** Nola derives the schema from `Triage` during compilation. If the domain types already belong to a TypeScript application, they can remain there. BAML's generated types can instead serve as the application's source of truth.
+- **Shared context.** Marking `.message` makes it available to both asks. In the BAML example, the TypeScript caller passes the message to each function explicitly.
+- **Keeping steps together.** Nola lets you put asks, branches, loops, and ordinary function calls in the same `.tsi` function and check them with `nola check`. BAML callers can also use TypeScript control flow around generated functions.
+
+Schema derivation happens at compile time; validation of a model response happens at runtime. Neither approach makes the meaning of a model's answer a compile-time guarantee.
 
 ## When to pick which
 
-- You need clients in several languages, or a prompt playground with test cases, today → BAML.
-- Your stack is TypeScript and you want the typed call layer to be part of the language, with the editor seeing every ask → Nola.
-- Both are honest about one thing: the output type is the contract, and the prompt lives next to it.
+BAML fits a project that needs clients in several languages or prefers a dedicated prompt language and testing workflow.
+
+Nola fits a TypeScript project that wants to use its existing types for extraction and keep model calls next to application logic. It requires adopting `.tsi` files and the Nola toolchain.
 
 Next: [Nola vs LangGraph](/docs/compare/langgraph/)

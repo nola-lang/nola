@@ -16,7 +16,7 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     const { code, diagnostics, meta } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain('  const tone = "brief";');
-    expect(code).toContain("}), __frame, undefined, { tone });");
+    expect(code).toContain("}), __frame, { locals: { tone } });");
     expect(code).toContain(
       'args: [{ name: "q", type: __nola_type_$1(), contextual: true, value: q }], locals: [{ name: "tone" }] }));',
     );
@@ -30,8 +30,8 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     expect(code).toContain('const tone = "brief";');
-    expect(code).toContain("}), __nola_module_ctx(), undefined, { tone });");
-    expect(code).toContain('function __nola_module_ctx() { return __nola_file_ctx().module({ locals: [{ name: "tone" }] }); }');
+    expect(code).toContain("}), __nola_module_ctx(), { locals: { tone } });");
+    expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 21, () => ({ locals: [{ name: "tone" }] })); }');
     expect(typecheckLowered({ "x.ts": code })).toEqual([]);
   });
 
@@ -66,16 +66,21 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     ].join("\n");
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    const closes = [...code.matchAll(/__nola_module_ctx\(\)(, undefined, \{[^}]*\})?\);/g)].map((m) => m[1] ?? "");
-    expect(closes).toEqual([", undefined, { a }", ", undefined, { a, b }", ", undefined, { a, m }", ", undefined, { a, c }"]);
+    const closes = [...code.matchAll(/__nola_module_ctx\(\)(, \{ locals: \{[^}]*\} \})?\);/g)].map((m) => m[1] ?? "");
+    expect(closes).toEqual([
+      ", { locals: { a } }",
+      ", { locals: { a, b } }",
+      ", { locals: { a, m } }",
+      ", { locals: { a, c } }",
+    ]);
     expect(code).toContain('locals: [{ name: "a" }, { name: "b" }, { name: "m" }, { name: "c" }]');
     expect(typecheckLowered({ "x.ts": code })).toEqual([]);
   });
 
-  it("the ask-with alias and locals share the argument list", () => {
+  it("the ask-with alias and locals share the options object", () => {
     const src = ['const .tone = "brief";', "export const v = ask with fast ..`v`<string>;", ""].join("\n");
     const { code } = compileNola(src, "x.tsi");
-    expect(code).toContain('}), __nola_module_ctx(), "fast", { tone });');
+    expect(code).toContain('}), __nola_module_ctx(), { model: "fast", locals: { tone } });');
   });
 
   it("a body's own binding does not leak into another body", () => {
@@ -90,10 +95,10 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     ].join("\n");
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain("}), __frame, undefined, { mood });");
-    expect(code).toContain("const v = await __nola.ask(go(), __nola_module_ctx(), undefined, { tone });");
+    expect(code).toContain("}), __frame, { locals: { mood } });");
+    expect(code).toContain("const v = await __nola.ask(go(), __nola_module_ctx(), { locals: { tone } });");
     expect(code).toContain('locals: [{ name: "mood" }] }));');
-    expect(code).toContain('module({ locals: [{ name: "tone" }] })');
+    expect(code).toContain('() => ({ locals: [{ name: "tone" }] })');
   });
 
   it("NOLA1010: a contextual binding outside a scope body", () => {
@@ -106,6 +111,6 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     const src = "const v = ask ..`v`<string>;\nconst .late = 1;\n";
     const { code } = compileNola(src, "x.tsi");
     expect(code).toContain("}), __nola_module_ctx());");
-    expect(code).toContain('module({ locals: [{ name: "late" }] })');
+    expect(code).toContain('() => ({ locals: [{ name: "late" }] })');
   });
 });

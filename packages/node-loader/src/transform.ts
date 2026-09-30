@@ -35,10 +35,19 @@ export class NolaTransformError extends Error {
  * The loader's merged map is what js-debug steps by, and stepping should walk
  * STRAIGHT THROUGH intent construction: F11 on `ask fn(...)` must land in the
  * callee's body, not tour the lowered wrapper. js-debug's smart-stepping does
- * exactly that for UNMAPPED positions, so here the wrapper lines (generated
- * lines that begin inside replaced text — the infer opener/closer; identified
- * via meta.spans in LOWERED space, where they are still distinguishable) lose
- * their segments. Two segment classes must go:
+ * exactly that for UNMAPPED positions, so here the wrapper lines lose their
+ * segments. A wrapper line is a generated line that begins inside replaced
+ * text AND carries no verbatim source text of its own (whitespace aside): the
+ * infer opener and closer, identified via meta.spans in LOWERED space, where
+ * they are still distinguishable. A context statement lowered in place at
+ * column 0 also BEGINS inside replaced text — its opener is an insert at the
+ * statement's first byte — but the statement's own text follows on the same
+ * line, so that line keeps its segments: a breakpoint on it must bind through
+ * the map, and the pause inside the item (an ask rendering it) must display
+ * the .tsi, not the generated script (playground report 2026-09-29; the same
+ * holds for a multi-line statement's continuation lines, which begin inside
+ * the gap re-emitted between a value and the next text). Two segment classes
+ * must go:
  *
  * - segments whose lowered position sits on a wrapper line (the compiler's
  *   `anchorInsertedLines` anchors — kept in the compiler map for `nola build`
@@ -64,12 +73,24 @@ function wrapperLinesOf(lowered: CompileResult): Set<number> {
     }
     return lo;
   };
+  // lines carrying verbatim source text (whitespace aside) are never wrapper lines, whatever begins them
+  const textLines = new Set<number>();
+  for (const sp of lowered.meta.spans) {
+    if (sp.kind !== "verbatim") continue;
+    for (let line = lineOf(sp.generatedStart); line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) {
+      const from = Math.max(sp.generatedStart, lineStarts[line]);
+      const to = Math.min(sp.generatedEnd, line + 1 < lineStarts.length ? lineStarts[line + 1] : generated.length);
+      if (/\S/.test(generated.slice(from, to))) textLines.add(line);
+    }
+  }
   const wrapperLines = new Set<number>();
   for (const sp of lowered.meta.spans) {
     if (sp.kind !== "replaced") continue;
     let line = lineOf(sp.generatedStart);
     if (lineStarts[line] < sp.generatedStart) line += 1;
-    for (; line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) wrapperLines.add(line);
+    for (; line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) {
+      if (!textLines.has(line)) wrapperLines.add(line);
+    }
   }
   return wrapperLines;
 }
@@ -117,7 +138,7 @@ function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
  * `.tsi` breakpoint twice: through the inline map AND raw by URL + line on
  * the compiled script, whose URL IS the .tsi path. esbuild collapsed removed
  * declarations (a 6-line interface shifted everything up), so the raw copy
- * landed in the appendix — inside `__nola_file_ctx`, which every ask calls —
+ * landed in the appendix — inside the module accessor (`__nola_module_ctx`, then `__nola_file_ctx`), which every ask calls —
  * and F10 over a top-level ask stopped there, in unmapped code, and degraded
  * into a continue. With the layout preserved the two bindings coincide.
  *

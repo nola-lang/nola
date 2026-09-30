@@ -1,6 +1,6 @@
-import type { JsonSchema, LanguageModel } from "@nola-lang/core";
-import { NolaProviderError, parseRetryAfter } from "@nola-lang/core";
-import { ENVELOPE_NOTE, envelope, resolveRootRef } from "./wire.js";
+import type { InferRequest, JsonSchema, LanguageModel, RenderedPrompt } from "@nola-lang/core";
+import { NolaProviderError, parseRetryAfter, renderPrompt } from "@nola-lang/core";
+import { ENVELOPE_NOTE, envelope, resolveRootRef, schemaNote } from "./wire.js";
 
 export interface OpenAiOptions {
   apiKey?: string;
@@ -10,9 +10,34 @@ export interface OpenAiOptions {
   model: string;
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
+  /**
+   * Default true: the schema rides the API's structured-output field. false:
+   * nothing is sent on the wire and the schema is rendered into the system
+   * turn as a <schema> block — for OpenAI-compatible servers that ignore or
+   * reject json_schema.
+   */
+  structuredOutputs?: boolean;
 }
 
 type StrictSchema = Record<string, unknown>;
+
+/**
+ * Keywords OpenAI's strict mode accepts beside type/enum/structure (its
+ * "supported properties" list); anything else is dropped. `format` is
+ * forwarded only for the values that list names — an unknown format value is
+ * a 400 from the API. minLength/maxLength are NOT forwarded: unverified.
+ */
+const STRING_KEYWORDS = ["pattern"] as const;
+const OPENAI_FORMATS = new Set(["date-time", "time", "date", "duration", "email", "hostname", "ipv4", "ipv6", "uuid"]);
+const NUMBER_KEYWORDS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"] as const;
+const ARRAY_KEYWORDS = ["minItems", "maxItems"] as const;
+
+function pick(schema: object, keys: readonly string[]): StrictSchema {
+  const out: StrictSchema = {};
+  const s = schema as Record<string, unknown>;
+  for (const k of keys) if (s[k] !== undefined) out[k] = s[k];
+  return out;
+}
 
 /** Strict mode requires every property required; optionals become anyOf [T, null]. */
 function toStrict(schema: JsonSchema): StrictSchema {
@@ -30,16 +55,20 @@ function toStrict(schema: JsonSchema): StrictSchema {
 
 function toStrictNode(schema: JsonSchema): StrictSchema {
   if ("$ref" in schema) return { $ref: schema.$ref };
+  // JSDoc descriptions ride every node: since the prompt no longer carries the
+  // schema text (prompt-rendering spec 2026-09-28), the wire schema is the only
+  // channel a property's description has to the model.
+  const described = "description" in schema && schema.description !== undefined ? { description: schema.description } : {};
   // emit 15 shapes: choice passes through; strict mode accepts anyOf.
   // A literal keeps its `const` but gains the `type` it implies: OpenAI-compatible
   // backends (Cerebras) reject a bare `{ const }` node as an unsupported field,
   // and every backend accepts the typed form (it is a strict subset).
-  if ("anyOf" in schema) return { anyOf: schema.anyOf.map(toStrictNode) };
-  if ("const" in schema) return { type: typeof schema.const, const: schema.const };
+  if ("anyOf" in schema) return { ...described, anyOf: schema.anyOf.map(toStrictNode) };
+  if ("const" in schema) return { ...described, type: typeof schema.const, const: schema.const };
   switch (schema.type) {
     case "object": {
       if (!("properties" in schema)) {
-        return { type: "object", additionalProperties: toStrictNode(schema.additionalProperties) };
+        return { ...described, type: "object", additionalProperties: toStrictNode(schema.additionalProperties) };
       }
       const properties: Record<string, StrictSchema> = {};
       for (const [key, prop] of Object.entries(schema.properties)) {
@@ -47,6 +76,7 @@ function toStrictNode(schema: JsonSchema): StrictSchema {
         properties[key] = schema.required.includes(key) ? strict : { anyOf: [strict, { type: "null" }] };
       }
       return {
+        ...described,
         type: "object",
         properties,
         required: Object.keys(schema.properties),
@@ -56,6 +86,7 @@ function toStrictNode(schema: JsonSchema): StrictSchema {
     case "array":
       if ("prefixItems" in schema) {
         return {
+          ...described,
           type: "array",
           prefixItems: schema.prefixItems.map(toStrictNode),
           items: false,
@@ -63,13 +94,22 @@ function toStrictNode(schema: JsonSchema): StrictSchema {
           maxItems: schema.maxItems,
         };
       }
-      return { type: "array", items: toStrictNode(schema.items) };
+      return { ...described, type: "array", items: toStrictNode(schema.items), ...pick(schema, ARRAY_KEYWORDS) };
+    case "string":
+      return {
+        ...described,
+        type: "string",
+        ...(schema.enum ? { enum: [...schema.enum] } : {}),
+        ...pick(schema, STRING_KEYWORDS),
+        ...(schema.format !== undefined && OPENAI_FORMATS.has(schema.format) ? { format: schema.format } : {}),
+      };
+    case "number":
+    case "integer":
+      return { ...described, type: schema.type, ...pick(schema, NUMBER_KEYWORDS) };
     case "null":
       return { type: "null" };
     default:
-      return schema.type === "string" && schema.enum
-        ? { type: "string", enum: [...schema.enum] }
-        : { type: schema.type };
+      return { ...described, type: schema.type };
   }
 }
 
@@ -139,7 +179,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
   const model = options.model;
   return {
     name: "openai",
-    async complete(req) {
+    async infer(req: InferRequest) {
       const requestedAt = Date.now();
       const envName = options.apiKeyEnv ?? "OPENAI_API_KEY";
       const apiKey = options.apiKey ?? process.env[envName];
@@ -149,18 +189,22 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
           { definitive: true },
         );
       }
-      const { system: baseSystem, messages, output } = req.payload;
+      const { system: baseSystem, messages } = renderPrompt(req.intent);
+      const output = req.intent.output;
       const reqSchema = output.syntax === "json" ? output.schema : undefined;
       const rootShape = reqSchema === undefined ? undefined : resolveRootRef(reqSchema);
       const enveloped = rootShape !== undefined && !("$ref" in rootShape) && !("type" in rootShape && rootShape.type === "object");
       const transport: JsonSchema | undefined =
         reqSchema === undefined ? undefined : enveloped ? envelope(reqSchema) : reqSchema;
-      const system = enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem;
+      // structuredOutputs: false — the schema goes into the system turn instead of the wire field
+      const enforce = options.structuredOutputs !== false;
+      const system = (enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem) + (!enforce && transport ? schemaNote(transport) : "");
+      const sent: RenderedPrompt = { system, messages };
       const body: Record<string, unknown> = {
         model,
         messages: [{ role: "system", content: system }, ...messages],
       };
-      if (transport) {
+      if (transport && enforce) {
         body.response_format = {
           type: "json_schema",
           json_schema: { name: "nola_extraction", strict: true, schema: toStrict(transport) },
@@ -176,7 +220,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
         const errorBody = await res.text();
         if (reqSchema !== undefined) {
           const recovered = recoverFailedGeneration(errorBody, enveloped, reqSchema);
-          if (recovered !== undefined) return { text: recovered };
+          if (recovered !== undefined) return { text: recovered, sent };
         }
         throw new NolaProviderError(
           `OpenAI request failed: ${res.status} ${res.statusText} — ${errorBody.slice(0, 500)}`,
@@ -189,7 +233,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
       const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
       const content = data.choices?.[0]?.message?.content;
       if (typeof content !== "string") throw new NolaProviderError("OpenAI response had no message content.");
-      if (!reqSchema) return { text: content };
+      if (!reqSchema) return { text: content, sent };
       let parsed: unknown;
       try {
         parsed = JSON.parse(content);
@@ -198,7 +242,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
       }
       const value = enveloped ? (parsed as { value?: unknown }).value : parsed;
       const durationMs = Date.now() - requestedAt;
-      return { text: JSON.stringify(fromStrict(value, reqSchema)), durationMs };
+      return { text: JSON.stringify(fromStrict(value, reqSchema)), durationMs, sent };
     },
   };
 }

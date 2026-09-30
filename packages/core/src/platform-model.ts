@@ -1,30 +1,16 @@
-import type { AskTrace, ProviderParams, ProviderResponse } from "./index.js";
-import type { InferenceModel } from "./inference-model.js";
+import type { InferRequest, InferResult, LanguageModel } from "./index.js";
 
 /**
- * The platform-served model (platform-config design 2026-09-03). It is the
- * ONLY `infer`-dialect model: the runtime hands it the canonical
- * InferenceModel, every other model receives the classic rendering through
- * `complete`. The brand (not the method) is the detection gate, so a user
- * object that happens to have an `infer` method is still a config error.
+ * The platform-served model (platform-config design 2026-09-03, prompt
+ * rendering 2026-09-28). Like every model it takes the canonical
+ * InferenceModel through `infer`; the brand (not the method) is what makes
+ * it the platform: root-only in the config, the `"nola"` alias, free-form
+ * profiles, no combinators over it, `project` on the request.
  */
 export const PLATFORM_MODEL: unique symbol = Symbol.for("nola.platformModel");
 
-/** The request a platform model consumes: the canonical model, never a rendering. */
-export interface InferRequest {
-  model: InferenceModel;
-  params?: ProviderParams;
-  signal?: AbortSignal;
-  trace?: AskTrace;
-  /** Free-form inference profile (`ask with <name>` under a platform default). Part of the ask fingerprint. */
-  profile?: string;
-  /** The app's project name — deployment metadata for the server, NEVER part of the ask fingerprint. */
-  project?: string;
-}
-
-export interface PlatformModel {
-  readonly name: string;
-  infer(req: InferRequest): Promise<ProviderResponse>;
+export interface PlatformModel extends LanguageModel {
+  infer(req: InferRequest): Promise<InferResult>;
   readonly [PLATFORM_MODEL]: true;
 }
 

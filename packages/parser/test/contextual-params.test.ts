@@ -24,8 +24,8 @@ describe("`.param` contextual parameters", () => {
     expect(params[1]?.nolaContextual).toBeUndefined();
   });
 
-  it("works with a typed param and an instruction marker together", () => {
-    const src = "infer function f`check it`(.user: { id: string }) {\n  return 1;\n}\n";
+  it("works with a typed param and a body instruction together", () => {
+    const src = "infer function f(.user: { id: string }) {\n  `check it`\n  return 1;\n}\n";
     const { ast, diagnostics } = parseNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
     const params = (firstInferFn(ast as BaseNode)?.params ?? []) as NolaParamNode[];

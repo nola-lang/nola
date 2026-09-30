@@ -1,7 +1,7 @@
 /** Production example acquisition: GitHub Trees API + raw file fetches. */
 const REPO = "nola-lang/nola";
 
-/** Network/acquisition failure — the builtin templates always work offline. */
+/** Network/acquisition failure — `empty`, the one builtin template, always works offline. */
 export class ExampleFetchError extends Error {}
 
 export type FetchLike = (

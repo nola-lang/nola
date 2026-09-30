@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-Extraction is the hello world of Nola: declare the type, ask for it. This guide walks from a flat object to cross-file types, each step one real example from the repository.
+To extract structured data, define the result with a TypeScript type and use that type in an ask. This guide starts with a flat object, then adds nested data, optional fields, shared types and constraints.
 
 ## 1. A flat object
 
@@ -19,7 +19,7 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask `the person described in the text`<Person>;
+  const person = ask `the person described in the text`: Person;
   return person;
 }
 ```
@@ -35,7 +35,7 @@ console.log(JSON.stringify(person));
 // {"name":"Alice Smith","age":32,"employer":"Acme Corp","job":"staff engineer"}
 ```
 
-The JSON Schema the model fills is derived from `Person` at compile time; the extraction is one typed expression. No runtime type-to-schema library, no re-declared model class — `person` is a `Person`.
+Nola derives a JSON Schema from `Person` at compile time and validates the model's reply against it at runtime. The returned `person` has type `Person`.
 
 ## 2. Nested arrays and descriptions
 
@@ -58,11 +58,11 @@ export interface Resume {
 }
 
 export infer function extractResume(.message: string) {
-  return ask `the candidate's resume data`<Resume>;
+  return ask `the candidate's resume data`: Resume;
 }
 ```
 
-Arrays of objects nest freely (`Education[]`), and a JSDoc comment on a member becomes that field's description in the schema the model reads — that is where "most recent first" goes, not in the instruction.
+Use arrays and nested object types as you would in other TypeScript code. A JSDoc comment on a member becomes its description in the schema, so the model receives field-specific guidance such as "most recent first" alongside the field.
 
 ## 3. Optional fields and same-file references
 
@@ -86,15 +86,15 @@ export interface Invoice {
 }
 
 export infer function extractInvoice(.document: string) {
-  return ask `the invoice data from the document`<Invoice>;
+  return ask `the invoice data from the document`: Invoice;
 }
 ```
 
-An optional member (`dueDate?`) is left out of the schema's `required` list, so the model may omit it; say *when* to omit it in JSDoc. `Invoice` referencing `LineItem` in the same file needs nothing special.
+An optional member such as `dueDate?` is left out of the schema's `required` list. Use its JSDoc description to explain when it should be omitted. Nola also derives the nested `LineItem` type referenced by `Invoice`.
 
 ## 4. Types from another file
 
-Keep shared types in a plain `.ts` module and import them with a type-only import and the NodeNext `.js` specifier; the toolchain carries the schema across for you.
+Shared types can stay in plain `.ts` modules. Import them with `import type` and, in a NodeNext project, the `.js` specifier:
 
 ```ts
 // src/models.ts
@@ -109,15 +109,15 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask `the person described in the text`<Person>;
+  return ask `the person described in the text`: Person;
 }
 ```
 
-How that works (the view of `models.ts`) and the rules around it are on [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file); the same derived type is importable as a value from plain TypeScript — see [Types as values](/docs/language/types-as-values/).
+Nola resolves `Person` from `models.ts` and derives its schema. [TypeScript interop](/docs/language/typescript-interop/#types-from-another-file) explains the module view used for this. You can also import the derived type as a runtime value for validation and schema access; see [Types as values](/docs/language/types-as-values/).
 
 ## 5. Constraints
 
-A type says `string`; a JSDoc tag says which strings. Name the tag like the JSON Schema keyword and put it on the member: the model sees the keyword in the schema, and a reply that breaks it is corrected with the exact message.
+Add JSDoc tags when a TypeScript type needs a more specific constraint. For example, `@format email` requires an email-shaped string and `@minimum 13` sets a numeric lower bound. Nola adds these keywords to the schema and checks them when validating replies. A failed check supplies the error message for the correction retry.
 
 ```tsi
 // src/signup.tsi
@@ -133,15 +133,15 @@ export interface Signup {
 }
 
 export infer function parseSignup(.text: string) {
-  return ask `the signup form described in the text`<Signup>;
+  return ask `the signup form described in the text`: Signup;
 }
 ```
 
-A description and tags share one comment. The full keyword list, the formats and the rules are in [Constraints](/docs/reference/schema-derivation/#constraints); a tag on the wrong kind of type is [`NOLA2012`](/docs/reference/error-codes/#nola2012) before anything runs.
+Descriptions and tags can share a comment. See [Constraints](/docs/reference/schema-derivation/#constraints) for supported keywords and formats. A tag on an incompatible type raises [`NOLA2012`](/docs/reference/error-codes/#nola2012) at compile time.
 
 ## Mixing in plain TypeScript
 
-Post-processing after the ask is ordinary TypeScript — value-import a helper from a `.ts` file with the `./x.js` specifier:
+After extraction, call ordinary TypeScript helpers to process the result. This example imports a helper with the NodeNext `./x.js` specifier:
 
 ```ts
 // src/format.ts
@@ -158,16 +158,16 @@ import { normalizePerson } from "./format.js";
 import type { Person } from "./person.tsi";
 
 export infer function extractPersonNormalized(.message: string) {
-  const person = ask `the person described in the text`<Person>;
+  const person = ask `the person described in the text`: Person;
   return normalizePerson(person);
 }
 ```
 
 ## Instruction wording tips
 
-- **Name the thing, not the action.** `the invoice data from the document` — the extractor is already a request; `extract …` adds nothing.
-- **Keep the contract in the type.** Optional fields, label sets, nesting: say it in `<T>` and the model gets it as schema, validated on the way back.
-- **Put format constraints in JSDoc**, next to the field they constrain (`/** ISO date */`), rather than in the instruction.
-- **One extractor per concept** when the parts are independent — several small, individually typed asks in one invocation share the same context and are easier to test than one giant object. Closed label sets are their own guide: [Classification](/docs/guides/classification/).
+- **Describe the result you need.** `the invoice data from the document` is enough to identify the task; the type supplies its structure.
+- **Use types for structure.** Express optional fields, label sets and nesting in the type so Nola can derive and validate them.
+- **Keep field guidance with the field.** Use JSDoc descriptions for instructions and supported tags, such as `/** @format email */`, for constraints that validation should enforce.
+- **Group related results deliberately.** Separate extractors can make independent tasks easier to follow, while one object extractor retrieves related fields in a single call. For fixed label sets, see [Classification](/docs/guides/classification/).
 
 Next: [Classification](/docs/guides/classification/)

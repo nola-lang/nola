@@ -69,7 +69,7 @@ describe("cmdBuild", () => {
   });
 });
 
-const INLINE_PROVIDER = "{ name: 'p', complete: async () => ({ text: '\"x\"' }) }";
+const INLINE_PROVIDER = "{ name: 'p', infer: async () => ({ text: '\"x\"' }) }";
 
 async function makeAppProject(): Promise<string> {
   const dir = await makeProject();

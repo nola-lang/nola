@@ -1,21 +1,23 @@
 ---
 title: Nola vs LangGraph
-description: LangGraph orchestrates graphs of LLM steps; Nola makes each typed step a language expression with TypeScript control flow. Same task in both.
+description: Compare a two-step LangGraph workflow with a Nola function, and see how durable graph orchestration can work alongside typed Nola calls.
 sidebar:
   order: 40
 ---
 
 ## What LangGraph is
 
-LangGraph (here the JavaScript package, `@langchain/langgraph`) is a low-level orchestration framework for long-running, stateful agents: you define a typed state, add nodes (plain functions, often calling a model) and edges — including conditional ones — compile the graph and invoke it. It brings durable execution, checkpointing, streaming of intermediate state and human-in-the-loop interrupts, and it sits on LangChain's model integrations (`withStructuredOutput` for typed replies).
+LangGraph is an orchestration framework for stateful workflows and agents. This page uses its JavaScript package, `@langchain/langgraph`. You define state, add functions as nodes, connect them with edges, and invoke the compiled graph.
 
-{/* LangGraph JS API (StateGraph, StateSchema, START/END, GraphNode, withStructuredOutput) verified against docs.langchain.com/oss/javascript/langgraph on 2026-08-20. */}
+Its main features include persistence, resumable execution, streaming, and human-in-the-loop interrupts. It can use LangChain's model integrations, but does not require them. See the [LangGraph overview](https://docs.langchain.com/oss/javascript/langgraph/overview).
+
+Nola focuses on typed model calls inside TypeScript programs. The two can be used together when a workflow needs both.
 
 ## The same task, side by side
 
-Classify a support message, then write a reply that depends on the category.
+Both examples classify a support message, then write a reply using the category. This short sequence illustrates how each organizes the steps; it does not exercise LangGraph's persistence or interrupt features.
 
-**LangGraph JS** — a two-node graph:
+**LangGraph JS:** two nodes share the message and results through graph state. The classifier uses LangChain's `withStructuredOutput` with a Zod schema.
 
 ```ts
 // not-checked — graph.ts
@@ -60,7 +62,7 @@ const graph = new StateGraph(State)
 const result = await graph.invoke({ message });
 ```
 
-**Nola** — the "graph" is a function call:
+**Nola:** one infer function contains the two asks.
 
 ```tsi
 // classify.tsi
@@ -70,11 +72,13 @@ export type Triage = {
 };
 
 export infer function classifyMessage(.message: string) {
-  const triage = ask `triage the customer message`<Triage>;
-  const reply = ask `a reply for a ${triage.category} case`<string>;
+  const triage = ask `triage the customer message`: Triage;
+  const reply = ask `a reply for a ${triage.category} case`: string;
   return { ...triage, reply };
 }
 ```
+
+A TypeScript caller can import the function and await its result:
 
 ```ts
 // main.ts
@@ -86,24 +90,28 @@ console.log(result.category, result.reply);
 
 ## Where LangGraph is stronger
 
-- **Durable, resumable execution.** Checkpointing, persistence and human-in-the-loop interrupts are the reason LangGraph exists; Nola has none of that — an invocation is a plain async call.
-- **Streaming intermediate state** and graph visualisation for long agent runs.
-- **Ecosystem.** LangChain's model, tool and retriever integrations plug straight in; LangGraph is established and widely used, Nola is 0.1.x.
+- **Durable execution.** Checkpoints let a workflow resume after an interruption. Nola's infer functions do not provide a persistent workflow engine.
+- **Human review.** Interrupts support pausing a workflow for input before continuing.
+- **Inspecting a running workflow.** State streaming and graph visualization help with workflows that have many steps. See the [LangGraph overview](https://docs.langchain.com/oss/javascript/langgraph/overview) for these capabilities and their setup.
 
 ## Where Nola is stronger
 
-- **The typed call layer.** `Triage` is the TypeScript type, its schema derived at compile time; no Zod mirror, no `withStructuredOutput` wrapper, and the editor sees every ask.
-- **Context composition.** Both asks share `.message` because context belongs to the function; in the graph the second node re-threads the message and the category through state by hand.
-- **Control flow is TypeScript.** Branches, loops and retries are `if`/`for`/`try` around asks, type-checked together with the rest of the code — no edges to declare for a straight line of steps.
+- **Reusing TypeScript types.** The schema for `Triage` comes from the TypeScript type. In the LangGraph example, the classifier's output type comes from its Zod schema. Both approaches provide typed results.
+- **Sharing context within a function.** Both asks see `.message`. The graph example carries the same data in state so either node can read it.
+- **Short sequences.** A pair of asks can be written directly in a Nola function. TypeScript `if`, `for`, and `try` statements handle local control flow. A graph becomes more useful when its persistence and execution features are needed.
+
+Nola derives schemas during compilation and validates model responses at runtime. Compilation cannot determine whether the model chose the correct category for a message.
 
 ## Composing them
 
-They are not exclusive: a LangGraph node is an ordinary async function, and an infer function is an ordinary async call — call Nola functions from nodes when you want durable orchestration around typed steps. Note the constraints on Nola's side: Node ≥ 22.18, server-only ([`NOLA4001`](/docs/reference/error-codes/#nola4001)).
+A LangGraph node can await an exported Nola infer function and return its result as a state update. LangGraph then manages the workflow around the Nola call.
+
+The Nola step must run on the server under a supported Node version. See [Restrictions](/docs/language/restrictions/) and [`NOLA4001`](/docs/reference/error-codes/#nola4001).
 
 ## When to pick which
 
-- Long-running agents that must pause, resume and be inspected mid-flight → LangGraph for orchestration (with or without Nola inside the nodes).
-- Typed extraction, classification and function calling inside an ordinary TypeScript program → Nola.
-- Positioning in one line: complementary for orchestration, a replacement for the typed-call layer.
+Use LangGraph when a workflow must persist, pause for input, resume, or expose its intermediate state. Nola can handle extraction and classification inside its nodes.
+
+For a short sequence within a TypeScript application, a Nola function may be enough. The deciding factor is whether you need a workflow engine around those calls.
 
 Next: [Nola vs Vercel AI SDK](/docs/compare/vercel-ai-sdk/)

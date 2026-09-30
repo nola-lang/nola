@@ -36,7 +36,7 @@ interface Person {
   job: string;
 }
 
-const person = ask `the described person`<Person>;
+const person = ask `the described person`: Person;
 
 console.log(person);
 // → { name: "Ada Lovelace", age: 36, job: "mathematician" }
@@ -49,8 +49,9 @@ Three things are happening here, and they are most of the language:
   at run time, and a drifting reply gets one correction retry before the ask
   fails loudly. No Zod, no schema object, no `as Person`.
 - **`ask` resolves an intent the way `await` resolves a promise.**
-  `` ask `instruction`<T> `` is an *extractor* — ask the model for a `T`. It is
-  legal at the top level of a `.tsi` file, so a script is a program.
+  `` ask `instruction`: T `` is an *extractor* — ask the model for a `T`
+  (`` ask `instruction`<T> `` means the same). It is legal at the top level of
+  a `.tsi` file, so a script is a program.
 - **Context is part of the language, not a string you assemble.** The template
   literal on the first line is the instruction the model reads before every
   `ask` in the file. Inside a function, context is a *parameter*.
@@ -76,7 +77,7 @@ async function loadUser(id: string): Promise<User> {
 import type { Intent } from "@nola-lang/runtime";
 
 infer function extractUser(.bio: string): Intent<User> {
-  const user = ask `the user described`<User>;
+  const user = ask `the user described`: User;
   return user;
 }
 ```
@@ -91,7 +92,7 @@ imports the `.tsi` file directly and awaits the result:
 export interface Person { name: string; age: number; employer: string }
 
 export infer function extractPerson(.bio: string) {
-  return ask `extract the person`<Person>;
+  return ask `extract the person`: Person;
 }
 ```
 
@@ -106,7 +107,7 @@ const person = await extractPerson("Alice Smith, 32, is a staff engineer at Acme
 The dot is the whole API. `.bio` is a **contextual parameter**: its value is
 composed into the prompt of every `ask` in the call. A plain parameter stays an
 ordinary JavaScript argument — its name and type reach the model, its value
-never does. *One dot in, two dots out.*
+never does. *One dot in, `ask` out.*
 
 ## There isn't much to learn
 
@@ -119,8 +120,8 @@ types all derive; JSDoc comments become schema descriptions and JSDoc tags
 
 ```ts
 export infer function triage(.ticket: string) {
-  const severity = ask `the severity`<"low" | "medium" | "high">;
-  const orderIds = ask `every order id mentioned`<string[]>;
+  const severity = ask `the severity`: "low" | "medium" | "high";
+  const orderIds = ask `every order id mentioned`: string[];
   return { severity, orderIds };
 }
 ```
@@ -141,7 +142,7 @@ interface Triage {
   urgent: Prob;
 }
 
-const triage = ask `triage the support ticket`<Triage>;
+const triage = ask `triage the support ticket`: Triage;
 // → { team: { choice: "billing", probabilities: { billing: 0.94, support: 0.06 }, confidence: 0.91 },
 //     mood: { score: 1.72, levels: ["Calm", "Civil", "Angry"], … }, urgent: 0.97 }
 ```
@@ -159,8 +160,8 @@ function createTicket(title: string, priority: number) {
 }
 
 const id = ask createTicket(
-  ..`a short ticket title`<string>,
-  ..`priority 1-5, where 1 is most urgent`<number>,
+  `a short ticket title`: string,
+  `priority 1-5, where 1 is most urgent`: number,
 );
 // created [p1] Blank page and double charge at checkout
 ```
@@ -174,8 +175,8 @@ lives in config, not in your code.
 
 ```ts
 export infer function summarize(.text: string) {
-  const draft = ask with fast `a rough summary`<string>;
-  return ask with careful `a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`: string;
+  return ask with careful `a polished summary of: ${draft}`: string;
 }
 ```
 
@@ -225,10 +226,13 @@ npm create nola
 The scaffolder asks for a name and a template. The first menu is one template
 per feature: `feature-extraction` (the default — one `.tsi` file whose top-level
 `ask` extracts typed data), `function-calling` (the same shape, calling an async
-function from a `.ts` file next to it), `typescript-interop` (an `infer function`
-imported and awaited from plain TypeScript), `triage-ticket` (ticket triage on
-typesafe.ai's non-chat model) and `empty`, plus a *More examples…* row that opens
-the curated [examples](examples/).
+function from a `.ts` file next to it), `agent-loop` (a top-level `while` around
+an ask, with a context statement read again on every pass), `typescript-interop`
+(an `infer function` imported and awaited from plain TypeScript), `triage-ticket`
+(ticket triage on typesafe.ai's non-chat model) and `empty`, plus a *More
+examples…* row that opens the rest. Every template but `empty` is one of the
+curated [examples](examples/), copied from this repository at the matching
+release tag.
 
 Then it asks for an inference provider: **nola** (free hosted runs, no API key
 required), **OpenAI**, **Anthropic**, **Gemini**, **typesafe.ai**, or *Skip for
@@ -364,7 +368,7 @@ read them on the site rather than here, but edit them there.
 | | |
 |---|---|
 | **Start** | [Quick start](https://nola.sh/docs/start/quick-start/) · [Why Nola](https://nola.sh/docs/start/why-nola/) · [Project anatomy](https://nola.sh/docs/start/project-anatomy/) · [Add to an existing project](https://nola.sh/docs/start/add-to-existing-project/) · [Editor setup](https://nola.sh/docs/start/editor-setup/) |
-| **Language** | [Mental model](https://nola.sh/docs/language/mental-model/) · [infer functions](https://nola.sh/docs/language/infer-functions/) · [Contextual parameters](https://nola.sh/docs/language/contextual-parameters/) · [Extractors](https://nola.sh/docs/language/extractors/) · [ask](https://nola.sh/docs/language/ask/) · [Call intents](https://nola.sh/docs/language/call-intents/) · [Decision types](https://nola.sh/docs/language/decision-types/) · [Types as values](https://nola.sh/docs/language/types-as-values/) · [Intent](https://nola.sh/docs/language/intent/) · [Intent methods](https://nola.sh/docs/language/intent-methods/) · [Prompt templates](https://nola.sh/docs/language/prompt-templates/) · [TypeScript interop](https://nola.sh/docs/language/typescript-interop/) · [Restrictions](https://nola.sh/docs/language/restrictions/) |
+| **Language** | [Mental model](https://nola.sh/docs/language/mental-model/) · [infer functions](https://nola.sh/docs/language/infer-functions/) · [Contextual parameters](https://nola.sh/docs/language/contextual-parameters/) · [Extractors](https://nola.sh/docs/language/extractors/) · [ask](https://nola.sh/docs/language/ask/) · [Call intents](https://nola.sh/docs/language/call-intents/) · [Decision types](https://nola.sh/docs/language/decision-types/) · [Types as values](https://nola.sh/docs/language/types-as-values/) · [Intent](https://nola.sh/docs/language/intent/) · [Intent methods](https://nola.sh/docs/language/intent-methods/) · [TypeScript interop](https://nola.sh/docs/language/typescript-interop/) · [Restrictions](https://nola.sh/docs/language/restrictions/) |
 | **Configuration** | [nola.config.ts](https://nola.sh/docs/config/nola-config/) · [Providers](https://nola.sh/docs/config/providers/) · [Resilience](https://nola.sh/docs/config/resilience/) · [Ask options](https://nola.sh/docs/config/ask-options/) · [Observability](https://nola.sh/docs/config/observability/) · [Record and replay](https://nola.sh/docs/config/record-and-replay/) · [Environments and secrets](https://nola.sh/docs/config/environments-and-secrets/) |
 | **Guides** | [Typed extraction](https://nola.sh/docs/guides/typed-extraction/) · [Classification](https://nola.sh/docs/guides/classification/) · [Function calling](https://nola.sh/docs/guides/function-calling/) · [Types without a model](https://nola.sh/docs/guides/types-without-a-model/) · [Error handling](https://nola.sh/docs/guides/error-handling/) · [Testing without a network](https://nola.sh/docs/guides/testing/) · [Deploying](https://nola.sh/docs/guides/deploying/) |
 | **Tooling** | [The nola CLI](https://nola.sh/docs/tooling/cli/) · [The Node loader](https://nola.sh/docs/tooling/node-loader/) · [VS Code extension](https://nola.sh/docs/tooling/vscode/) |
@@ -439,7 +443,7 @@ All packages are versioned in lockstep.
 
 [`examples/`](examples/) holds standalone projects covering the canonical
 LLM-programming tasks — typed extraction, classification over closed label sets,
-multi-step reasoning, contextual parameters, prompt templates, JSDoc constraints,
+multi-step reasoning, contextual parameters, JSDoc constraints,
 cross-file and recursive types, call intents, and TS control flow orchestrating
 nola functions. All but one run on the mock provider, so no API key is needed.
 Several are also scaffoldable: `npm create nola my-app -- --template extract-resume`.

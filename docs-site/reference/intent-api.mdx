@@ -1,11 +1,11 @@
 ---
 title: Intent API
-description: Askable<T> and Intent<T> method signatures, which tier has which, ModelRef and ProviderParams, and isIntent — the typed surface behind ask and await.
+description: Reference the methods on Askable<T> and Intent<T>, the ModelRef and ProviderParams types, and the isIntent runtime guard.
 sidebar:
   order: 30
 ---
 
-Two interfaces describe every intent. Both are exported as types from `@nola-lang/runtime`. For the concept — what an intent is and how it relates to a promise — see [Intents](/docs/language/intent/); this page is the typed surface.
+`Askable<T>` and `Intent<T>` describe the two kinds of intent. Both types are exported from `@nola-lang/runtime`. This page lists their methods; see [Intents](/docs/language/intent/) for how they work.
 
 ```ts
 // types.ts
@@ -17,29 +17,31 @@ export type Result = Intent<{ name: string }>;
 
 ## Askable&lt;T&gt;
 
-The narrow tier: an intent resolvable ONLY through `ask` — what a raw `` ..`…`<T> `` extractor or a call intent is. It is deliberately **not thenable**: a bare `await` on one throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time, so the type does not offer `then`. `T` is phantom — it appears only in the fluent return types, which keeps editor completion to exactly these members.
+Raw extractors (`` ..`…`: T ``) and call intents have type `Askable<T>`. Resolve them with `ask`. A bare `await` throws [`NOLA3010`](/docs/reference/error-codes/#nola3010), so the interface does not expose `then`.
+
+`T` describes the result. It appears in the method return types without adding a property to the intent.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `withRetry(retries: number)` | `Askable<T>` | extra whole-ask attempts, flat, no backoff — unrelated to the provider-level `withRetry` combinator |
 | `withModel(model: ModelRef)` | `Askable<T>` | route this ask through a configured name or a provider object |
-| `withParams(params: ProviderParams)` | `Askable<T>` | wire-tuning knobs, shallow-merged over any params already on the intent |
-| `withTimeout(timeout: number)` | `Askable<T>` | bounds this intent's provider round trips, in ms, next to the invocation's own clock — whichever fires first; `0` sets none |
+| `withParams(params: ProviderParams)` | `Askable<T>` | request parameters, merged with those already on the intent |
+| `withTimeout(timeout: number)` | `Askable<T>` | sets a timeout in ms for this intent's provider calls; the invocation's timeout still applies; `0` adds no timeout |
 
 ## Intent&lt;T&gt; extends Askable&lt;T&gt;, PromiseLike&lt;T&gt;
 
-What calling an infer function returns: lazy, thenable, and the only tier that opens a frame — so the only one with `detached()`.
+An infer function returns a lazy `Intent<T>`. It can be resolved with `ask` or `await` and opens an inference frame when it starts. Its `detached()` method controls whether that frame inherits the caller's context.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `withRetry(retries: number)` | `Intent<T>` | as above |
 | `withModel(model: ModelRef)` | `Intent<T>` | as above |
 | `withParams(params: ProviderParams)` | `Intent<T>` | as above |
-| `withTimeout(timeout: number)` | `Intent<T>` | the invocation's timeout in ms when this intent roots it (`0` disables); a bound of its own when asked from a body |
+| `withTimeout(timeout: number)` | `Intent<T>` | sets the invocation timeout in ms for a root intent (`0` disables); adds its own timeout when asked inside another invocation |
 | `detached()` | `Intent<T>` | resolve without inheriting the caller frame's context |
 | `then(…)` | — | `PromiseLike<T>`: `await` it from plain TypeScript |
 
-Every method **clones** — the original stays unstarted — and an intent resolves at most once. `Intent<T>` is `PromiseLike<T>`, not a `Promise`: annotate infer functions with `Intent<T>`, never `Promise<T>` (`TS2739`).
+The configuration methods and `detached()` return a new intent without starting the original. Each intent resolves at most once. For an explicit infer-function return type, use `Intent<T>`. It implements `PromiseLike<T>`; annotating it as `Promise<T>` produces `TS2739`.
 
 ## Types
 
@@ -55,7 +57,7 @@ interface ProviderParams {
 }
 ```
 
-Merge rule for `ProviderParams` (used by `.withParams()` chaining and by frame-chain resolution): patch fields win per field, and `providerOptions` merges per key rather than being replaced wholesale. Params are part of the ask fingerprint.
+When you chain `.withParams()`, later fields override earlier ones and `providerOptions` merges by key. Nested frames follow the same rule, with the nearest value taking precedence. Params are part of the ask fingerprint.
 
 ## isIntent
 

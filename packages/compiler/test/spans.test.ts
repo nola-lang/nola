@@ -31,11 +31,34 @@ const FIXTURES: Record<string, string> = {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
     "infer function go(input: string) {\n  return ask ..`extract ${input} now`<string>;\n}\n",
   askWith: "infer function go() {\n  return ask with fast ..`hi`;\n}\n",
-  marker: "infer function go`do the thing`(input: string) {\n  return ask ..`p`;\n}\n",
+  bodyProse: "infer function go(input: string) {\n  `do the thing`\n  return ask ..`p`;\n}\n",
+  // a context statement with a hole: the item's opener and closer around the verbatim literal, the hole as written
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+  bodyHoles: "const n = 1;\ninfer function go(input: string) {\n  `${n}\nBe terse.`\n  return ask ..`p`;\n}\n",
+  // inserts that share one offset (the wrapper opener and the item's; the item's closer and the wrapper's)
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+  tightHoles: "const n = 1;\ninfer function go() {`${n} x`}\n",
+  // a module item: a hoisted function around the verbatim literal
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
+  moduleHoles: "`at most ${n} words`\nconst n = 3;\nexport const v = ask ..`v`<string>;\n",
+  // context statement seams (spec 2026-09-29 §3.3): values verbatim, a comment dropped, a parenthesized value, text → text
+  contextSeams:
+    "infer function go(user: string) {\n  `Analyze` /* who */ user\n  `now` (user.length) `chars`\n  `cost $``{x}`;\n  return ask ..`v`<string>;\n}\n",
+  // a call intent as the last value, glued to the closing brace: its `)` rewrite, then the closers, then the wrapper's
+  contextCallIntentLast: "declare function foo(a: string): void;\ninfer function go() {`x` foo(..`a`<string>)}\n",
+  // an item glued to an exported type: the type's value insert and the item's opener share one offset
+  contextGluedType: "export type T = { a: string };`text`\nexport const v = ask ..`v`<string>;\n",
+  tightProse: "infer function go() {`x`;}\n",
+  adjacentAsk: "declare function log(a: string): void;\ninfer function go() {\n  `be terse`;ask log(..`x`<string>);\n}\n",
+  emptyBody: "infer function go() {}\n",
   callIntent:
     'declare function tool(a: string): Promise<number>;\ninfer function go() {\n  return ask tool``("x");\n}\n',
   sigilLessCallIntent:
     'declare function tool(a: string, b: number): Promise<number>;\ninfer function go() {\n  return ask tool(..`x`<string>, 2);\n}\n',
+  // implied sigil in a slot (spec 2026-09-30): the prefix insert coalesces with the args-head overwrite
+  // for the first argument, and lands inside verbatim text for a later or nested one
+  impliedSlot:
+    "declare function tool(a: string, o: { n: number }): Promise<number>;\ninfer function go() {\n  return ask tool(`x`: string, { n: `count`<number> });\n}\n",
   // implied sigil: the extractor prefix is an insert at the template start, coalesced with `ask `
   impliedExtract: "infer function go() {\n  return ask `get a name`<string>;\n}\n",
   impliedExtractModule: "const n = ask with fast `hi`;\n",

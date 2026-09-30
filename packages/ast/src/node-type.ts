@@ -1,5 +1,5 @@
 /** Node types Nola introduces (produced by the babel-parser nola plugin). */
-export type NolaNodeType = "NolaExtractExpression" | "NolaAskExpression";
+export type NolaNodeType = "NolaExtractExpression" | "NolaAskExpression" | "NolaContextStatement";
 
 /**
  * Concrete Babel AST node type names (from `@babel/types` VISITOR_KEYS), plus comment

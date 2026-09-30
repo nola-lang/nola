@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
-import type { CompileResult } from "@nola-lang/compiler";
+import { type CompileResult, isGeneratedNameDiagnostic } from "@nola-lang/compiler";
 import { findProjectRoot, loadCompilerOptions } from "@nola-lang/node-loader";
 import ts from "typescript";
 import { createProjectDeriver } from "./derive.js";
@@ -60,6 +60,9 @@ export async function cmdCheck(dirArg = "."): Promise<{ errors: string[]; warnin
         errors.push(`${d.file.fileName}:${pos.line + 1}:${pos.character + 1} TS${d.code}: ${message}`);
         continue;
       }
+      // An unused generated name (a context item no ask sees, under
+      // noUnusedLocals): the author cannot act on it.
+      if (isGeneratedNameDiagnostic(d.code, message)) continue;
       const generated = d.file.getLineAndCharacterOfPosition(d.start);
       const tracer = new TraceMap(maps.get(original) as never);
       const pos = originalPositionFor(tracer, { line: generated.line + 1, column: generated.character });

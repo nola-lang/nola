@@ -17,7 +17,7 @@ describe("NOLA3018: a decision ask needs a decision model", () => {
     const seen: AskEndEvent[] = [];
     const chat: LanguageModel = {
       name: "chatty",
-      complete: async () => {
+      infer: async () => {
         calls++;
         return { text: JSON.stringify(answer) };
       },
@@ -47,7 +47,7 @@ describe("NOLA3018: a decision ask needs a decision model", () => {
   it("a branded chat model serves it", async () => {
     const branded: LanguageModel & { [DECISION_MODEL]: true } = {
       name: "decider",
-      complete: async () => ({ text: JSON.stringify(answer) }),
+      infer: async () => ({ text: JSON.stringify(answer) }),
       [DECISION_MODEL]: true,
     };
     nolaRuntime.configure({ model: { default: branded } });
@@ -70,9 +70,9 @@ describe("NOLA3018: a decision ask needs a decision model", () => {
     await expect(
       askViaInference({ frame: openTestFrame(), prompt: "triage", schema: triage, loc: "1:1" }),
     ).resolves.toEqual(answer);
-    expect(received?.model.intent).toBe("extract");
-    expect(received?.model.input.instruction).toBe("triage");
-    expect(received?.model.output).toEqual({ syntax: "json", schema: triage });
+    expect(received?.intent.intent).toBe("extract");
+    expect(received?.intent.input.instruction).toBe("triage");
+    expect(received?.intent.output).toEqual({ syntax: "json", schema: triage });
     expect("profile" in (received ?? {})).toBe(false);
     expect("project" in (received ?? {})).toBe(false);
   });

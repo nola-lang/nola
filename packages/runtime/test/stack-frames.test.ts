@@ -1,4 +1,4 @@
-import type { ClassicPrompt } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, nolaRuntime } from "@nola-lang/runtime";
@@ -8,7 +8,7 @@ afterEach(() => nolaRuntime.reset());
 
 /** Simulates lowered infer functions a() and b(), b asked inside a. */
 function lowered() {
-  const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+  const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
   const b = () =>
     __nola.intents.Intent(
       async (__ctx: Frame) => {
@@ -18,7 +18,7 @@ function lowered() {
         );
         return { inner };
       },
-      fileCtx.func({ fn: "b", instruction: "" }),
+      fileCtx.func({ fn: "b" }),
     );
   const a = () =>
     __nola.intents.Intent(
@@ -30,7 +30,7 @@ function lowered() {
         const fromB = await __nola.ask(b(), __ctx);
         return { first, fromB };
       },
-      fileCtx.func({ fn: "a", instruction: "" }),
+      fileCtx.func({ fn: "a" }),
     );
   return { a, b };
 }
@@ -42,8 +42,8 @@ describe("stack-frame semantics", () => {
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
+          infer: async (req) => {
+            payloads.push(renderPrompt(req.intent).messages[0]?.content ?? "");
             return { text: JSON.stringify(`v${payloads.length}`) };
           },
         },
@@ -55,15 +55,15 @@ describe("stack-frame semantics", () => {
 
     // b's lineage descends from a's node: caller context first, callee marked as nested.
     const bPayload = payloads[1] ?? "";
-    expect(bPayload).toContain("CONTEXT — inside a(), x.tsi");
-    expect(bPayload).toContain("CONTEXT — inside b(), x.tsi, called from the context above");
-    expect(bPayload.indexOf("inside a()")).toBeLessThan(bPayload.indexOf("inside b()"));
+    expect(bPayload).toContain('<context function="a"/>');
+    expect(bPayload).toContain('<context function="b"/>');
+    expect(bPayload.indexOf('function="a"')).toBeLessThan(bPayload.indexOf('function="b"'));
     // TODO(history): assert b's prompt carries a's "first" extraction once history composition lands.
   });
 
   it("caller history gets one collapsed record for the callee, not the callee's internals", async () => {
     nolaRuntime.configure({ model: { default: mockProvider(["v1"]) } });
-    const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+    const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
     let callerHistory: unknown;
     const b = () =>
       __nola.intents.Intent(
@@ -73,7 +73,7 @@ describe("stack-frame semantics", () => {
             __ctx,
           );
         },
-        fileCtx.func({ fn: "b", instruction: "find it" }),
+        fileCtx.func({ fn: "b" }),
       );
     const a = () =>
       __nola.intents.Intent(
@@ -82,10 +82,10 @@ describe("stack-frame semantics", () => {
           callerHistory = [...__ctx.history];
           return null;
         },
-        fileCtx.func({ fn: "a", instruction: "" }),
+        fileCtx.func({ fn: "a" }),
       );
     await a();
-    expect(callerHistory).toEqual([{ prompt: "b: find it", value: "v1" }]);
+    expect(callerHistory).toEqual([{ prompt: "b", value: "v1" }]);
   });
 
   it("callee ask spans nest one frame deeper than the caller's own ask", async () => {
@@ -113,14 +113,14 @@ describe("stack-frame semantics", () => {
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
+          infer: async (req) => {
+            payloads.push(renderPrompt(req.intent).messages[0]?.content ?? "");
             return { text: JSON.stringify(`v${payloads.length}`) };
           },
         },
       },
     });
-    const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+    const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
     const b = () =>
       __nola.intents.Intent(
         async (__ctx: Frame) => {
@@ -129,7 +129,7 @@ describe("stack-frame semantics", () => {
             __ctx,
           );
         },
-        fileCtx.func({ fn: "b", instruction: "" }),
+        fileCtx.func({ fn: "b" }),
       );
     const a = () =>
       __nola.intents.Intent(
@@ -140,11 +140,11 @@ describe("stack-frame semantics", () => {
           );
           return await __nola.ask(b().detached(), __ctx);
         },
-        fileCtx.func({ fn: "a", instruction: "" }),
+        fileCtx.func({ fn: "a" }),
       );
     await a();
     const bPayload = payloads[1] ?? "";
-    expect(bPayload).toContain("CONTEXT — inside b(), x.tsi\n"); // rooted at file, no nesting marker
-    expect(bPayload).not.toContain("inside a()"); // no inherited caller context
+    expect(bPayload).toContain('<context function="b"/>'); // rooted at file, no caller block
+    expect(bPayload).not.toContain('function="a"'); // no inherited caller context
   });
 });

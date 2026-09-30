@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { scaffold } from "../src/index.js";
-import { templateNames } from "../src/registry.js";
-import { withRecommendedGitignore } from "../src/scaffold.js";
+import { entryFile, templateNames } from "../src/registry.js";
+import { nextStepsComment, withRecommendedGitignore } from "../src/scaffold.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-scaffold-"));
 
@@ -54,7 +55,7 @@ describe("scaffold", () => {
     expect(main).not.toContain("__NEXT_STEPS__");
     expect(main).toContain('import { createTicket } from "./tickets.js";');
     expect(main).toContain("const .message =");
-    expect(main).toMatch(/^const \w+ = ask createTicket\(\.\./m);
+    expect(main).toMatch(/^const \w+ = ask createTicket\(\s*`/m); // the slot's `..` is implied (spec 2026-09-30); the call spans lines
     expect(main).not.toContain("infer function");
     const tickets = await readFile(join(root, "src/tickets.ts"), "utf8");
     expect(tickets).toContain("export async function createTicket(");
@@ -80,7 +81,7 @@ describe("scaffold", () => {
     expect(existsSync(join(root, "_gitignore"))).toBe(false);
   });
 
-  it("substitutes the project name and lockstep versions", async () => {
+  it("sets the project name and the lockstep versions in package.json; the README stays the example's own", async () => {
     const root = join(await tmp(), "my-app");
     await scaffold(root);
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -89,8 +90,29 @@ describe("scaffold", () => {
     expect(pkg.dependencies["@nola-lang/runtime"]).toBe(`^${own.version}`);
     expect(pkg.dependencies["@nola-lang/providers"]).toBe(`^${own.version}`);
     expect(pkg.devDependencies["nola-lang"]).toBe(`^${own.version}`);
+    expect(pkg.engines).toEqual({ node: ">=22.18" });
     const readme = await readFile(join(root, "README.md"), "utf8");
-    expect(readme).toContain("# my-app");
+    expect(readme).toMatch(/^# feature-extraction/);
+    expect(readme).not.toContain("__");
+  });
+
+  it("every template but empty IS a curated example: its files are examples/<name>'s, plus the scaffold's additions", async () => {
+    const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
+    for (const template of templateNames()) {
+      const root = join(await tmp(), template);
+      const { files } = await scaffold(root, { template });
+      const source = template === "empty" ? fileURLToPath(new URL("../templates/empty/", import.meta.url)) : join(examples, template);
+      // the entry file is the committed one behind the next-steps comment; every other source file is byte-identical
+      const entry = entryFile(template);
+      expect(await readFile(join(root, entry), "utf8"), `${template}/${entry}`).toBe(
+        `${nextStepsComment("none", template)}\n\n${await readFile(join(source, entry), "utf8")}`,
+      );
+      for (const rel of files) {
+        if (rel === entry || rel === "package.json" || rel === ".gitignore" || rel === ".env.example") continue;
+        expect(await readFile(join(root, rel), "utf8"), `${template}/${rel}`).toBe(await readFile(join(source, rel), "utf8"));
+      }
+      expect(existsSync(join(source, ".gitignore")), template).toBe(false);
+    }
   });
 
   it("renders the VS Code next steps into the entry file when the editor was chosen", async () => {
@@ -98,13 +120,13 @@ describe("scaffold", () => {
       "feature-extraction": "src/main.tsi",
       "function-calling": "src/main.tsi",
       "typescript-interop": "src/main.ts",
-      empty: "src/main.ts",
+      empty: "src/main.tsi",
     };
     const breakpointIn = {
       "feature-extraction": "the `ask` line below",
       "function-calling": "the `ask` line below",
       "typescript-interop": "src/person.tsi",
-      empty: "your .tsi file",
+      empty: "your first `ask` in this file",
     };
     for (const [template, entry] of Object.entries(entries)) {
       const root = join(await tmp(), template);
@@ -147,7 +169,7 @@ describe("scaffold", () => {
   it("scaffolds the empty template", async () => {
     const root = join(await tmp(), "empty-app");
     await scaffold(root, { template: "empty" });
-    for (const f of ["package.json", "tsconfig.json", "nola.config.ts", ".gitignore", "src/main.ts"]) {
+    for (const f of ["package.json", "tsconfig.json", "nola.config.ts", ".gitignore", "src/main.tsi"]) {
       expect(existsSync(join(root, f)), f).toBe(true);
     }
     expect(existsSync(join(root, "nola.replay.jsonl"))).toBe(false);

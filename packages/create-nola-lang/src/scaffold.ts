@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { collectExampleFromDisk, devExamplesDir, rewriteExamplePackageJson } from "./examples.js";
 import { fetchExampleFromGitHub } from "./github.js";
 import { type ProviderId, providerById } from "./providers.js";
-import { templateByName, templateNames } from "./registry.js";
+import { entryFile, type TemplateDef, templateByName, templateNames } from "./registry.js";
 
 export interface ScaffoldResult {
   root: string;
@@ -22,20 +22,19 @@ export interface ScaffoldOptions {
   /**
    * The inference provider chosen in the wizard; default "none" (the
    * template's own config). Any live provider replaces `nola.config.ts` with
-   * that provider's config, skips the offline templates' replay ledger, and renders
-   * the matching README notes.
+   * that provider's config and drops the offline templates' replay ledger.
    */
   provider?: ProviderId;
   /**
    * The editor chosen in the wizard; default "none". Decides the next-steps
-   * comment rendered at the top of the template's src/main.ts: with VS Code
-   * it names F5, breakpoints and the recommended extension (all of which the
-   * .vscode files the flow writes make true); without one it stays
-   * editor-neutral.
+   * comment that opens the template's entry file: with VS Code it names F5,
+   * breakpoints and the recommended extension (all of which the .vscode
+   * files the flow writes make true); without one it stays editor-neutral.
    */
   ide?: "vscode" | "none";
 }
 
+/** This package's own templates: `empty` (the one builtin), `_providers/` and `_gitignore`. */
 const TEMPLATES_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
 
 /** The config a live provider choice writes over the template's own (`templates/_providers/<id>.config.ts`). */
@@ -62,39 +61,38 @@ export function envExample(envVar: string): string {
   return `# Copy to .env and fill in — \`nola run\` applies .env before evaluating nola.config.ts.\n${envVar}=\n`;
 }
 
-/** _gitignore ships underscored (npm pack strips nested .gitignore files). */
-const RENAMES: Record<string, string> = { _gitignore: ".gitignore" };
-
-/** The ONE recommended .gitignore — every scaffold gets it; no template keeps a copy of its own. */
+/** The ONE recommended .gitignore — every scaffold gets it; no template keeps a copy of its own (_gitignore ships underscored: npm pack strips nested .gitignore files). */
 const GITIGNORE_URL = new URL("../templates/_gitignore", import.meta.url);
 
 /**
- * Add the recommended `.gitignore` to an example's files. Examples are copied
- * verbatim from `examples/`, where the monorepo's root ignore file covers them,
- * so they carry none — one an example does carry wins.
+ * Add the recommended `.gitignore` to a template's files. Templates are
+ * copied as committed — examples from `examples/`, where the monorepo's root
+ * ignore file covers them — so they carry none; one a template does carry wins.
  */
 export async function withRecommendedGitignore(files: Map<string, string>): Promise<Map<string, string>> {
   if (!files.has(".gitignore")) files.set(".gitignore", await readFile(GITIGNORE_URL, "utf8"));
   return files;
 }
 
-/** Files whose __NAME__/__VERSION__, README-note and __NEXT_STEPS__ placeholders are substituted. */
-const SUBSTITUTED = new Set(["package.json", "README.md", "main.ts", "main.tsi"]);
-
 /**
- * The comment that opens the entry file (src/main.ts, or the `.tsi` entry
- * of a one-file template) — the file the scaffold lands the user on (VS Code opens it
- * as the active editor), so it carries the first three things to do. The VS
- * Code variant only ships with the editor step's .vscode files, which are
- * what make F5 and the extension prompt real.
+ * The comment that opens the entry file (the `.tsi` entry of a one-file
+ * template and of `empty`, else the plain-TS src/main.ts) — the file the
+ * scaffold lands the user on (VS Code opens it as the active editor), so it
+ * carries the first three things to do. The VS Code variant only ships with
+ * the editor step's .vscode files, which are what make F5 and the extension
+ * prompt real.
  */
 export function nextStepsComment(ide: "vscode" | "none", template: string): string {
   if (ide === "vscode") {
-    const breakpointIn = templateByName(template)?.entry
-      ? "on the `ask` line below"
-      : template === "typescript-interop"
-        ? "in src/person.tsi"
-        : "in your .tsi file";
+    // `empty`'s stub has no ask yet — the breakpoint goes on the one the user writes.
+    const breakpointIn =
+      template === "empty"
+        ? "on your first `ask` in this file"
+        : templateByName(template)?.entry
+          ? "on the `ask` line below"
+          : template === "typescript-interop"
+            ? "in src/person.tsi"
+            : "in your .tsi file";
     return [
       "// Next steps in VS Code:",
       "//   1. Press F5 to run this file (.vscode/launch.json is already set up).",
@@ -111,44 +109,7 @@ export function nextStepsComment(ide: "vscode" | "none", template: string): stri
 }
 
 /** Template files that only make sense for the offline (replay) configuration. */
-const OFFLINE_ONLY = new Set(["nola.replay.jsonl"]);
-
-const README_NOTES = {
-  offline: {
-    START_NOTE: "works offline, no API key needed",
-    PROVIDER_NOTE:
-      "This project runs offline: `nola.config.ts` replays answers from the committed\n" +
-      "`nola.replay.jsonl` ledger. The ledger is keyed by the exact prompt, so once\n" +
-      "you edit the `.tsi` file or add your own asks, switch the config to a real\n" +
-      "model (see the comment in `nola.config.ts`): `model: \"nola\"` with a key from\n" +
-      "`npx nola-lang key` (25 free runs), or your own provider and its key.",
-  },
-  nola: {
-    START_NOTE: "uses your 25 free Nola runs (key in .env)",
-    PROVIDER_NOTE:
-      "`nola.config.ts` sets `model: \"nola\"` — platform-served inference with the trial key the\n" +
-      "scaffold wrote to `.env` (git-ignored). Out of runs? `npx nola-lang account` opens\n" +
-      "your Nola account, where prepaid balance is added, or bring your\n" +
-      "own model (see the comment in `nola.config.ts`).",
-  },
-} as const;
-
-type ReadmeNotes = { START_NOTE: string; PROVIDER_NOTE: string };
-
-/** The README notes for a chosen provider: offline, the Nola trial, or a vendor and the env var its factory reads. */
-function readmeNotes(provider: ProviderId): ReadmeNotes {
-  if (provider === "none") return README_NOTES.offline;
-  if (provider === "nola") return README_NOTES.nola;
-  const def = providerById(provider);
-  if (!def?.envVar || !def.model) throw new Error(`provider "${provider}" has no vendor config`);
-  return {
-    START_NOTE: `set ${def.envVar} in .env first`,
-    PROVIDER_NOTE:
-      `\`nola.config.ts\` sets \`model: ${def.model}\` — ${def.label} serves inference with the key it reads\n` +
-      `from \`${def.envVar}\`. Copy \`.env.example\` to \`.env\` (git-ignored; \`nola run\` applies it) and fill in\n` +
-      `\`${def.envVar}\` before the first \`npm start\`, or switch models in \`nola.config.ts\`.`,
-  };
-}
+const OFFLINE_ONLY = ["nola.replay.jsonl"];
 
 export async function ownVersion(): Promise<string> {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
@@ -165,8 +126,25 @@ async function prepareTarget(absRoot: string, force: boolean): Promise<void> {
 }
 
 /**
+ * A template's files as committed: `empty` from this package's templates/
+ * dir, every other template from examples/ — the dev checkout's on disk,
+ * else GitHub at the lockstep tag. Everything is buffered before the caller
+ * touches the target, so a failed fetch scaffolds nothing.
+ */
+async function collectTemplate(def: TemplateDef, version: string): Promise<Map<string, string>> {
+  if (def.source === "builtin") return collectExampleFromDisk(TEMPLATES_DIR, def.name);
+  const dev = await devExamplesDir();
+  return dev ? collectExampleFromDisk(dev, def.name) : fetchExampleFromGitHub(def.name, version);
+}
+
+/**
  * Lay a template down into `targetDir`. One implementation serves both entry
- * points: the `create-nola-lang` bin (`npm create nola-lang`) and `nola init`.
+ * points — the `create-nola-lang` bin (`npm create nola-lang`) and `nola init`
+ * — and both sources: the files are collected as committed, then the scaffold
+ * adds what a project needs on top — the chosen provider's config (dropping
+ * the replay ledger), the project name and the lockstep ranges in
+ * package.json, the recommended .gitignore, the vendor key's .env.example,
+ * and the next-steps comment at the top of the entry file.
  */
 export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): Promise<ScaffoldResult> {
   const root = targetDir;
@@ -174,71 +152,31 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
   const template = opts.template ?? "feature-extraction";
   const def = templateByName(template);
   if (!def) throw new Error(`unknown template "${template}" (valid: ${templateNames().join(", ")})`);
+  const version = await ownVersion();
+  const files = await collectTemplate(def, version);
   await prepareTarget(absRoot, opts.force ?? false);
   const name = opts.name ?? basename(absRoot);
-  const version = await ownVersion();
-
-  const envVar = vendorEnvVar(template, opts.provider ?? "none");
-
-  if (def.source === "example") {
-    const dev = await devExamplesDir();
-    const exampleFiles = await withRecommendedGitignore(
-      dev ? await collectExampleFromDisk(dev, template) : await fetchExampleFromGitHub(template, version),
-    );
-    const manifest = exampleFiles.get("package.json");
-    if (manifest) exampleFiles.set("package.json", rewriteExamplePackageJson(manifest, { name, version }));
-    if (envVar !== undefined && !exampleFiles.has(".env.example")) exampleFiles.set(".env.example", envExample(envVar));
-    for (const [relPath, content] of exampleFiles) {
-      const target = join(absRoot, relPath);
-      await mkdir(join(target, ".."), { recursive: true });
-      await writeFile(target, content);
-    }
-    return { root, files: [...exampleFiles.keys()].sort() };
-  }
-
-  const templateRoot = join(TEMPLATES_DIR, template);
-  const versionRange = `^${version}`;
   const provider = opts.provider ?? "none";
-  const notes = readmeNotes(provider);
-  const nextSteps = nextStepsComment(opts.ide ?? "none", template);
-  const files: string[] = [];
-  const copyDir = async (fromDir: string, relDir: string): Promise<void> => {
-    await mkdir(join(absRoot, relDir), { recursive: true });
-    for (const entry of await readdir(join(templateRoot, fromDir), { withFileTypes: true })) {
-      const fromRel = join(fromDir, entry.name);
-      if (entry.isDirectory()) {
-        await copyDir(fromRel, join(relDir, entry.name));
-        continue;
-      }
-      const toName = RENAMES[entry.name] ?? entry.name;
-      if (provider !== "none" && OFFLINE_ONLY.has(entry.name)) continue;
-      const toRel = join(relDir, toName);
-      // A live provider's config replaces the template's own (both builtin templates keep it at the root).
-      const source =
-        provider !== "none" && relDir === "." && entry.name === "nola.config.ts"
-          ? providerConfigUrl(provider)
-          : join(templateRoot, fromRel);
-      let content = await readFile(source, "utf8");
-      if (SUBSTITUTED.has(entry.name)) {
-        content = content
-          .replaceAll("__NAME__", name)
-          .replaceAll("__VERSION__", versionRange)
-          .replaceAll("__START_NOTE__", notes.START_NOTE)
-          .replaceAll("__PROVIDER_NOTE__", notes.PROVIDER_NOTE)
-          .replaceAll("__NEXT_STEPS__", nextSteps);
-      }
-      await writeFile(join(absRoot, toRel), content);
-      files.push(toRel.replaceAll("\\", "/"));
-    }
-  };
-  await copyDir(".", ".");
-  if (!files.includes(".gitignore")) {
-    await writeFile(join(absRoot, ".gitignore"), await readFile(GITIGNORE_URL, "utf8"));
-    files.push(".gitignore");
+
+  // A live provider's config replaces the template's own; the ledger it replayed goes with it.
+  if (provider !== "none") {
+    for (const offline of OFFLINE_ONLY) files.delete(offline);
+    files.set("nola.config.ts", await readFile(providerConfigUrl(provider), "utf8"));
   }
-  if (envVar !== undefined) {
-    await writeFile(join(absRoot, ".env.example"), envExample(envVar));
-    files.push(".env.example");
+  const manifest = files.get("package.json");
+  if (manifest) files.set("package.json", rewriteExamplePackageJson(manifest, { name, version }));
+  await withRecommendedGitignore(files);
+  const envVar = vendorEnvVar(template, provider);
+  if (envVar !== undefined && !files.has(".env.example")) files.set(".env.example", envExample(envVar));
+  // The entry file greets the user with the next steps — it is what VS Code opens.
+  const entry = entryFile(template);
+  const program = files.get(entry);
+  if (program !== undefined) files.set(entry, `${nextStepsComment(opts.ide ?? "none", template)}\n\n${program}`);
+
+  for (const [relPath, content] of files) {
+    const target = join(absRoot, relPath);
+    await mkdir(join(target, ".."), { recursive: true });
+    await writeFile(target, content);
   }
-  return { root, files: files.sort() };
+  return { root, files: [...files.keys()].sort() };
 }

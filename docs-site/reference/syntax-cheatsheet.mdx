@@ -1,11 +1,11 @@
 ---
 title: Syntax cheatsheet
-description: Every Nola construct on one screen — infer function forms, contextual parameters, extractors, ask and ask with, call intents, prompt templates, intent methods.
+description: Look up Nola syntax for infer functions, contextual parameters, extractors, ask, call intents, values in an instruction and intent methods.
 sidebar:
   order: 10
 ---
 
-Everything valid in TypeScript is valid in a `.tsi` file, with one exception — `ask` is a reserved word (see [Not valid](#not-valid)). This page lists only the additions, one line each, with a link to the page that explains it.
+Use this page to look up Nola syntax and follow links to the full explanations. `.tsi` files support TypeScript, with the additions below and a few [restrictions](#not-valid), including the reserved word `ask`.
 
 ## Declarations
 
@@ -13,7 +13,8 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 | --- | --- | --- |
 | infer function | `infer function f(.text: string) { … }` | [infer functions](/docs/language/infer-functions/) |
 | exported | `export infer function f(.text: string) { … }` | [infer functions](/docs/language/infer-functions/) |
-| with an instruction marker | `` export infer function f`triage like a support lead`(.ticket: string) { … } `` | [infer functions](/docs/language/infer-functions/) |
+| with a context statement | `` export infer function f(.ticket: string) { `triage like a support lead` … } `` | [context statements](/docs/language/context-statements/) |
+| a context statement with values | `` `Page` oncall `when the ticket is an outage.` `` | [context statements](/docs/language/context-statements/#text-and-values) |
 | annotated return type | `export infer function f(.m: string): Intent<User> { … }` — never `Promise<T>` | [infer functions](/docs/language/infer-functions/#return-type) |
 
 ## Parameters
@@ -27,14 +28,15 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 
 | Construct | Example | Page |
 | --- | --- | --- |
-| typed | `` ask `the ticket id`<string> `` | [Extractors](/docs/language/extractors/) |
+| typed | `` ask `the ticket id`: string `` | [Extractors](/docs/language/extractors/) |
+| typed, angle-bracket spelling (the same construct) | `` ask `the ticket id`<string> `` | [Extractors](/docs/language/extractors/#the-angle-bracket-spelling) |
 | untyped (free text, static `any`) | `` ask `think step by step` `` | [Extractors](/docs/language/extractors/) |
-| interpolation | `` ask `the person described in: ${text}`<Person> `` | [Extractors](/docs/language/extractors/#interpolation) |
-| constructed, not yet resolved | `` export const nameIntent = ..`the user's full name`<string>; `` | [Extractors](/docs/language/extractors/#construction-anywhere-resolution-only-with-ask) |
-| the `..` spelling (required off the ask site) | `` const i = ..`x`<T>; fn(..`x`<T>) `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
-| a decision question: choice | `` ask ..choice`Which team?`<{ billing: "Payments"; sales: null }> `` | [Decision types](/docs/language/decision-types/#sugar) |
-| a decision question: scale | `` ask ..scale`How frustrated?`<["Calm", "Civil", "Angry"]> `` | [Decision types](/docs/language/decision-types/#sugar) |
-| a decision question: probability | `` ask ..prob`Is it urgent?` `` | [Decision types](/docs/language/decision-types/#sugar) |
+| interpolation | `` ask `the person described in: ${text}`: Person `` | [Extractors](/docs/language/extractors/#interpolation) |
+| constructed, not yet resolved | `` export const nameIntent = ..`the user's full name`: string; `` | [Extractors](/docs/language/extractors/#construction-anywhere-resolution-only-with-ask) |
+| the `..` spelling (required off the ask site and outside a call's slots) | `` const i = ..`x`: T; fn(cond ? ..`x`: T : y) `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
+| a decision question: choice | `` ask `Which team?`: Choice<{ billing: "Payments"; sales: null }> `` | [Decision types](/docs/language/decision-types/) |
+| a decision question: scale | `` ask `How frustrated?`: Scale<["Calm", "Civil", "Angry"]> `` | [Decision types](/docs/language/decision-types/) |
+| a decision question: probability | `` ask `Is it urgent?`: Prob `` | [Decision types](/docs/language/decision-types/) |
 
 ## ask
 
@@ -42,24 +44,26 @@ Everything valid in TypeScript is valid in a `.tsi` file, with one exception —
 | --- | --- | --- |
 | resolve an askable | `const x = ask intent;` | [The ask operator](/docs/language/ask/) |
 | another infer function | `const r = ask otherFn(arg);` | [The ask operator](/docs/language/ask/) |
-| pin a provider | `` ask with fast `a rough summary`<string> `` | [The ask operator](/docs/language/ask/#ask-with-name) |
-| chain a method (precedence like `await`) | `` ask (..`x`<string>).withRetry(2) `` | [Intent methods](/docs/language/intent-methods/) |
+| pin a provider | `` ask with fast `a rough summary`: string `` | [The ask operator](/docs/language/ask/#ask-with-name) |
+| chain a method (precedence like `await`) | `` ask (..`x`: string).withRetry(2) `` | [Intent methods](/docs/language/intent-methods/) |
 | from plain TS | `const v = await f("…");` — never bare-`await` a raw extractor | [The ask operator](/docs/language/ask/#ask-vs-await) |
 
 ## Call intents
 
 | Construct | Example | Page |
 | --- | --- | --- |
-| sigil-less | `` ask createTicket(..`a short title`<string>, 2) `` | [Call intents](/docs/language/call-intents/) |
-| empty marker | `` ask createTicket``("title", 3) `` | [Call intents](/docs/language/call-intents/) |
-| hint marker | `` ask createTicket`file the ticket`(..`a short title`<string>, ..`priority 1-5`<number>) `` | [Call intents](/docs/language/call-intents/) |
+| sigil-less (the slot's `..` is implied) | `` ask createTicket(`a short title`: string, 2) `` | [Call intents](/docs/language/call-intents/) |
+| empty marker | ``` ask createTicket``("title", 3) ``` | [Call intents](/docs/language/call-intents/) |
+| hint marker | `` ask createTicket`file the ticket`(`a short title`: string, `priority 1-5`: number) `` | [Call intents](/docs/language/call-intents/) |
 
-## Prompt templates
+## Values in an instruction
 
 | Construct | Example | Page |
 | --- | --- | --- |
-| reshape the CONTEXT block | `` infer function f`${.default}\nRules: …`(.t: string) `` | [Prompt templates](/docs/language/prompt-templates/) |
-| reshape the TASK block | `` ask `ticket id, comply with ${.type}`<string> `` | [Prompt templates](/docs/language/prompt-templates/) |
+| a value as data (an `<input>` block) | `` infer function f(.t: string) { `Rules: …` … } `` | [Contextual parameters](/docs/language/contextual-parameters/) |
+| a value as part of your words (text you control) | `` infer function f(.t: string, team: string) { `Triage for the ${team} team. Rules: …` … } `` | [The prompt](/docs/language/prompt/) |
+
+A value written after text in a context statement is the same as a `${}` hole.
 
 ## Intent methods
 
@@ -89,13 +93,13 @@ export interface Person {
   age: number;
 }
 
-export const nameIntent = ..`the user's full name`<string>;
+export const nameIntent = ..`the user's full name`: string;
 
-export infer function triage`${.default}
-Rules: never invent ticket ids.`(.ticket: string, fallback: Severity) {
-  const person = ask `the person described in the ticket`<Person>;
-  const severity = ask with careful `the severity of the ticket`<Severity>;
-  const id = ask createTicket(..`a short ticket title for ${person.name}`<string>, 2);
+export infer function triage(.ticket: string, fallback: Severity) {
+  `Triage the ticket. Rules: never invent ticket ids.`
+  const person = ask `the person described in the ticket`: Person;
+  const severity = ask with careful `the severity of the ticket`: Severity;
+  const id = ask createTicket(`a short ticket title for ${person.name}`: string, 2);
   const name = ask nameIntent;
   return { person, severity: severity || fallback, id, name };
 }
@@ -110,6 +114,8 @@ export async function createTicket(title: string, priority: number): Promise<str
 
 ## Not valid
 
-`async infer function`, `export default infer function`, `infer` on methods or arrows, `fn(..)`, `var .x = …`, `..name` on a parameter, `ask` as an identifier — see [Restrictions](/docs/language/restrictions/). Reserved by convention but not rejected: `__nola*` identifiers — the compiler emits names with that prefix, so shadowing one breaks the lowered code without a diagnostic.
+These forms are not supported: `async infer function`, `export default infer function`, `` infer function f`…`(…) `` (the marker slot is reserved), `infer` on methods or arrows, `fn(..)`, `var .x = …`, `..name` on a parameter, and `ask` as an identifier. See [Restrictions](/docs/language/restrictions/) for details.
+
+Avoid identifiers starting with `__nola`. The compiler uses that prefix in generated code; shadowing one can break the output without producing a diagnostic.
 
 Next: [Intent API](/docs/reference/intent-api/)

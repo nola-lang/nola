@@ -1,34 +1,39 @@
 ---
 title: Nola compared
-description: How Nola relates to BAML, the Vercel AI SDK, LangGraph, DSPy and LMQL — a one-screen matrix and the bet behind Nola, syntax rather than a library.
+description: Compare how Nola, BAML, LangGraph, and the Vercel AI SDK define typed model calls, manage context, and fit into an application.
 sidebar:
   order: 0
 ---
 
-Nola's bet is that talking to a model belongs in the **language**, not in a library: one typed expression that the compiler, the editor and the runtime all understand. The TypeScript type *is* the schema, `ask` has `await`'s ergonomics, and context belongs to the function — a second `ask` still sees the same `.message` — while everything downstream keeps seeing ordinary TypeScript because `.tsi` lowers to it. [Why Nola](/docs/start/why-nola/) makes the case in full; this section is the evidence.
+Nola adds model calls to TypeScript through `.tsi` files, typed `ask` expressions, and contextual parameters. Other tools solve similar problems through generated clients, library calls, or workflow graphs.
 
-Every tool below is good at what it set out to do. The pages in this section compare on one identical task (classify a support message, then write a reply that depends on the category), with working code on both sides, and say plainly where each is stronger.
+The pages in this section use the same small task: classify a support message, then write a reply using its category. They compare how you organize code and types. They do not measure model quality, latency, or cost.
+
+For Nola's design goals, see [Why Nola](/docs/start/why-nola/). For complete projects, the repository also includes an [inbox-triage comparison](https://github.com/nola-lang/nola/tree/main/comparisons/inbox-triage). That comparison uses a different task involving extraction and function calling.
 
 ## The matrix
 
-{/* Non-Nola cells checked against each project's current documentation on 2026-08-20. */}
+These are the approaches used in the examples, rather than an exhaustive list of each tool's capabilities.
 
-| | Nola | BAML | Vercel AI SDK | LangGraph (JS) | DSPy | LMQL |
-| --- | --- | --- | --- | --- | --- | --- |
-| **What it is** | a TypeScript superset (`.tsi`) | a prompt DSL with generated clients | a TypeScript library | a graph-orchestration library | a Python framework with prompt optimizers | a query language embedded in Python |
-| **Level** | language (new syntax, lowered to TS) | language, behind a codegen boundary | library | library | library / compiler | language |
-| **Typed output** | the TS type; schema derived at compile time | BAML `class` → generated TS/Python types | Zod schema → `z.infer` type | Zod schema via `withStructuredOutput` | Pydantic / signatures | constraints on decoding |
-| **Editor support** | VS Code extension + tsserver plugin (types in `.ts` consumers) | VS Code extension, playground | plain TypeScript | plain TypeScript | Python tooling | Python tooling |
-| **Runtime / host** | Node ≥ 22.18, server-only in v0 | TS, Python, Ruby, … clients | Node, edge, browser | Node, Python | Python | Python |
-| **Provider breadth** | OpenAI, Anthropic, Google + any Chat-Completions endpoint | broad | very broad, official adapters | via LangChain integrations | broad | broad |
-| **Maturity** | 0.1.x — early | established | established, widely used | established, widely used | established | research project, unmaintained since 2024 |
+| | Nola | BAML | Vercel AI SDK | LangGraph (JS) |
+| --- | --- | --- | --- | --- |
+| **What it is** | A TypeScript superset | A language for LLM functions | A TypeScript library | A workflow orchestration library |
+| **Where the output shape lives** | A TypeScript type | A BAML class | A Zod schema | A Zod schema passed to the model integration |
+| **How callers get types** | Nola's compiler and editor support | Generated client types | Types inferred from the schema | Types inferred from state and output schemas |
+| **How the two steps connect** | Two asks in one infer function | TypeScript calls two generated functions | Two library calls | Two nodes connected by an edge |
+| **Context in the example** | A contextual parameter shared by the asks | Arguments passed to each function | Inputs passed to each call | Data read from graph state |
+| **Tooling to adopt** | Nola compiler, loader or build plugin, and editor extension | BAML generator and optional editor extension | SDK and provider packages | Graph library and model integration |
+
+BAML's [prompting guide](https://docs.boundaryml.com/guide/baml-basics/prompting-with-baml), the AI SDK's [Output reference](https://ai-sdk.dev/docs/reference/ai-sdk-core/output), and the [LangGraph overview](https://docs.langchain.com/oss/javascript/langgraph/overview) describe the corresponding APIs.
+
+All four can work with typed results. The distinction is how the schema is defined and connected to application code. Nola derives its schema during compilation; the response is still validated at runtime. With a schema library such as Zod, the schema can be the source of truth for the TypeScript type, without maintaining a second declaration.
 
 ## Reading the rest
 
-- [Nola vs BAML](/docs/compare/baml/) — the closest cousin: typed prompts as functions, but a second language behind `baml-cli generate`.
-- [Nola vs LangGraph](/docs/compare/langgraph/) — orchestration graphs vs TypeScript control flow; complementary for orchestration, a replacement for the typed-call layer.
-- [Nola vs Vercel AI SDK](/docs/compare/vercel-ai-sdk/) — `generateText` + `Output.object` with Zod vs extractors.
+- [Nola vs BAML](/docs/compare/baml/) compares TypeScript types and shared function context with BAML definitions and generated clients.
+- [Nola vs LangGraph](/docs/compare/langgraph/) compares a short sequence of asks with a graph, then explains how to combine them.
+- [Nola vs Vercel AI SDK](/docs/compare/vercel-ai-sdk/) compares typed extractors with `generateText` and `Output.object`, including streaming and UI needs.
 
-DSPy and LMQL sit on a different axis (Python, optimization and constrained decoding respectively); pages for them follow.
+Two related Python tools address different concerns. [DSPy](https://github.com/stanfordnlp/dspy) provides modules and algorithms for optimizing prompts and model weights. [LMQL](https://lmql.ai/docs/language/reference.html) combines Python control flow with query strings and [generation constraints](https://lmql.ai/docs/latest/language/constraints.html). Neither has a detailed comparison page here.
 
 Next: [Nola vs BAML](/docs/compare/baml/)

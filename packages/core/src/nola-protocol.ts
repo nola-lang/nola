@@ -73,9 +73,9 @@ export interface NolaIngestEnvelope {
 
 export interface NolaInferRequest {
   protocol: typeof NOLA_PROTOCOL;
-  /** the client's lockstep package version — the server renders with the matching classic template */
+  /** the client's lockstep package version — the server renders the intent with the matching renderPrompt */
   version: string;
-  /** ask identity for tracing — present together, exactly when the runtime supplied `ProviderRequest.trace` */
+  /** ask identity for tracing — present together, exactly when the runtime supplied `InferRequest.trace` */
   askId?: string;
   invocationId?: string;
   spanPath?: readonly string[];

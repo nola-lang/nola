@@ -1,4 +1,5 @@
 import type { AskReceipt, AskStartEvent, NolaTelemetry } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { ExtractIntent, Frame, nolaRuntime, inferTypes as t } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,7 +54,7 @@ describe("ask events", () => {
       outcome: { ok: true, value: "Evgen" },
     });
     // The prompt pair carries the composed conversation; equal when no correction ran.
-    expect(receipt.originalPrompt).toContain("<request>\nuser name\n</request>");
+    expect(receipt.originalPrompt).toContain("<task>\nuser name\n</task>");
     expect(receipt.effectivePrompt).toBe(receipt.originalPrompt);
     expect(receipt.askId).toMatch(/\S/);
     expect(typeof receipt.durationMs).toBe("number");
@@ -78,7 +79,7 @@ describe("ask events", () => {
     expect(receipts[0]?.attempts).toBe(2);
     // The correction restamped "as sent": the pair diverges and carries the correction text.
     expect(receipts[0]?.effectivePrompt).not.toBe(receipts[0]?.originalPrompt);
-    expect(receipts[0]?.effectivePrompt).toContain("Your previous reply was invalid");
+    expect(receipts[0]?.effectivePrompt).toContain("<correction>");
   });
 
   it("emits askEnd with a failed outcome when both attempts fail, then throws", async () => {
@@ -99,7 +100,7 @@ describe("ask events", () => {
       model: {
         default: {
           name: "boom",
-          complete: async () => {
+          infer: async () => {
             throw new Error(`network down, key ${FAKE_KEY}`);
           },
         },
@@ -153,13 +154,87 @@ describe("ask events", () => {
       telemetry: [hook],
     });
     await askViaInference({
-      frame: Frame.open(nolaRuntime.current().fileContext("x.tsi")),
+      frame: Frame.open(nolaRuntime.current().moduleContext("x.tsi")),
       prompt: "p",
       schema: { type: "string" },
       loc: "1:1",
       pin: "fast",
     });
     expect(receipts[0]?.servedBy).toBe("mock"); // mockProvider's name
+  });
+
+  it("on a correction the receipt's effectivePrompt is the three-turn echo of attempt 2 and the fingerprint is attempt 1's", async () => {
+    const receipts: AskReceipt[] = [];
+    let attempt = 0;
+    nolaRuntime.configure({
+      model: {
+        default: {
+          name: "probe",
+          infer: async (req) => {
+            attempt += 1;
+            return { text: attempt === 1 ? "123" : '"ok"', sent: renderPrompt(req.intent) };
+          },
+        },
+      },
+      telemetry: [
+        {
+          onAskEnd: ({ receipt }) => {
+            receipts.push(receipt);
+          },
+        },
+      ],
+    });
+    await askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" });
+    const receipt = receipts[0] as AskReceipt;
+    expect(receipt.attempts).toBe(2);
+    expect(receipt.originalPrompt.split("\n\nassistant: ")).toHaveLength(1);
+    expect(receipt.effectivePrompt).toContain("\n\nassistant: 123\n\nuser: ");
+    // the identity is attempt 1's: fingerprintRequest strips the correction (pinned in Task 4); here only that a fingerprint is carried
+    expect(receipt.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("when the correction attempt itself throws, effectivePrompt still shows the correction that was in flight", async () => {
+    const receipts: AskReceipt[] = [];
+    let attempt = 0;
+    nolaRuntime.configure({
+      model: {
+        default: {
+          name: "probe",
+          infer: async () => {
+            attempt += 1;
+            if (attempt === 1) return { text: "123" };
+            throw new Error("network down");
+          },
+        },
+      },
+      telemetry: [
+        {
+          onAskEnd: ({ receipt }) => {
+            receipts.push(receipt);
+          },
+        },
+      ],
+    });
+    await expect(askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" })).rejects.toThrow(/network down/);
+    expect(receipts[0]?.effectivePrompt).toContain("<correction>");
+    expect(receipts[0]?.effectivePrompt).toContain("assistant: 123");
+  });
+
+  it("a provider that returns no echo leaves effectivePrompt as the default rendering, never empty", async () => {
+    const receipts: AskReceipt[] = [];
+    nolaRuntime.configure({
+      model: { default: { name: "silent", infer: async () => ({ text: '"ok"' }) } },
+      telemetry: [
+        {
+          onAskEnd: ({ receipt }) => {
+            receipts.push(receipt);
+          },
+        },
+      ],
+    });
+    await askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" });
+    expect(receipts[0]?.effectivePrompt).toBe(receipts[0]?.originalPrompt);
+    expect(receipts[0]?.effectivePrompt.length).toBeGreaterThan(0);
   });
 });
 

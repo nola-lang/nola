@@ -11,10 +11,10 @@ import { viewSpecifierFor } from "../view-name.js";
 
 /**
  * Appended at EOF so no original line/column shifts: ESM hoists the import, and a
- * `function` declaration hoists with its value. `__nola_file_ctx` must NOT be a
+ * `function` declaration hoists with its value. `__nola_module_ctx` must NOT be a
  * `const`/`let` — an infer function called during its own module's evaluation
  * (`const eager = go();`) reads it before the declaration runs and hits the TDZ.
- * It holds no state: `__nola.context.file` is memoized by path in the runtime.
+ * It holds no state: `__nola.context.module` is memoized by path in the runtime.
  *
  * The leading `;` closes whatever the source ends with. In tolerant mode a
  * dangling `console.` at the end of the file is kept verbatim (so TypeScript
@@ -29,62 +29,90 @@ import { viewSpecifierFor } from "../view-name.js";
  */
 export const runtimeImport = (
   displayFile: string,
-  moduleScope?: { instructionField?: string; localEntries: string[] },
+  moduleInit?: ModuleInitFields,
   decisionTypes: readonly string[] = [],
 ) => `
 ;
 import { __nola } from "@nola-lang/runtime";
 ${decisionTypes.length > 0 ? `import type { ${decisionTypes.join(", ")} } from "@nola-lang/runtime";\n` : ""}__nola.useRuntime(${NOLA_EMIT});
-function __nola_file_ctx() { return __nola.context.file(${JSON.stringify(displayFile)}, ${NOLA_EMIT}); }
-${moduleScope ? moduleScopeDecl(moduleScope) : ""}`;
+${moduleAccessorDecl(displayFile, moduleInit)}`;
+
+/** The static half of the module scope (scope-bodies spec §5.2): what the accessor's init thunk returns. */
+export interface ModuleInitFields {
+  /** the module's TOP-LEVEL context items in source order (spec 2026-09-29 §3.3) — the canonical order every union is sorted by */
+  itemNames: readonly string[];
+  localEntries: string[];
+}
+
+export const MODULE_SCOPE_CALL = "__nola_module_ctx()";
 
 /**
- * The module body's scope (scope-bodies spec §5.2) — emitted only when the
- * module body asks. Hoisted like `__nola_file_ctx`, and for the same reason: a
- * top-level ask runs long before any appendix statement. That is also why the
- * file accessor carries the emit contract: the `useRuntime` statement above it
- * has not run yet when the first module-body ask reaches the runtime.
+ * The one accessor of a file (emit 19): the runtime's memoized module node —
+ * lineage root, `<module>` scope and parent of the file's infer functions.
+ * Hoisted for the TDZ reason above, and it carries the emit contract because
+ * a module-body ask runs before the `useRuntime` statement. The init is a
+ * THUNK so an infer-function call, which reaches the accessor too, never
+ * rebuilds the init object (nor the locals' type carriers): the runtime reads
+ * it once, when the node is created. Everything in it is static text.
  */
-export const MODULE_SCOPE_CALL = "__nola_module_ctx()";
-const moduleScopeDecl = (scope: { instructionField?: string; localEntries: string[] }) => {
+const moduleAccessorDecl = (displayFile: string, init?: ModuleInitFields) => {
   const fields = [
-    ...(scope.instructionField !== undefined ? [`instruction: ${scope.instructionField}`] : []),
-    ...(scope.localEntries.length > 0 ? [`locals: [${scope.localEntries.join(", ")}]`] : []),
+    ...(init && init.itemNames.length > 0 ? [`context: [${init.itemNames.join(", ")}]`] : []),
+    ...(init && init.localEntries.length > 0 ? [`locals: [${init.localEntries.join(", ")}]`] : []),
   ];
-  const init = fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
-  return `function __nola_module_ctx() { return __nola_file_ctx().module(${init}); }\n`;
+  const thunk = fields.length > 0 ? `, () => ({ ${fields.join(", ")} })` : "";
+  return `function __nola_module_ctx() { return __nola.context.module(${JSON.stringify(displayFile)}, ${NOLA_EMIT}${thunk}); }\n`;
 };
 
 /**
- * The module body's instruction literal, lowered IN PLACE to a hoisted
- * function (scope-bodies spec §5.3) — its bytes stay where they are, so no
- * anchors into the unmapped appendix are needed and a hoisted declaration has
- * no initialization-order problem. A `${.member}` template takes the scope
- * parameter and renders through __nola.tpl; a lexical-only literal is a plain
- * template literal whose holes are fmt-wrapped by the lowerer, read live at
- * the first ask.
+ * A context statement lowered in place (spec 2026-09-29 §3.3): a hoisted
+ * function whose body is the statement's parts joined into one `__nola.ctx`
+ * tagged template, behind a `void <name>;` read of it. A function declaration
+ * because the module init thunk references module items and a circular import
+ * can reach the accessor before the module's first statement runs, so the item
+ * has to exist before its line executes. The read in front of it is the
+ * statement's STEP LOCATION: a declaration alone has none, so a breakpoint on
+ * the line resolved into the thunk and paused when an ask rendered the item —
+ * mid-ask, with F10 then touring the other items as the runtime read them
+ * (playground report 2026-09-29). With the read, the breakpoint binds at the
+ * statement's own position, pauses when execution passes it in source order,
+ * and F10 walks on to the next line; rendering never pauses in the thunk,
+ * since a step over the ask does not enter its callees. Inside a block the
+ * declaration is block-scoped under strict mode, which is exactly the
+ * visibility rule.
  */
-export const MODULE_TEMPLATE_FN = "__nola_module_tpl";
-export const moduleTemplateOpen = (scope: boolean) =>
-  scope
-    ? `function ${MODULE_TEMPLATE_FN}(${SCOPE_PARAM}: import("@nola-lang/runtime").FunctionPromptScope) { return __nola.tpl`
-    : `function ${MODULE_TEMPLATE_FN}() { return `;
-export const MODULE_TEMPLATE_CLOSE = "; }";
+export const contextItemName = (n: number) => `__nola_ctx_${n}`;
+export const contextItemOpen = (name: string) => `void ${name}; function ${name}() { return __nola.ctx`;
+export const CONTEXT_ITEM_CLOSE = "; }";
+/**
+ * Two text parts glued with nothing between them concatenate — except when the
+ * left ends with an unescaped `$` and the right starts with `{`, which would
+ * open a hole: there this empty one keeps them apart.
+ */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: the emitted hole itself, spliced into a template literal
+export const TEXT_JOIN_HOLE = '${""}';
 
 /** The static half of a body's contextual bindings (`locals: [{ name, type? }]`), or nothing. */
 const localsField = (localEntries: string[], lead: string) =>
   localEntries.length > 0 ? `${lead}locals: [${localEntries.join(", ")}]` : "";
 
 /**
- * The dynamic half, at an ask site: the visible contextual bindings by name,
- * read (object shorthand) when the ask runs. Absent when none is visible, so
- * a binding-free body lowers byte-identically to emit 16.
+ * The ask-site options (spec 2026-09-29 §3.3): the `ask with <name>` alias,
+ * the visible contextual bindings by shorthand, the visible context items by
+ * name. Absent when all three are absent, so a bare ask lowers as before.
  */
-export const localsArg = (names: readonly string[]) => (names.length > 0 ? `{ ${names.join(", ")} }` : undefined);
+export const askSiteArg = (providerName?: string, locals: readonly string[] = [], items: readonly string[] = []) => {
+  const fields = [
+    ...(providerName ? [`model: ${JSON.stringify(providerName)}`] : []),
+    ...(locals.length > 0 ? [`locals: { ${locals.join(", ")} }`] : []),
+    ...(items.length > 0 ? [`context: [${items.join(", ")}]`] : []),
+  ];
+  return fields.length > 0 ? `{ ${fields.join(", ")} }` : undefined;
+};
 
 /**
  * Appendix accessor for a named type. A `function` declaration for the same TDZ
- * reason as `__nola_file_ctx`: a top-level extractor evaluates during module
+ * reason as `__nola_module_ctx`: a top-level extractor evaluates during module
  * evaluation, before any appendix statement runs. The explicit return type is
  * required — a self-recursive accessor has no inferable return type (TS7023
  * under strict); the inline import type is erased by esbuild and resolves
@@ -171,15 +199,8 @@ export const ASK_OPEN = "await __nola.ask(";
 /** The frame an infer wrapper's executor receives — what an infer-body ask runs on. */
 export const FRAME_PARAM = "__frame";
 
-/**
- * Closes `__nola.ask(` over the asking scope; the `ask with <name>` alias is
- * the third argument and the visible contextual bindings (localsArg) the
- * fourth — `undefined` holds the alias slot when only locals are present.
- */
-export const askClose = (scope: string, providerName?: string, locals?: string) => {
-  const alias = providerName ? JSON.stringify(providerName) : locals ? "undefined" : undefined;
-  return `, ${scope}${alias ? `, ${alias}` : ""}${locals ? `, ${locals}` : ""})`;
-};
+/** Closes `__nola.ask(` over the asking scope; the ask-site options object (askSiteArg) is the third argument when present. */
+export const askClose = (scope: string, site?: string) => `, ${scope}${site ? `, ${site}` : ""})`;
 
 /**
  * The wrapper opener. The `void` read of every named param forces the
@@ -197,44 +218,55 @@ export const invocationArgEntry = (name: string, typeExpr: string | undefined, c
   `{ name: ${JSON.stringify(name)}${typeExpr ? `, type: ${typeExpr}` : ""}${contextual ? `, contextual: true, value: ${name}` : ""} }`;
 
 /**
- * The wrapper closer. `instructionField` is the full JS text after
- * `instruction: ` — a JSON string for prose, a template literal for a marker
- * with lexical holes, or `"<raw>", template: (__nola_s) => __nola.tpl\`…\`` for
- * a prompt template (see templateCopy).
+ * The wrapper closer. `moduleItems` are the module's top-level context items
+ * above the function's declaration — its lexical view of the module (spec
+ * 2026-09-29 §3.3); omitted when none precede it. There is no `instruction`
+ * field: a function's context items are passed by the asks that see them.
  */
-export const invocationClose = (fnName: string, instructionField: string, argEntries: string[], localEntries: string[] = []) => {
+export const invocationClose = (
+  fnName: string,
+  argEntries: string[],
+  localEntries: string[] = [],
+  moduleItems: readonly string[] = [],
+) => {
   const argsField = argEntries.length > 0 ? `, args: [${argEntries.join(", ")}]` : "";
-  return `  }, __nola_file_ctx().func({ fn: ${JSON.stringify(fnName)}, instruction: ${instructionField}${argsField}${localsField(localEntries, ", ")} }));\n`;
+  const moduleField = moduleItems.length > 0 ? `, moduleContext: [${moduleItems.join(", ")}]` : "";
+  return `  }, __nola_module_ctx().func({ fn: ${JSON.stringify(fnName)}${argsField}${localsField(localEntries, ", ")}${moduleField} }));\n`;
 };
 
 /**
- * Copies a template literal's bytes for re-emission elsewhere (marker / call
- * hint — their bytes cannot stay where they are). Scope mode inserts
- * SCOPE_PARAM before every `${.member}` node; fmt mode wraps every hole
- * expression in __nola.fmt(...). Anchors cover the verbatim runs (textOffset
- * relative to the returned text) so editor features survive the move.
+ * Copies a call hint's template literal for re-emission in the args head —
+ * the one literal whose bytes cannot stay where they are (scope instructions
+ * lower in place). Every hole expression is wrapped in __nola.fmt(...); a
+ * tolerant placeholder hole (a stray `${.` mid-typing) becomes the inert
+ * text instead, since its bytes are not TypeScript. Anchors cover the
+ * verbatim runs (textOffset relative to the returned text) so editor
+ * features survive the move.
  */
 export function templateCopy(
   source: string,
   quasi: { start: number; end: number; expressions: Array<{ start: number; end: number }> },
-  scopeNodes: Array<{ start: number; end: number }>,
-  mode: "scope" | "fmt",
+  placeholders: ReadonlyArray<{ start: number; end: number }> = [],
 ): { text: string; anchors: EditAnchor[] } {
-  const inserts: Array<[number, string]> =
-    mode === "scope"
-      ? scopeNodes.map((n) => [n.start, SCOPE_PARAM] as [number, string])
-      : quasi.expressions.flatMap((e) => [[e.start, FMT_OPEN] as [number, string], [e.end, FMT_CLOSE] as [number, string]]);
-  inserts.sort((a, b) => a[0] - b[0]);
+  const ops: Array<{ at: number; text: string; skipTo?: number }> = [];
+  for (const e of quasi.expressions) {
+    if (placeholders.some((p) => p.start === e.start && p.end === e.end)) {
+      ops.push({ at: e.start, text: BROKEN_CONSTRUCT, skipTo: e.end });
+    } else {
+      ops.push({ at: e.start, text: FMT_OPEN }, { at: e.end, text: FMT_CLOSE });
+    }
+  }
+  ops.sort((a, b) => a.at - b.at);
   let text = "";
   const anchors: EditAnchor[] = [];
   let cursor = quasi.start;
-  for (const [pos, ins] of inserts) {
-    if (pos > cursor) {
-      anchors.push({ sourceStart: cursor, sourceEnd: pos, textOffset: text.length });
-      text += source.slice(cursor, pos);
+  for (const op of ops) {
+    if (op.at > cursor) {
+      anchors.push({ sourceStart: cursor, sourceEnd: op.at, textOffset: text.length });
+      text += source.slice(cursor, op.at);
     }
-    text += ins;
-    cursor = pos;
+    text += op.text;
+    cursor = op.skipTo ?? op.at;
   }
   anchors.push({ sourceStart: cursor, sourceEnd: quasi.end, textOffset: text.length });
   text += source.slice(cursor, quasi.end);
@@ -255,7 +287,7 @@ export const callIntentOpen = (typeText: string) => `__nola.intents.FunctionCall
 export const defHash = (displayFile: string, kind: "extract" | "call", a: string, b: string): string =>
   sha256Hex(`nola-def:1\n${displayFile}\n${kind}\n${a}\n${b}`);
 
-/** `instructionField` is the full JS text after `instruction: ` (see invocationClose). */
+/** `instructionField` is the full JS text after `instruction: ` — a JSON string for prose, the hint's copy for a hint with holes. */
 export const callIntentArgsHead = (tagText: string, instructionField: string, loc: Position, def: string) =>
   `, name: ${JSON.stringify(tagText)}, instruction: ${instructionField}, ` +
   `loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)}, args: [`;
@@ -266,34 +298,16 @@ export const CALL_INTENT_CLOSE = "] })";
 export const EXTRACT_DEFAULT_TYPE_EXPR = "__nola.types.string()";
 export const EXTRACT_DEFAULT_TYPE_TEXT = "<any>";
 
-/** The intrinsic type each extractor sugar desugars to (decision types spec 2026-09-18 §5). */
-export const DECISION_WRAPPERS = { choice: "Choice", scale: "Scale", prob: "Prob" } as const;
-/** Bare `..prob` — the carrier is known statically, no derivation request. */
-export const PROB_BARE_TYPE_EXPR = "__nola.types.prob()";
-
 /** The extractor's `<T>` echoed as written in the source. */
 export const typeArgsText = (sourceText: string) => `<${sourceText}>`;
 
 export const extractOpen = (typeText: string) => `__nola.intents.ExtractIntent${typeText}({ instruction: `;
 
-/** Reserved parameter name of a lowered prompt-template closure. */
-export const SCOPE_PARAM = "__nola_s";
-
-/** `template:` field text up to (not including) the copied / in-place literal. */
-export const TEMPLATE_OPEN = `template: (${SCOPE_PARAM}) => __nola.tpl`;
-
-/** The literal's inner text, holes verbatim — the string form of a template's instruction. */
+/** The literal's inner text, holes verbatim — what `def` hashes. */
 export const rawTemplateText = (source: string, quasi: { start: number; end: number }) =>
   source.slice(quasi.start + 1, quasi.end - 1);
 
-/**
- * Extractor opener for a `${.member}` template literal: the raw text as the
- * instruction string, then the closure whose body is the in-place literal.
- */
-export const extractOpenTemplate = (typeText: string, rawInstruction: string) =>
-  `__nola.intents.ExtractIntent${typeText}({ instruction: ${JSON.stringify(rawInstruction)}, ${TEMPLATE_OPEN}`;
-
-/** Wraps each `${expr}` substitution in the extractor template. */
+/** Wraps each `${expr}` substitution of an instruction literal. */
 export const FMT_OPEN = "__nola.fmt(";
 export const FMT_CLOSE = ")";
 

@@ -1,11 +1,13 @@
 ---
 title: Providers API
-description: "nola.infer() and nola.tracer() from the runtime; openai, anthropic, google, typesafe, mockProvider, combinators and record/replay from the providers package."
+description: Reference provider factories, platform options, retries, mocks and record/replay, with an example of a custom chat provider.
 sidebar:
   order: 50
 ---
 
-Bring-your-own providers live in `@nola-lang/providers`: vendor factories, `mockProvider`, the resilience combinators, `record`/`replay`. The package does not depend on the runtime; the types it implements (`LanguageModel`, `ProviderRequest`, …) are exported from `@nola-lang/runtime`. The Nola platform needs no factory in the plain case — `model: "nola"` and a URL in `telemetry` — and its options live on the [`nola`](#nola) namespace exported by `@nola-lang/runtime` itself: `nola.infer(...)` for the model slot, [`nola.tracer(...)`](#tracer) for the telemetry list.
+Import vendor factories, `mockProvider`, resilience helpers and `record`/`replay` from `@nola-lang/providers`. Their shared types, including `LanguageModel` and `ProviderRequest`, are exported from `@nola-lang/runtime`.
+
+For the Nola platform, use `model: "nola"` and a URL in `telemetry`. If you need options, import [`nola`](#nola) from `@nola-lang/runtime` and call `nola.infer(...)` or [`nola.tracer(...)`](#tracer).
 
 ```ts
 // nola.config.ts
@@ -40,7 +42,11 @@ Keys are read lazily at the first request. The option interfaces are exported as
 
 ## typesafe
 
-`typesafe()` talks to typesafe.ai's System One API (model Jev), which is not a chat model: it answers typed questions about a JSON state with calibrated probabilities. It is a **decision model** — the one that answers the [decision types](/docs/language/decision-types/) — and it receives the ask's structured form rather than a rendered prompt: the contextual values (`.params` and `const .x` bindings) travel as the `state`, and every property becomes one question whose instructions are the property's JSDoc comment plus the ask's instruction as shared context. It serves exactly these output types:
+`typesafe()` connects to typesafe.ai's System One API, using the Jev model. It answers typed questions about JSON data and returns calibrated probabilities. Use it for [decision types](/docs/language/decision-types/).
+
+It receives the ask's structured form. Contextual parameters and bindings become the request's `state`, and each output property becomes a question. The property's JSDoc comment supplies its instructions, with the ask's instruction included as shared context.
+
+Supported output types:
 
 - `Choice<{ … }>` — a choice question with the descriptions as criteria; the answer object comes back as is
 - `Scale<[ … ]>` — a score question over the ordered levels; `score`, the distribution re-keyed to an array, `levels`, `confidence`
@@ -50,7 +56,7 @@ Keys are read lazily at the first request. The option interfaces are exported as
 - `boolean` — a yes/no question, `true` when the probability of yes is strictly above `threshold` (default `0.5`)
 - a flat object whose properties are all of the above — one request, one question per property
 
-Anything else — free-form strings, `Date`, unbounded numbers, arrays, nested objects, nullable unions — fails before the network with a definitive error naming the property. Pair it with a general model through `fallback` so those asks escalate, or route decision asks to it by name:
+Other output types, including free-form strings, `Date`, unbounded numbers, arrays, nested objects and nullable unions, fail before a network request is made. The definitive error names the unsupported property. Use `fallback` with a general model to handle those asks, or route decision asks to a named model:
 
 ```ts
 import { defineConfig } from "@nola-lang/runtime";
@@ -64,13 +70,15 @@ export default defineConfig({
 });
 ```
 
-With no contextual value in scope, the ask's instruction text is the state. A correction turn has nothing to say to this wire, so a rejected reply is re-asked from the same state. Of the `.withParams()` knobs only `providerOptions.threshold` has a meaning here (the plain-boolean cut-off for that ask); the rest are ignored.
+If no contextual value is in scope, the instruction text becomes the state. The API has no conversation history, so a correction attempt sends the same state again.
+
+Use `.withParams({ providerOptions: { threshold: … } })` to override the threshold for a plain `boolean` answer. This provider ignores other per-intent params.
 
 ## nola
 
-`nola` — exported from `@nola-lang/runtime` — is a namespace with two factories, one per config slot a Nola-Protocol server (api.nola.sh by default, or a self-hosted console) can serve. It is an object, not a function.
+The `nola` namespace is exported from `@nola-lang/runtime`. It has two factories: `infer` for the model setting and `tracer` for telemetry. Call one of these methods; `nola` itself is not callable.
 
-The platform model is written as the string `"nola"`; `nola.infer(model?)` is the call behind it, for when you need an argument:
+Set `model: "nola"` to use the platform defaults. Use `nola.infer(model?)` when you need to pass options:
 
 ```ts
 // nola.config.ts
@@ -79,14 +87,21 @@ import { defineConfig } from "@nola-lang/runtime";
 export default defineConfig({ model: "nola" });   // the platform serves inference — reads NOLA_API_KEY
 ```
 
-- `"nola"` — short for `nola.infer()`. It is the only string the `model` slot accepts (any other is [`NOLA3003`](/docs/reference/error-codes/#nola3003)), and it follows the same root-only rule as the call.
-- `nola.infer()` — what `"nola"` resolves to: the platform chooses the model (trial keys are restricted to a server-side set). The ask travels as the structured inference model (every classic model receives a rendered chat prompt instead), and an `ask with <name>` that matches no configured map key rides the request as a free-form `profile` for the platform's routing.
-- `nola.infer("<provider>/<model>")` — names the upstream explicitly.
-- `nola.infer({ baseUrl?, apiKey?, apiKeyEnv?, fetch?, retry?, model? })` — the connection: `baseUrl` (default `https://api.nola.sh`, or `NOLA_API_URL`), `apiKey` / `apiKeyEnv` (default `NOLA_API_KEY`, read lazily at the first request), `retry` (the wire retry — on by default, 2 retries with 500 ms exponential backoff capped at 10 s, honouring `Retry-After`; `false` disables), `model` as above.
+- `"nola"` is shorthand for `nola.infer()`. Other strings in the `model` setting produce [`NOLA3003`](/docs/reference/error-codes/#nola3003).
+- `nola.infer()` lets the platform choose the model. Trial keys are limited to the models allowed by the service. Requests contain the structured inference model. If an `ask with <name>` has no matching local model, its name is sent as a `profile` for the platform to resolve.
+- `nola.infer("<provider>/<model>")` selects an upstream model explicitly.
+- `nola.infer({ baseUrl?, apiKey?, apiKeyEnv?, fetch?, retry?, model? })` accepts connection and retry options. The URL defaults to `NOLA_API_URL` or `https://api.nola.sh`, and the key is read from `NOLA_API_KEY` at the first request unless overridden. Retries default to two extra attempts, with a 500 ms delay doubled between attempts and capped at 10 s. They honour `Retry-After`. Set `retry: false` to disable them.
 
-The platform model can only be the config root — the bare `model`, or the map's `default` beside your own models: `withRetry`/`fallback`/`roundRobin` refuse it (use `retry`; routing and failover live on the server), while `record` mirrors it and `replay` serves any ledger. Server errors surface verbatim as `NolaProviderError` with `code` (`quota_exceeded`, `insufficient_credits`, `unauthorized`, `forbidden`, `model_not_allowed`, `request_too_large`, `rate_limited`) and `details` (`quota_exceeded` carries `{ runsUsed, runsLimit }`; `insufficient_credits` — a paid key whose balance hit zero, HTTP 402 — carries `{ balanceMicro }`); every 4xx other than 408/429 is definitive. On a trial key the model prints `Nola free usage: 22 / 25 runs — 3 left. Run \`nola account\` to add credits.` to stderr once per count while five or fewer runs remain.
+The platform model must be the bare `model` value or the map's `default` entry. `withRetry`, `fallback` and `roundRobin` reject it; use its `retry` option for request failures, and platform routing for failover. You can wrap it in `record` and replay the resulting ledger with `replay`.
 
-Nothing else is implied: traces reach a Nola console only when `telemetry` lists a tracer — see [Telemetry](/docs/config/observability/#tracers).
+Server errors become `NolaProviderError` instances with `code` and `details` fields. Codes include `quota_exceeded`, `insufficient_credits`, `unauthorized`, `forbidden`, `model_not_allowed`, `request_too_large` and `rate_limited`. All HTTP 4xx errors except 408 and 429 are definitive.
+
+- `quota_exceeded` includes `{ runsUsed, runsLimit }`.
+- `insufficient_credits` means a paid key's balance reached zero. It has HTTP status 402 and includes `{ balanceMicro }`.
+
+For a trial key with five or fewer runs left, the client prints the remaining usage to stderr once per count. The notice includes a reminder to run `nola account` to add credits.
+
+To send traces, also configure `telemetry`. Using the platform for inference does not enable tracing automatically. See [Telemetry](/docs/config/observability/#tracers).
 
 ```ts
 // nola.config.ts — a self-hosted console serves inference and tracing
@@ -101,17 +116,23 @@ export default defineConfig({
 
 ## tracer
 
-A tracer is written as its URL: `telemetry: "http://127.0.0.1:4141"`, or the same string as a list entry. That is short for `nola.tracer(url)`. `nola.tracer(target?)` returns a `NolaTelemetry` that posts every event to a Nola-Protocol server's `/v1/ingest`; call it yourself when `target` is absent (`NOLA_API_URL`, then `https://api.nola.sh`) or an options object, `{ baseUrl?, apiKey?, apiKeyEnv?, fetch? }`. Fire-and-forget, redacted, never gated: list it under `telemetry`. Details on [Telemetry](/docs/config/observability/#tracers).
+Set `telemetry` to a server URL, such as `"http://127.0.0.1:4141"`, or add that URL to the observer list. This is shorthand for `nola.tracer(url)`.
+
+`nola.tracer(target?)` returns a `NolaTelemetry` observer that posts redacted events to the server's `/v1/ingest` endpoint without waiting for a response. With no target, it uses `NOLA_API_URL` or `https://api.nola.sh`. Pass `{ baseUrl?, apiKey?, apiKeyEnv?, fetch? }` for other connection settings. See [Telemetry](/docs/config/observability/#tracers) for delivery behaviour.
 
 ## mockProvider
 
-`mockProvider(source: unknown[] | ((req: MockRequest) => unknown)): LanguageModel` — a queue of values served one per **provider call** in order (an ask that needs its correction turn, or a `.withRetry()` attempt, consumes the next entry; an empty queue throws), or a function of the request. `MockRequest` is the request with `payload` typed as the rendered `ClassicPrompt` (see [Custom providers](#custom-providers)), so `req.payload.messages` needs no narrowing. Deterministic, no network.
+`mockProvider(source: unknown[] | ((req: MockRequest) => unknown)): LanguageModel`
+
+Pass a queue of values or a function that receives the request. A queue serves one value per provider call, including correction and retry attempts, and throws when it runs out. A function receives the request: `req.intent` is the ask as data, and `req.prompt` is its default rendering (`{ system, messages }`), rendered only when read.
+
+`mockProvider` makes no network requests.
 
 ## Combinators
 
 | Export | Signature | Meaning |
 | --- | --- | --- |
-| `withRetry` | `(model: LanguageModel, policy: RetryPolicy) => LanguageModel` | retries the wire call with backoff; fail-fasts on definitive errors; honours `Retry-After` up to `maxDelayMs` |
+| `withRetry` | `(model: LanguageModel, policy: RetryPolicy) => LanguageModel` | retries the provider request with backoff; stops on definitive errors; honours `Retry-After` up to `maxDelayMs` |
 | `constant` | `({ maxRetries, delayMs? }) => RetryPolicy` | flat delay (default `0`) |
 | `exponential` | `({ maxRetries, delayMs?, multiplier?, maxDelayMs? }) => RetryPolicy` | defaults `200`, `2`, `10_000` |
 | `fallback` | `(providers: LanguageModel[]) => LanguageModel` | first success in order; throws when all fail |
@@ -131,56 +152,62 @@ See [Record and replay](/docs/config/record-and-replay/).
 
 ## Custom providers
 
-A provider is any object satisfying `LanguageModel`. The runtime renders the ask into a chat prompt before it reaches you — system text, the conversation, and the output contract — and you answer with the model's reply text. The built-in `openai`, `anthropic` and `google` factories are exactly this; only the platform model (`"nola"`) receives the structured inference model instead, and nothing in a config needs to render anything.
+A model is `{ name, infer(request) }`. Every model, built-in or yours, receives the same request: the ask as data. Render it however your backend needs, or call `renderPrompt` from `@nola-lang/providers` for the default text, then return the raw reply and, when you sent text, what you sent.
 
 ```ts
-// not-checked — shapes as exported from @nola-lang/runtime
+// not-checked — simplified types; ProviderParams is not re-exported
 interface LanguageModel {
   name: string;
-  complete(req: ProviderRequest): Promise<ProviderResponse>;
+  infer(req: InferRequest): Promise<InferResult>;
 }
 
-interface ProviderRequest {
-  payload: ClassicPrompt;                      // always the rendering — only the platform model's infer() sees the model
-  params?: ProviderParams;                     // temperature, maxOutputTokens, providerOptions
-  signal?: AbortSignal;                        // the invocation's timeout
+interface InferRequest {
+  intent: InferenceModel;                       // scopes, inputs, the task, the output schema; the correction on a retry
+  params?: ProviderParams;                      // temperature, maxOutputTokens, providerOptions
+  profile?: string;                             // the `ask with <name>` name under the platform
+  signal?: AbortSignal;                         // the invocation's timeout
   trace?: { askId: string; invocationId: string; spanPath: readonly string[] };
 }
 
-interface ClassicPrompt {
-  system: string;                                    // Nola's preamble, then your config `system.message`
-  messages: { role: "user" | "assistant"; content: string }[];   // one user turn; three on the correction attempt
-  output: { syntax: "json"; schema?: JsonSchema } | { syntax: "code"; language?: string };
+interface InferResult {
+  text: string;                                 // the raw reply; Nola parses and validates it
+  durationMs?: number;
+  usage?: { inputTokens?: number; outputTokens?: number };
+  sent?: { system: string; messages: { role: "user" | "assistant"; content: string }[] };   // what you sent — shown as the receipt's effectivePrompt
 }
-
-type ProviderResponse = { text: string; durationMs?: number };
 ```
 
-`req.payload` IS the `ClassicPrompt` — the type says so, no accessor or narrowing needed. A minimal chat-style implementation over `fetch`:
+A minimal text provider using `fetch`:
 
 ```ts
 // my-provider.ts
-import type { LanguageModel, ProviderRequest } from "@nola-lang/runtime";
+import type { InferRequest, LanguageModel } from "@nola-lang/runtime";
+import { renderPrompt } from "@nola-lang/providers";
 
 export function myProvider(endpoint: string): LanguageModel {
   return {
     name: "my-provider",
-    async complete(req: ProviderRequest) {
+    async infer(req: InferRequest) {
       const started = Date.now();
-      const { system, messages, output } = req.payload;
+      const sent = renderPrompt(req.intent);
+      const schema = req.intent.output.syntax === "json" ? req.intent.output.schema : undefined;
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ system, messages, schema: output.syntax === "json" ? output.schema : undefined }),
+        body: JSON.stringify({ system: sent.system, messages: sent.messages, schema }),
         signal: req.signal,
       });
       const { text } = (await res.json()) as { text: string };
-      return { text, durationMs: Date.now() - started };
+      return { text, durationMs: Date.now() - started, sent };
     },
   };
 }
 ```
 
-Return the model's raw reply in `text`; the runtime parses and validates it against the schema, and retries with a correction turn (the conversation gains the failed reply and a correction request) when it does not conform. Throw a `NolaProviderError` (from `@nola-lang/runtime`) with `status` / `definitive` / `retryAfterMs` set so the combinators can tell a retryable failure from a definitive one.
+Return the raw reply in `text`. The runtime parses and validates it. If validation fails, it calls `infer` again with `intent.correction` set to the failed reply and the issues; `renderPrompt` renders that as the assistant turn plus a `<correction>` block.
+
+The built-in `openai`, `anthropic` and `google` providers accept `structuredOutputs: false` for a server that cannot enforce a schema: nothing is sent on the wire and the schema is rendered into the system turn as a `<schema>` block. `DEFAULT_SYSTEM` is the default system text, exported for composing your own.
+
+For provider failures, throw `NolaProviderError` from `@nola-lang/runtime`. Set `status`, `definitive` and `retryAfterMs` as appropriate so retry helpers can decide whether and when to try again.
 
 Next: [Config schema](/docs/reference/config-schema/)

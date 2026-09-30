@@ -52,16 +52,16 @@ describe("spansToMappings", () => {
   });
 
   it("a generated range ending at a deletion does not swallow the deleted source", () => {
-    // The tagged header `name`instruction`(...)` deletes the instruction from
-    // the lowered text, so ONE generated offset (the end of the name) is two
-    // source offsets: the name's end and the `(`'s start. Volar translates a
-    // range's end by binary-searching the matched mapping's offset arrays — so
-    // if every verbatim span shares one mapping, the end can land on the NEXT
-    // span's start and the token stretches across the deleted instruction
-    // (a `function` semantic token painting the prose). One mapping per span
+    // The reserved marker `name`…`(...)` (NOLA1019) is dropped from the lowered
+    // text in tolerant mode, so ONE generated offset (the end of the name) is
+    // two source offsets: the name's end and the `(`'s start. Volar translates
+    // a range's end by binary-searching the matched mapping's offset arrays —
+    // so if every verbatim span shares one mapping, the end can land on the
+    // NEXT span's start and the token stretches across the deleted text (a
+    // `function` semantic token painting the prose). One mapping per span
     // confines the end to the span its start matched.
     const src = "export infer function go`prose here`(q: string) {\n  return 1\n}\n";
-    const { code, meta } = compileNola(src, "x.tsi");
+    const { code, meta } = compileNola(src, "x.tsi", { tolerant: true });
     const mapper = defaultMapperFactory(spansToMappings(meta.spans, meta.anchors, code));
 
     const genStart = code.indexOf("go");
@@ -130,16 +130,24 @@ describe("spansToMappings", () => {
   });
 });
 
-describe("marker template anchors", () => {
-  it("the copied marker bytes have completion-enabled mappings right after `${.`", () => {
+describe("context statement mappings (spec 2026-09-29 §3.6)", () => {
+  it("the expression inside a hole of an interpolated first-statement template is verbatim-mapped with completion; the item's opener is replaced", () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
-    const src = "infer function go`CTX ${.signature} ${.next}`(m: string) {\n  return m;\n}\n";
+    const src = "infer function go(m: string) {\n  `CTX ${m.toUpperCase()} ${m}`\n  return m;\n}\n";
     const { code, meta } = compileNola(src, "x.tsi");
     const mapper = defaultMapperFactory(spansToMappings(meta.spans, meta.anchors, code));
-    const cursor = src.indexOf("${.signature") + "${.".length; // right after the dot
+    const cursor = src.indexOf("${m.toUpperCase") + "${m.".length; // right after the dot on the parameter
     const completable = [...mapper.toGeneratedLocation(cursor)].filter(([, m]) => m.data.completion);
     expect(completable).not.toEqual([]);
     const [gen] = completable[0] as [number, unknown];
-    expect(code.slice(gen - "__nola_s.".length, gen)).toBe("__nola_s.");
+    // the tag formats the hole: its bytes stay as written, no __nola.fmt insert
+    expect(code.slice(gen - "__nola.ctx`CTX ${m.".length, gen)).toBe("__nola.ctx`CTX ${m.");
+    // the item's opener is a replaced span: verification only, never completed
+    const opener = "void __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx";
+    const at = code.indexOf(opener);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(
+      meta.spans.some((s) => s.kind === "replaced" && s.generatedStart <= at && at + opener.length <= s.generatedEnd),
+    ).toBe(true);
   });
 });

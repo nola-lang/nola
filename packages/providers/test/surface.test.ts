@@ -1,4 +1,4 @@
-import { isInferModel, isPlatformModel } from "@nola-lang/core";
+import { isPlatformModel } from "@nola-lang/core";
 import * as pkg from "@nola-lang/providers";
 import { mockProvider, openai, providers, typesafe } from "@nola-lang/providers";
 import { describe, expect, it } from "vitest";
@@ -32,8 +32,7 @@ describe("@nola-lang/providers surface", () => {
     }) as typeof globalThis.fetch;
     // `typesafe("jev-3")` has no fetch slot; the same shorthand goes through the options form for the wire check.
     const p = providers.typesafe({ model: "jev-3", apiKey: "k", fetch: fn });
-    if (!isInferModel(p)) throw new Error("typesafe is an infer-dialect model");
-    await p.infer({ model: modelOf({ schema: { type: "boolean" } }) });
+    await p.infer({ intent: modelOf({ schema: { type: "boolean" } }) });
     expect(body?.model).toBe("jev-3");
     expect(typesafe("jev-3").name).toBe("typesafe");
   });
@@ -58,19 +57,25 @@ describe("@nola-lang/providers surface", () => {
     expect(typeof pkg.exponential).toBe("function");
   });
 
-  it("mockProvider's callback receives the classic rendering — typed as ClassicPrompt, no narrowing needed in a config", async () => {
-    let seen: string | undefined;
+  it("mockProvider's callback receives the intent and a lazily rendered `prompt`", async () => {
+    let seen: { instruction?: string; firstTurn?: string } = {};
     const p = mockProvider((req) => {
-      seen = req.payload.messages[0]?.content;
+      seen = { instruction: req.intent.input.instruction, firstTurn: req.prompt.messages[0]?.content };
       return "v";
     });
     expect(isPlatformModel(p)).toBe(false);
-    await p.complete(requestOf({ instruction: "from the runtime" }));
-    expect(seen).toContain("from the runtime");
+    const res = await p.infer(requestOf({ instruction: "from the runtime" }));
+    expect(seen.instruction).toBe("from the runtime");
+    expect(seen.firstTurn).toContain("from the runtime");
+    expect(res.text).toBe('"v"');
   });
 
-  it("no longer exports classicPayload — complete() is typed on the classic request outright (reshape 2026-09-01)", () => {
-    expect((pkg as Record<string, unknown>).classicPayload).toBeUndefined();
+  it("re-exports the default renderer for provider authors and nothing of the chat dialect", () => {
+    expect(typeof pkg.renderPrompt).toBe("function");
+    expect(typeof pkg.DEFAULT_SYSTEM).toBe("string");
+    for (const gone of ["classicPayload", "callModel", "toClassic"]) {
+      expect((pkg as Record<string, unknown>)[gone], gone).toBeUndefined();
+    }
   });
 
   it("exports record/replay", () => {

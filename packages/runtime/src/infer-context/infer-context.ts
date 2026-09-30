@@ -21,8 +21,36 @@ export interface AskIdentity {
 export type AskLocals = Readonly<Record<string, unknown>>;
 
 /**
- * Frozen lineage node: system → file → function. Concrete subclasses are
- * created only by the runtime and by lowering (fileContext / func) — never
+ * One lowered context statement (spec 2026-09-29 §3.3): the hoisted
+ * `__nola_ctx_N` function, read at EACH ask that sees it, so a value in it is
+ * rendered as it is at that ask.
+ */
+export type ContextItem = () => string;
+
+/**
+ * What one ask site sees (spec 2026-09-29 §3.4): the visible bindings by name
+ * and the visible context items in source order — body items for an ask in an
+ * infer body, module items for a module-body ask. Set by `ask` itself, never by
+ * user code; on a callee invocation it is the caller scope as seen from the
+ * call site.
+ */
+export interface VisibleContext {
+  readonly locals?: AskLocals;
+  readonly context?: readonly ContextItem[];
+}
+
+/** The items' texts, read now, joined by newlines; an item that renders nothing is skipped. */
+export function readItems(items: readonly ContextItem[] | undefined): string {
+  if (!items) return "";
+  return items
+    .map((item) => item())
+    .filter((text) => text !== "")
+    .join("\n");
+}
+
+/**
+ * Frozen lineage node: system → module → function. Concrete subclasses are
+ * created only by the runtime and by lowering (moduleContext / func) — never
  * constructed from .tsi user code. Pure construction data: `data`, `parent`,
  * and the owning `runtime`. Everything dynamic (history, spans, options)
  * lives on the per-invocation Frame.
@@ -39,10 +67,10 @@ export class InferContext<TInferParams extends Record<string, unknown> = Record<
     return new InferContext(Object.freeze({ ...data }), this.runtime, this);
   }
 
-  /** Base nodes contribute nothing to the composed model. `locals` are the ask site's visible bindings (scope nodes list them). */
-  compose(_composer: InferenceComposer, _locals?: AskLocals): void {}
+  /** Base nodes contribute nothing to the composed model. `visible` is what the ask site sees (scope nodes read it). */
+  compose(_composer: InferenceComposer, _visible?: VisibleContext): void {}
 
-  /** The ask-site identity; undefined for lineage nodes (system, file, function). */
+  /** The ask-site identity; undefined for lineage nodes (system, module, function). */
   askIdentity(): AskIdentity | undefined {
     return undefined;
   }
@@ -57,9 +85,9 @@ export class InferContext<TInferParams extends Record<string, unknown> = Record<
   }
 
   /**
-   * The `.tsi` file this context descends from: the nearest file node up the
-   * parent chain (FileInferContext overrides). A lineage with no file root
-   * reports `<unknown>`.
+   * The `.tsi` file this context descends from: the module node up the
+   * parent chain answers (ModuleContext overrides). A lineage with no file
+   * root reports `<unknown>`.
    */
   sourceFile(): string {
     return this.parent?.sourceFile() ?? "<unknown>";

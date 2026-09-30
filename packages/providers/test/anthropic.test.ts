@@ -1,5 +1,5 @@
 import type { JsonSchema } from "@nola-lang/core";
-import { SYSTEM_PREAMBLE } from "@nola-lang/core";
+import { DEFAULT_SYSTEM, renderPrompt } from "@nola-lang/core";
 import { anthropic } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -23,28 +23,26 @@ const messageReply = (content: unknown) => ({
 });
 
 describe("anthropic provider", () => {
-  it("sends req.payload's system and messages verbatim — never re-renders", async () => {
+  it("renders the intent through renderPrompt, sends system + messages, and echoes what it sent", async () => {
     const { fn, calls } = fakeFetch(() => messageReply({ v: "x" }));
-    await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete({
-      payload: {
-        system: "hand-written system",
-        messages: [{ role: "user", content: "hand-written turn" }, { role: "assistant", content: "reply" }, { role: "user", content: "again" }],
-        output: { syntax: "json", schema: { type: "object", properties: { v: { type: "string" } }, required: ["v"], additionalProperties: false } },
-      },
+    const req = requestOf({
+      system: "Be terse.",
+      schema: { type: "object", properties: { v: { type: "string" } }, required: ["v"], additionalProperties: false },
+      correction: { response: "reply", error: "again" },
     });
+    const res = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(req);
+    const expected = renderPrompt(req.intent);
     const body = JSON.parse(String(calls[0]?.init.body)) as { system: string; messages: { role: string; content: string }[] };
-    expect(body.system).toBe("hand-written system");
-    expect(body.messages).toEqual([
-      { role: "user", content: "hand-written turn" },
-      { role: "assistant", content: "reply" },
-      { role: "user", content: "again" },
-    ]);
+    expect(body.system).toBe(expected.system);
+    expect(body.messages).toEqual(expected.messages);
+    expect(body.messages).toHaveLength(3);
+    expect(res.sent).toEqual(expected);
   });
 
   it("speaks the Messages API dialect: url, auth headers, top-level system, required max_tokens", async () => {
     const { fn, calls } = fakeFetch(() => messageReply({ value: "free text answer" }));
     const p = anthropic({ apiKey: "k", fetch: fn, model: "m" });
-    const { text } = await p.complete(requestOf({ system: "s" }));
+    const { text } = await p.infer(requestOf({ system: "s" }));
     expect(text).toBe('"free text answer"');
     expect(p.name).toBe("anthropic");
     expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
@@ -59,7 +57,7 @@ describe("anthropic provider", () => {
     };
     expect(body.model).toBe("m");
     expect(body.max_tokens).toBe(4096);
-    expect(body.system).toContain(`${SYSTEM_PREAMBLE}\n\ns`);
+    expect(body.system.startsWith("s")).toBe(true); // system.message replaces the default system text
     expect(body.messages).toHaveLength(1);
     expect(body.messages[0]?.role).toBe("user");
   });
@@ -72,7 +70,7 @@ describe("anthropic provider", () => {
       additionalProperties: false,
     };
     const { fn, calls } = fakeFetch(() => messageReply({ id: "1" }));
-    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema }));
+    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(requestOf({ system: "s", schema }));
     expect(JSON.parse(text)).toEqual({ id: "1" });
     const body = JSON.parse(String(calls[0]?.init.body)) as {
       system: string;
@@ -81,12 +79,12 @@ describe("anthropic provider", () => {
     expect(body.output_config.format.type).toBe("json_schema");
     // No strict/nullable-required rewrite: Anthropic does not demand all-required.
     expect(body.output_config.format.schema).toEqual(schema);
-    expect(body.system).toBe(`${SYSTEM_PREAMBLE}\n\ns`);
+    expect(body.system).toBe("s");
   });
 
   it("wraps scalar schemas in a {value} envelope with a system note and unwraps the reply", async () => {
     const { fn, calls } = fakeFetch(() => messageReply({ value: "billing" }));
-    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(
+    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(
       requestOf({ system: "s", schema: { type: "string", enum: ["billing", "refund"] } }),
     );
     expect(text).toBe('"billing"');
@@ -96,7 +94,7 @@ describe("anthropic provider", () => {
         format: { schema: { type: string; properties: { value: unknown }; required: string[] } };
       };
     };
-    expect(body.system).toContain(`${SYSTEM_PREAMBLE}\n\ns`);
+    expect(body.system.startsWith("s")).toBe(true);
     expect(body.system).toContain('"value"');
     const sent = body.output_config.format.schema;
     expect(sent.type).toBe("object");
@@ -106,13 +104,13 @@ describe("anthropic provider", () => {
 
   it("requests structured output for the default (bare-string) schema when none is given", async () => {
     const { fn, calls } = fakeFetch(() => messageReply({ value: "x" }));
-    await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }));
+    await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(requestOf({ system: "s" }));
     expect(JSON.parse(String(calls[0]?.init.body))).toHaveProperty("output_config");
   });
 
   it("omits output_config when no schema requested", async () => {
     const { fn, calls } = fakeFetch(() => messageReply("x"));
-    await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s", schema: null }));
+    await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(requestOf({ system: "s", schema: null }));
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("output_config");
   });
 
@@ -125,13 +123,13 @@ describe("anthropic provider", () => {
         ],
       },
     }));
-    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }));
+    const { text } = await anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(requestOf({ system: "s" }));
     expect(text).toBe('"answer"');
   });
 
   it("throws NolaProviderError when the response has no text content", async () => {
     const { fn } = fakeFetch(() => ({ body: { content: [] } }));
-    await expect(anthropic({ apiKey: "k", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }))).rejects.toBeInstanceOf(
+    await expect(anthropic({ apiKey: "k", fetch: fn, model: "m" }).infer(requestOf({ system: "s" }))).rejects.toBeInstanceOf(
       NolaProviderError,
     );
   });
@@ -140,7 +138,7 @@ describe("anthropic provider", () => {
     process.env.NOLA_TEST_ANTHROPIC_KEY = "k-456";
     try {
       const { fn, calls } = fakeFetch(() => messageReply({ value: "x" }));
-      await anthropic({ apiKeyEnv: "NOLA_TEST_ANTHROPIC_KEY", fetch: fn, model: "m" }).complete(requestOf({ system: "s" }));
+      await anthropic({ apiKeyEnv: "NOLA_TEST_ANTHROPIC_KEY", fetch: fn, model: "m" }).infer(requestOf({ system: "s" }));
       expect(new Headers(calls[0]?.init.headers).get("x-api-key")).toBe("k-456");
     } finally {
       delete process.env.NOLA_TEST_ANTHROPIC_KEY;
@@ -153,7 +151,7 @@ describe("anthropic provider", () => {
     try {
       const { fn } = fakeFetch(() => messageReply("x"));
       const err = (await anthropic({ fetch: fn, model: "m" })
-        .complete(requestOf({ system: "s" }))
+        .infer(requestOf({ system: "s" }))
         .catch((e: unknown) => e)) as NolaProviderError;
       expect(err).toBeInstanceOf(NolaProviderError);
       expect(err.message).toMatch(/ANTHROPIC_API_KEY/);
@@ -167,7 +165,7 @@ describe("anthropic provider", () => {
   it("wraps HTTP failures with status and body excerpt", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: { error: { message: "rate limited" } } }));
     const err = (await anthropic({ apiKey: "k", fetch: fn, model: "m" })
-      .complete(requestOf({ system: "s" }))
+      .infer(requestOf({ system: "s" }))
       .catch((e: unknown) => e)) as NolaProviderError;
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.status).toBe(429);
@@ -178,7 +176,7 @@ describe("anthropic provider", () => {
   it("carries a delta-seconds Retry-After header as retryAfterMs", async () => {
     const { fn } = fakeFetch(() => ({ status: 429, body: "rate limited", headers: { "retry-after": "2" } }));
     const err = (await anthropic({ apiKey: "k", fetch: fn, model: "m" })
-      .complete(requestOf({ system: "s" }))
+      .infer(requestOf({ system: "s" }))
       .catch((e: unknown) => e)) as NolaProviderError;
     expect(err.retryAfterMs).toBe(2000);
   });
@@ -189,7 +187,7 @@ describe("anthropic provider", () => {
     const { fn, calls } = fakeFetch(() => messageReply({ value: "x" }));
     vi.stubGlobal("fetch", fn);
     try {
-      const { text } = await anthropic("claude-sonnet-5").complete(requestOf({ system: "s" }));
+      const { text } = await anthropic("claude-sonnet-5").infer(requestOf({ system: "s" }));
       expect(text).toBe('"x"');
       expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
       expect(new Headers(calls[0]?.init.headers).get("x-api-key")).toBe("k-short");
@@ -211,10 +209,24 @@ describe("anthropic provider", () => {
       model: "claude-sonnet-5",
       baseUrl: "https://proxy.local/",
       maxOutputTokens: 9000,
-    }).complete(requestOf({ system: "s" }));
+    }).infer(requestOf({ system: "s" }));
     expect(calls[0]?.url).toBe("https://proxy.local/v1/messages");
     const body = JSON.parse(String(calls[0]?.init.body)) as { model: string; max_tokens: number };
     expect(body.model).toBe("claude-sonnet-5");
     expect(body.max_tokens).toBe(9000);
+  });
+});
+
+describe("anthropic provider — structuredOutputs (spec 2026-09-28 §3.6)", () => {
+  it("structuredOutputs: false sends no output_config and puts the schema in the system turn as <schema>", async () => {
+    const { fn, calls } = fakeFetch(() => messageReply({ v: "x" }));
+    const schema: JsonSchema = { type: "object", properties: { v: { type: "string" } }, required: ["v"], additionalProperties: false };
+    const res = await anthropic({ apiKey: "k", fetch: fn, model: "m", structuredOutputs: false }).infer(requestOf({ schema }));
+    const body = JSON.parse(String(calls[0]?.init.body)) as { output_config?: unknown; system: string };
+    expect(body.output_config).toBeUndefined();
+    expect(body.system.startsWith(DEFAULT_SYSTEM)).toBe(true);
+    expect(body.system).toContain(`\n\n<schema>\n${JSON.stringify(schema)}\n</schema>\nReply with a single JSON value conforming to the schema.`);
+    expect(res.sent?.system).toBe(body.system);
+    expect(res.text).toBe('{"v":"x"}');
   });
 });

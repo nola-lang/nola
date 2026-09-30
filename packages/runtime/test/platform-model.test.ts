@@ -6,7 +6,7 @@ import { platformModel } from "../src/platform-model.js";
 import { requestOf } from "./helpers/model.js";
 
 /** A minimal InferRequest over the canonical model, mirroring what the ask boundary builds. */
-const inferReq = () => ({ model: requestOf({ dialect: "model" }).payload as InferenceModel });
+const inferReq = () => ({ intent: requestOf().intent });
 
 type FetchArgs = { url: string; init: RequestInit };
 
@@ -27,10 +27,9 @@ describe("platform model", () => {
     const { fn, calls } = fakeFetch(() => ({ body: reply }));
     const p = platformModel({ apiKey: "k", fetch: fn });
     expect(p.name).toBe("nola");
-    const model = requestOf({ instruction: "user name", params: { temperature: 0 }, dialect: "model" })
-      .payload as InferenceModel;
+    const model = requestOf({ instruction: "user name", params: { temperature: 0 } }).intent;
     const { text, durationMs } = await p.infer({
-      model,
+      intent: model,
       params: { temperature: 0 },
       trace: { askId: "ask-1", invocationId: "inv-1", spanPath: ["inv-0", "inv-1"] },
     });
@@ -296,14 +295,14 @@ describe("platform model", () => {
   describe("platform contract", () => {
     afterEach(() => vi.restoreAllMocks());
 
-    const modelOf = () => requestOf({ dialect: "model" }).payload as InferenceModel;
+    const modelOf = () => requestOf().intent;
 
     it("is a PlatformModel: brand gate, infer() consumes the model", async () => {
       const { fn, calls } = fakeFetch(() => ({ body: { text: "ok" } }));
       const p = platformModel({ apiKey: "k", fetch: fn });
       expect(isPlatformModel(p)).toBe(true);
       expect(p.name).toBe("nola");
-      const res = await p.infer({ model: modelOf(), profile: "fast" });
+      const res = await p.infer({ intent: modelOf(), profile: "fast" });
       expect(res.text).toBe("ok");
       const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
       expect(body.intent).toBeDefined();
@@ -322,27 +321,28 @@ describe("platform model", () => {
   });
 });
 
-describe("platform model — protocol 1 wire compatibility", () => {
-  it("sends a call intent as intent: \"extract\" without callee/hint — the deployed validator accepts only extract", async () => {
-    const { fn, calls } = fakeFetch(() => ({ body: { text: "{}" } satisfies NolaInferResponse }));
+describe("platform model — the intent on the wire", () => {
+  it('posts a call intent as intent: "call" with callee and hint — the platform validator admits the kind (no extract fold)', async () => {
+    const { fn, calls } = fakeFetch(() => ({ body: { text: '{"arg0":"t"}' } satisfies NolaInferResponse }));
     const p = platformModel({ apiKey: "k", fetch: fn });
-    const model: InferenceModel = {
+    const call: InferenceModel = {
       intent: "call",
-      input: { instruction: 'Generate the arguments for calling the function "notify". urgently', callee: "notify", hint: "urgently" },
-      output: { syntax: "json", schema: { type: "object" } },
+      input: { instruction: 'Generate the arguments for calling the function "createTicket". urgent', callee: "createTicket", hint: "urgent" },
+      output: { syntax: "json", schema: { type: "object", properties: { arg0: { type: "string" } }, required: ["arg0"], additionalProperties: false } },
     };
-    await p.infer({ model });
+    await p.infer({ intent: call });
     const sent = (JSON.parse(String(calls[0]?.init.body)) as NolaInferRequest).intent;
-    expect(sent.intent).toBe("extract");
-    expect(sent.input).toEqual({ instruction: 'Generate the arguments for calling the function "notify". urgently' });
-    expect(sent.output).toEqual(model.output);
+    expect(sent.intent).toBe("call");
+    expect(sent.input.callee).toBe("createTicket");
+    expect(sent.input.hint).toBe("urgent");
+    expect(sent.output).toEqual(call.output);
   });
 
-  it("sends an extract model untouched", async () => {
+  it("sends an extract intent untouched", async () => {
     const { fn, calls } = fakeFetch(() => ({ body: { text: '"x"' } satisfies NolaInferResponse }));
     const p = platformModel({ apiKey: "k", fetch: fn });
-    const { model } = inferReq();
-    await p.infer({ model });
-    expect((JSON.parse(String(calls[0]?.init.body)) as NolaInferRequest).intent).toEqual(model);
+    const { intent } = inferReq();
+    await p.infer({ intent });
+    expect((JSON.parse(String(calls[0]?.init.body)) as NolaInferRequest).intent).toEqual(intent);
   });
 });

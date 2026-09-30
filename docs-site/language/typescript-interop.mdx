@@ -1,11 +1,11 @@
 ---
 title: TypeScript interop
-description: Crossing the .tsi/.ts boundary both ways — importing .tsi from .ts, importing plain TS from .tsi with ./x.js, where the types come from, and views.
+description: Import Nola functions from TypeScript and TypeScript helpers from Nola. Set up type checking, declarations and cross-file schemas.
 sidebar:
   order: 100
 ---
 
-A Nola project mixes `.tsi` and `.ts` files freely. The boundary is crossed in both directions; this page is the set of rules for each.
+You can use `.tsi` and `.ts` files in the same project. The import extension depends on which kind of file you are importing.
 
 ## .ts importing .tsi
 
@@ -27,11 +27,11 @@ import { extractPerson } from "./person.js";      // WRONG — no such file
 export interface Person { name: string; age: number }
 
 export infer function extractPerson(.text: string) {
-  return ask `the person described in the text`<Person>;
+  return ask `the person described in the text`: Person;
 }
 ```
 
-Where the types come from depends on who is looking:
+Different tools resolve the types in different ways:
 
 - **The editor** — the VS Code extension's tsserver plugin gives `.ts` files full types for `.tsi` imports and go-to-definition onto the `infer function` ([Editor setup](/docs/start/editor-setup/)).
 - **`nola check`** — lowers the `.tsi` files and type-checks them *together with* the project's `.ts` files; diagnostics are mapped back to `.tsi` positions. Plain `tsc` over `src` is not a supported check path — it cannot parse `.tsi`.
@@ -54,7 +54,7 @@ export async function createTicket(title: string, priority: number): Promise<str
 import { createTicket } from "./tickets.js";      // RIGHT — NodeNext specifier, file on disk is tickets.ts
 
 export infer function fileTicket(.request: string) {
-  return ask createTicket(..`a short ticket title`<string>, 2);
+  return ask createTicket(`a short ticket title`: string, 2);
 }
 ```
 
@@ -64,7 +64,9 @@ import { createTicket } from "./tickets.ts";      // WRONG — TS5097
 import { createTicket } from "./tickets";         // WRONG — TS2835
 ```
 
-`nola check` and the editor map the `.js` specifier natively, and the `nola run` loader falls back from a missing relative `./x.js` to `x.ts` (a real on-disk `.js` always wins). A literal `./helpers.ts` import also runs under Node's native type stripping, but it needs `allowImportingTsExtensions` under `nola check` and the specifier survives into built output where no `.ts` exists — prefer the `.js` form.
+`nola check` and the editor resolve the `.js` specifier to the TypeScript source. At runtime, the loader tries `x.ts` when a relative `./x.js` file is missing; an existing `.js` file takes precedence.
+
+A literal `./helpers.ts` import can run with Node’s native type stripping, but requires `allowImportingTsExtensions` for type checking. It also keeps the `.ts` extension in built output, where that file may no longer exist. Use `.js` for code you plan to build.
 
 ## Types from another file
 
@@ -83,11 +85,13 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask `the person described in the text`<Person>;
+  return ask `the person described in the text`: Person;
 }
 ```
 
-Behind the scenes the compiler imports the type's value from `./models.tsi` — the [view](/docs/language/types-as-values/#views-of-plain-typescript) of `models.ts`. The same rule serves you: a plain `.ts` may import `{ Person } from "./models.tsi"` and get the interface and its `InferType` value. A `.tsi` specifier that names neither a Nola file nor a TypeScript module is [`NOLA2007`](/docs/reference/error-codes/#nola2007). Keep one basename per module: a `models.ts` next to a `models.tsi` is allowed, but `./models.tsi` always means the Nola file and the build warns.
+The compiler gets the runtime schema from `./models.tsi`, the [view](/docs/language/types-as-values/#views-of-plain-typescript) of `models.ts`. You can use that import from plain TypeScript too: `import { Person } from "./models.tsi"` provides both the type and its `InferType` value.
+
+If neither a Nola file nor a TypeScript module exists for the import, Nola raises [`NOLA2007`](/docs/reference/error-codes/#nola2007). If both `models.ts` and `models.tsi` exist, the import selects the Nola file and the build warns. Prefer distinct basenames.
 
 ```ts
 // not-checked
@@ -116,6 +120,6 @@ The `type` keyword is not optional for a type-only import from a plain module: l
 }
 ```
 
-`include` must be directory-style (`["src"]`, never `["src/**/*.ts"]`) so the editor tooling can admit `.tsi` files into the program while plain `tsc` ignores them; `module` / `moduleResolution` are NodeNext (hence the `./x.js` specifiers); `allowArbitraryExtensions` is required for the `.tsi` declaration pairs and for the `x.d.tsi.ts` files the bundler plugins write for views.
+Use a directory in `include`, such as `["src"]`, so the editor can include `.tsi` files. A glob limited to `.ts` excludes them. `NodeNext` explains the `.js` import specifiers above, and `allowArbitraryExtensions` lets TypeScript resolve the `.tsi` declarations and view declarations generated by Nola.
 
 Next: [Restrictions and reserved syntax](/docs/language/restrictions/)

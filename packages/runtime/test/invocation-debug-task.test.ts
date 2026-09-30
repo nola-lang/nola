@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // internal class — the public surface is the Askable/Intent interfaces
 import { InvocationIntent } from "../src/intents/invocation/invocation-intent.js";
 
-const scope = () => nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go", instruction: "" });
+const scope = () => nolaRuntime.current().moduleContext("x.tsi").scope({ fn: "go" });
 
 /**
  * The console.createTask bridge is what makes F11 across a bare

@@ -46,10 +46,4 @@ describe("evaluatableRange (debug hover expression for .tsi)", () => {
   it("optional chains survive", () => {
     expect(evalText("  const n = user?.person;", "person")).toBe("user?.person");
   });
-
-  it("a chain rooted at a contextual parameter drops only the marker", () => {
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture text
-    const line = "  const n = ask ..`x ${.user.name}`;";
-    expect(evalText(line, "name")).toBe("user.name");
-  });
 });

@@ -1,13 +1,14 @@
-import type { AskReceipt, ClassicPrompt } from "@nola-lang/core";
+import type { AskReceipt } from "@nola-lang/core";
+import { DEFAULT_SYSTEM, renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
-import { buildInferenceModel, ExtractContext, ExtractIntent, Frame, fingerprintRequest, nolaRuntime, SYSTEM_PREAMBLE } from "@nola-lang/runtime";
+import { buildInferenceModel, ExtractContext, ExtractIntent, Frame, fingerprintRequest, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
 import { askViaInference } from "./helpers/inference.js";
 
 afterEach(() => nolaRuntime.reset());
 
-const ctx = () => openTestFrame({ data: { fn: "go", instruction: "be careful" } });
+const ctx = () => openTestFrame({ data: { fn: "go" } });
 
 describe("JsonInference", () => {
   it("returns the validated value and sends the composed context", async () => {
@@ -16,8 +17,8 @@ describe("JsonInference", () => {
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            seen = (req.payload as ClassicPrompt).messages[0]?.content ?? "";
+          infer: async (req) => {
+            seen = renderPrompt(req.intent).messages[0]?.content ?? "";
             return { text: '"Evgen"' };
           },
         },
@@ -30,11 +31,11 @@ describe("JsonInference", () => {
       prompt: "user name",
       schema: { type: "string" },
       loc: "1:1",
+      visible: { context: [() => "be careful"] },
     });
     expect(v).toBe("Evgen");
-    expect(seen).toContain("CONTEXT — inside go(), x.tsi");
-    expect(seen).toContain("Purpose: be careful");
-    expect(seen).toContain("<request>\nuser name\n</request>");
+    expect(seen).toContain('<context function="go">\nbe careful\n</context>');
+    expect(seen).toContain("<task>\nuser name\n</task>");
     // TODO(history): assert the "earlier" record once history composition lands.
   });
 
@@ -62,11 +63,11 @@ describe("JsonInference", () => {
     nolaRuntime.configure({
       model: {
         default: mockProvider(["wrong"]),
-        probe: { name: "probe", complete: async () => ({ text: '"routed"' }) },
+        probe: { name: "probe", infer: async () => ({ text: '"routed"' }) },
       },
     });
     const value = await askViaInference({
-      frame: Frame.open(nolaRuntime.current().fileContext("t.tsi")),
+      frame: Frame.open(nolaRuntime.current().moduleContext("t.tsi")),
       prompt: "p",
       schema: { type: "string" },
       loc: "1:1",
@@ -79,10 +80,10 @@ describe("JsonInference", () => {
     nolaRuntime.configure({
       model: {
         default: mockProvider(["wrong"]),
-        probe: { name: "probe", complete: async () => ({ text: '"routed"' }) },
+        probe: { name: "probe", infer: async () => ({ text: '"routed"' }) },
       },
     });
-    const infer = nolaRuntime.current().fileContext("t.tsi").scope({ fn: "go" });
+    const infer = nolaRuntime.current().moduleContext("t.tsi").scope({ fn: "go" });
     const value = await askViaInference({
       frame: Frame.open(infer, { model: "probe" }),
       prompt: "p",
@@ -100,7 +101,7 @@ describe("JsonInference span recording", () => {
       model: { default: mockProvider([123, "ok"]) }, // first attempt fails string validation
       telemetry: [{ name: "cap", onAskEnd: (e) => receipts.push(e.receipt) }],
     });
-    const frame = Frame.open(nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go" }));
+    const frame = Frame.open(nolaRuntime.current().moduleContext("x.tsi").scope({ fn: "go" }));
     const v = await askViaInference({
       frame,
       prompt: "p",
@@ -151,28 +152,29 @@ describe("JsonInference span recording", () => {
       model: {
         default: {
           name: "cap",
-          complete: async (req) => {
-            captured = { system: (req.payload as ClassicPrompt).system, content: (req.payload as ClassicPrompt).messages[0]?.content ?? "" };
+          infer: async (req) => {
+            captured = { system: renderPrompt(req.intent).system, content: renderPrompt(req.intent).messages[0]?.content ?? "" };
             return { text: '"ok"' };
           },
         },
       },
       system: { message: "Be terse." },
     });
-    const infer = nolaRuntime.current().fileContext("x.tsi").func({ fn: "go", instruction: "" });
+    const infer = nolaRuntime.current().moduleContext("x.tsi").func({ fn: "go" });
     const frame = Frame.open(infer);
     await askViaInference({ frame, prompt: "p", schema: { type: "string" }, loc: "1:1" });
-    expect(captured?.system).toBe(`${SYSTEM_PREAMBLE}\n\nBe terse.`);
-    expect(captured?.content).toContain("CONTEXT — inside go(), x.tsi");
+    // system.message REPLACES the default system text (prompt-rendering spec §3.2)
+    expect(captured?.system).toBe("Be terse.");
+    expect(captured?.content).toContain('<context function="go"/>');
     // The system text never leaks into the user message.
-    expect(captured?.content).not.toContain(SYSTEM_PREAMBLE);
+    expect(captured?.content).not.toContain(DEFAULT_SYSTEM);
     expect(captured?.content).not.toContain("Be terse.");
   });
 
   it("identical composed requests fingerprint identically (deterministic composition)", () => {
     const mk = () => {
       const runtime = nolaRuntime.current();
-      const frame = Frame.open(runtime.fileContext("x.tsi").func({ fn: "go", instruction: "" }));
+      const frame = Frame.open(runtime.moduleContext("x.tsi").func({ fn: "go" }));
       const extract = frame.child(
         new ExtractContext({ instruction: "p", type: { type: "string" }, loc: "1:1" }, runtime),
       );
@@ -182,14 +184,14 @@ describe("JsonInference span recording", () => {
         site: "x.tsi:1:1",
         system: runtime.system.systemMessage,
       });
-      return fingerprintRequest({ payload: model });
+      return fingerprintRequest({ intent: model });
     };
     expect(mk()).toBe(mk());
   });
 
   it("attaches the ask span to the passed frame", async () => {
     nolaRuntime.configure({ model: { default: mockProvider(["ok"]) } });
-    const frame = Frame.open(nolaRuntime.current().fileContext("x.tsi").scope({ fn: "go" }));
+    const frame = Frame.open(nolaRuntime.current().moduleContext("x.tsi").scope({ fn: "go" }));
     const v = await askViaInference({
       frame,
       prompt: "p",

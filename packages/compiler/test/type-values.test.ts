@@ -18,7 +18,7 @@ describe("exported types become values (emit 14; phase-1 shape since emit 15)", 
     expect(code).toContain(`export interface Box { w: number }${VALUE("Box")}`);
     expect(code.match(/function __nola_type_User\(/g)).toHaveLength(1);
     expect(code).toContain(`function __nola_type_Box(): import("@nola-lang/runtime").InferType<unknown> { return ${INERT}; }`);
-    expect(code).toContain("__nola.useRuntime(18);");
+    expect(code).toContain("__nola.useRuntime(21);");
     expect(meta.mode).toBe("lowered");
     expect(meta.derivations.map((d) => [d.accessor, d.kind, d.name])).toEqual([
       ["__nola_type_User", "exported", "User"],

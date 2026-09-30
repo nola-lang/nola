@@ -18,7 +18,7 @@ const LOWERED = [
   "  return __nola.intents.Intent(async (__frame) => {",
   "    const person = await __nola.ask(__nola.intents.ExtractIntent({ instruction: `p`, type: __nola.types.string(), loc: '1:1' }), __frame);",
   "    return person;",
-  "  }, __nola.context.file('src/a.tsi').func({ fn: 'go', args: [] }));",
+  "  }, __nola.context.module('src/a.tsi').func({ fn: 'go', args: [] }));",
   "}",
   "",
 ].join("\n");

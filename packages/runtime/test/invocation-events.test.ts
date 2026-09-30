@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 afterEach(() => nolaRuntime.reset());
 
-const fileCtx = () => nolaRuntime.current().fileContext("x.tsi");
+const fileCtx = () => nolaRuntime.current().moduleContext("x.tsi");
 
 const inferFn = (fn: string, body: (ctx: Frame) => Promise<unknown>) => () =>
-  __nola.intents.Intent(body, fileCtx().func({ fn, instruction: "" }));
+  __nola.intents.Intent(body, fileCtx().func({ fn }));
 
 describe("invocation observability", () => {
   it("onInvocationStart fires per frame with the parent link, name, file and detached flag", async () => {

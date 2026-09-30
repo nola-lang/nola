@@ -1,5 +1,5 @@
-import type { ClassicPrompt, InferRequest, ProviderPayload, ProviderRequest } from "@nola-lang/core";
-import { isInferenceModel, PLATFORM_MODEL } from "@nola-lang/core";
+import type { InferenceModel, InferRequest, RenderedPrompt } from "@nola-lang/core";
+import { PLATFORM_MODEL, renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,8 +25,8 @@ describe("JsonInference.infer", () => {
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            seen.push((req.payload as ClassicPrompt).messages.map((m) => m.content));
+          infer: async (req) => {
+            seen.push(renderPrompt(req.intent).messages.map((m) => m.content));
             return { text: seen.length === 1 ? "123" : '"ok"' };
           },
         },
@@ -36,14 +36,12 @@ describe("JsonInference.infer", () => {
     expect(v).toBe("ok");
     // Second call: [original user, assistant echo, correction user].
     expect(seen[1]).toHaveLength(3);
-    expect(seen[1]?.[2]).toBe(
-      "Your previous reply was invalid: $: expected string, got number. Reply again with JSON strictly conforming to responseSchema.",
-    );
+    expect(seen[1]?.[2]).toBe("<correction>\n$: expected string, got number\n</correction>");
   });
 
   it("rejects non-JSON replies with the parse error", async () => {
     nolaRuntime.configure({
-      model: { default: { name: "raw", complete: async () => ({ text: "not json" }) } },
+      model: { default: { name: "raw", infer: async () => ({ text: "not json" }) } },
     });
     await expect(
       askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "3:7" }),
@@ -51,12 +49,12 @@ describe("JsonInference.infer", () => {
   });
 
   it("sends the ask identity as trace and the merged params", async () => {
-    let got: ProviderRequest | undefined;
+    let got: InferRequest | undefined;
     nolaRuntime.configure({
       model: {
         default: {
           name: "cap",
-          complete: async (req) => {
+          infer: async (req) => {
             got = req;
             return { text: '"ok"' };
           },
@@ -67,51 +65,31 @@ describe("JsonInference.infer", () => {
     await askViaInference({ frame, prompt: "p", schema: { type: "string" }, loc: "1:1" });
     expect(got?.trace).toEqual({ askId: expect.any(String), invocationId: frame.invocationId, spanPath: [frame.invocationId] });
     expect(got?.params).toEqual({ temperature: 0.2 });
-    expect((got?.payload as ClassicPrompt).messages[0]?.content).toContain("<request>\np\n</request>");
+    expect(renderPrompt(got?.intent as InferenceModel).messages[0]?.content).toContain("<task>\np\n</task>");
   });
 
-  it("hands an unbranded provider the classic rendering, on the first attempt and on the correction", async () => {
-    const seen: ProviderPayload[] = [];
+  it("every model receives infer({ intent }) — the correction rides on the intent, never a rendering", async () => {
+    const seen: InferRequest[] = [];
     nolaRuntime.configure({
       model: {
         default: {
           name: "custom",
-          complete: async (req) => {
-            seen.push(req.payload);
+          infer: async (req) => {
+            seen.push(req);
             return { text: seen.length === 1 ? "123" : '"ok"' };
           },
         },
       },
     });
     await expect(askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" })).resolves.toBe("ok");
-    expect(seen.map(isInferenceModel)).toEqual([false, false]);
-    expect((seen[0] as ClassicPrompt).messages).toHaveLength(1);
-    expect((seen[1] as ClassicPrompt).messages).toHaveLength(3);
-    expect((seen[1] as ClassicPrompt).messages[1]).toEqual({ role: "assistant", content: "123" });
-  });
-
-  it("dispatches infer(req.model) to a managed provider — no payload key, model carries the correction", async () => {
-    const seen: InferRequest[] = [];
-    const managed = {
-      [PLATFORM_MODEL]: true as const,
-      name: "m",
-      infer: async (req: InferRequest) => {
-        seen.push(req);
-        return { text: seen.length === 1 ? "123" : '"ok"' };
-      },
-    };
-    nolaRuntime.configure({ model: managed as never });
-    await expect(
-      askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" }),
-    ).resolves.toBe("ok");
-    expect(seen.map((r) => isInferenceModel(r.model))).toEqual([true, true]);
     expect(seen.map((r) => "payload" in r)).toEqual([false, false]);
-    expect(seen[0]?.model.input.instruction).toBe("p");
-    expect(seen[1]?.model.correction).toEqual({ response: "123", error: "$: expected string, got number" });
+    expect(seen[0]?.intent.input.instruction).toBe("p");
+    expect(seen[0]?.intent.correction).toBeUndefined();
+    expect(seen[1]?.intent.correction).toEqual({ response: "123", error: "$: expected string, got number" });
     expect(seen[0]?.trace?.askId).toEqual(expect.any(String));
   });
 
-  it("a managed ask carries the config project; a classic request does not; the fingerprint ignores it", async () => {
+  it("a platform ask carries the config project; an unbranded model's request does not; the fingerprint ignores it", async () => {
     const seen: InferRequest[] = [];
     const fps: (string | undefined)[] = [];
     const capture = { name: "cap", onAskEnd: (e: { receipt: { fingerprint?: string } }) => fps.push(e.receipt.fingerprint) };
@@ -133,16 +111,24 @@ describe("JsonInference.infer", () => {
     // deployment metadata, not ask identity: different projects, one fingerprint
     expect(fps[0]).toBe(fps[1]);
     nolaRuntime.reset();
-    let classicReq: ProviderRequest | undefined;
+    let plainReq: InferRequest | undefined;
     nolaRuntime.configure({
-      model: { default: { name: "c", complete: async (req: ProviderRequest) => { classicReq = req; return { text: '"x"' }; } } },
+      model: {
+        default: {
+          name: "c",
+          infer: async (req: InferRequest) => {
+            plainReq = req;
+            return { text: '"x"' };
+          },
+        },
+      },
       project: "proj-c",
     });
     await askViaInference({ frame: openTestFrame(), prompt: "p", schema: { type: "string" }, loc: "1:1" });
-    expect("project" in (classicReq as object)).toBe(false);
+    expect("project" in (plainReq as object)).toBe(false);
   });
 
-  it("managed and classic asks over the same source share one fingerprint (record/replay parity)", async () => {
+  it("platform and unbranded asks over the same source share one fingerprint (record/replay parity)", async () => {
     const fps: (string | undefined)[] = [];
     const capture = { name: "cap", onAskEnd: (e: { receipt: { fingerprint?: string } }) => fps.push(e.receipt.fingerprint) };
     const managed = { [PLATFORM_MODEL]: true as const, name: "m", infer: async () => ({ text: '"x"' }) };
@@ -155,16 +141,50 @@ describe("JsonInference.infer", () => {
     expect(fps[1]).toBe(fps[0]);
   });
 
-  it("the onProviderRequest hook event carries the payload as sent but never the abort signal", async () => {
-    let event: unknown;
+  it("onProviderRequest carries the intent (never the abort signal); onProviderResponse carries the provider's echo", async () => {
+    const events: { request?: unknown; response?: unknown } = {};
+    const echo: RenderedPrompt = { system: "custom system", messages: [{ role: "user", content: "custom turn" }] };
     nolaRuntime.configure({
-      model: { default: mockProvider(["Evgen"]) },
-      telemetry: [{ onProviderRequest: (e) => { event = e; } }],
+      model: { default: { name: "echoing", infer: async () => ({ text: '"Evgen"', sent: echo }) } },
+      telemetry: [
+        {
+          onProviderRequest: (e) => {
+            events.request = e;
+          },
+          onProviderResponse: (e) => {
+            events.response = e;
+          },
+        },
+      ],
     });
     await askViaInference({ frame: openTestFrame(), prompt: "user name", schema: { type: "string" }, loc: "1:1" });
-    expect("signal" in (event as object)).toBe(false);
-    expect("model" in (event as object)).toBe(false);
-    const payload = (event as { payload?: ProviderPayload }).payload;
-    expect(payload && !isInferenceModel(payload) && payload.messages[0]?.content).toContain("user name");
+    expect("signal" in (events.request as object)).toBe(false);
+    expect("payload" in (events.request as object)).toBe(false);
+    expect((events.request as { intent: InferenceModel }).intent.input.instruction).toBe("user name");
+    expect((events.response as { sent?: RenderedPrompt }).sent).toEqual(echo);
+  });
+
+  it("the receipt's effectivePrompt is the provider's echo when it sends one, the default rendering otherwise", async () => {
+    const receipts: { originalPrompt: string; effectivePrompt: string }[] = [];
+    const echo: RenderedPrompt = { system: "s", messages: [{ role: "user", content: "what the provider really sent" }] };
+    nolaRuntime.configure({
+      model: {
+        default: { name: "echoing", infer: async () => ({ text: '"x"', sent: echo }) },
+        silent: { name: "silent", infer: async () => ({ text: '"x"' }) },
+      },
+      telemetry: [
+        {
+          onAskEnd: ({ receipt }) => {
+            receipts.push(receipt);
+          },
+        },
+      ],
+    });
+    await askViaInference({ frame: openTestFrame(), prompt: "user name", schema: { type: "string" }, loc: "1:1" });
+    await askViaInference({ frame: openTestFrame(), prompt: "user name", schema: { type: "string" }, loc: "1:1", pin: "silent" });
+    expect(receipts[0]?.effectivePrompt).toBe("user: what the provider really sent");
+    expect(receipts[0]?.originalPrompt).toContain("user name");
+    expect(receipts[1]?.effectivePrompt).toBe(receipts[1]?.originalPrompt);
+    expect(receipts[1]?.effectivePrompt).toContain("user name");
   });
 });

@@ -21,6 +21,6 @@ interface Triage {
 const .ticket = "I was charged twice for order #88 and nobody has answered my emails for a week. I want my money back NOW.";
 
 // `ask` works at the top level: this file is the whole program.
-const triage = ask `triage the support ticket`<Triage>;
+const triage = ask `triage the support ticket`: Triage;
 
 console.log(JSON.stringify(triage));

@@ -6,18 +6,18 @@ const SRC = "infer function classify() {\n  const id = ..`ticket id`<string>;\n 
 
 describe("sourceRoot", () => {
   // Since emit 3 the display path is emitted exactly once per file, in the
-  // hoisted `__nola_file_ctx` accessor — intents derive `file` from the lineage.
+  // hoisted `__nola_module_ctx` accessor — intents derive `file` from the lineage.
   it("emits a project-root-relative posix path", () => {
     const file = join("/proj", "src", "a.tsi");
     const { code, diagnostics } = compileNola(SRC, file, { sourceRoot: "/proj" });
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('__nola.context.file("src/a.tsi", 18)');
+    expect(code).toContain('__nola.context.module("src/a.tsi", 21)');
     expect(code).not.toContain("proj");
   });
 
   it("leaves the path untouched when no sourceRoot is given", () => {
     const { code } = compileNola(SRC, "x.tsi");
-    expect(code).toContain('__nola.context.file("x.tsi", 18)');
+    expect(code).toContain('__nola.context.module("x.tsi", 21)');
   });
 
   it("keeps diagnostics on the absolute path", () => {

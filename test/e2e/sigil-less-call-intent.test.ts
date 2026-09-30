@@ -38,7 +38,7 @@ describe("sigil-less call intent resolves all slots in one provider call", () =>
         "  model: {",
         "    default: {",
         "      name: 'counting',",
-        "      complete: async () => {",
+        "      infer: async () => {",
         "        g.__calls = (g.__calls ?? 0) + 1;",
         "        return { text: JSON.stringify({ arg0: 'pizza', arg1: 'Kyiv' }) };",
         "      },",

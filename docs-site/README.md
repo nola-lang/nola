@@ -47,11 +47,30 @@ builds. That is the property to protect, so the contract is thin but firm:
 - **No version numbers in prose.** Write "not raised — reserved", not "not
   raised in 0.1.3"; link the Marketplace instead of quoting the extension
   version. The one place a version may appear is a dependency entry for a Nola
-  package inside a `package.json` sample (`"@nola-lang/runtime": "^0.1.13"`),
+  package inside a `package.json` sample (`"@nola-lang/runtime": "^0.1.14"`),
   and those are owned by `scripts/release.mjs`: every bump rewrites them to
   `^<version>` (the caret range is what the scaffold stamps), and
   `test/docs-site.test.ts` fails on any entry that disagrees with the lockstep
   version — so a stale or exact version cannot ship.
+
+## Writing style
+
+Write for a developer trying to get something working. Start with what a feature
+does or when to use it, then show a small example and explain the details it needs.
+
+- Give each paragraph one main point. Split setup steps, behavior and exceptions
+  when they answer different questions.
+- Use direct verbs and ordinary sentences. Avoid repeated slogans, rhetorical
+  questions, claims that something is obvious, and capitals used for emphasis.
+- Name the behavior: say which value is sent, which operation retries or when an
+  error occurs. Keep terms such as *model*, *provider*, *intent* and *invocation*
+  consistent with the public API.
+- Distinguish compile-time schema derivation from runtime response validation.
+  Describe limitations beside the feature they affect.
+- Compare specific workflows fairly. Support claims about other tools with their
+  official documentation, and avoid universal claims drawn from one example.
+- Preserve examples and heading anchors during prose edits. If either changes,
+  check the sample or incoming links as well as the wording.
 
 ## Checks
 

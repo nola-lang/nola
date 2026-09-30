@@ -8,6 +8,9 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask `the person described in the text`<Person>;
+  // A bare template literal on its own line is a context statement: text every
+  // ask below it sees. `.message` is data; the statement is your words.
+  `Answer from the text alone; never invent facts.`
+  const person = ask `the person described in the text`: Person;
   return normalizePerson(person);
 }

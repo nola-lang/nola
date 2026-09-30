@@ -7,8 +7,10 @@ import {
 } from "@nola-lang/core";
 import type { InferenceComposer } from "../ask/composer.js";
 import { DEFAULT_ASK_TIMEOUT_MS } from "../config.js";
-import type { AskLocals, InferContext } from "../infer-context/index.js";
+import type { ContextItem, InferContext, VisibleContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
+import { InvocationContext } from "../intents/invocation/invocation-context.js";
+import { ModuleContext } from "../intents/invocation/module-context.js";
 import { AskSpan, type AskSpanInit } from "./ask-span.js";
 import type { NolaRuntime } from "./nola-runtime.js";
 
@@ -134,14 +136,48 @@ export class Frame {
   }
 
   /**
-   * This frame's node describes its scope — with the contextual bindings the
-   * ask site saw — and the caller chain composes one level out, each caller
-   * described with the bindings ITS call site saw (`ask fn()` carries them on
-   * the child frame's options).
+   * This frame's node describes its scope — with what the ask site saw — then
+   * the module its function is DEFINED in (spec 2026-09-26 §3.3), then the
+   * caller chain one level further out, each caller described with what ITS
+   * call site saw (`ask fn()` carries it on the child frame's options).
+   *
+   * The module block renders ONCE per chain, by the outermost frame rooted in
+   * or defined in that module, with the union of every view the chain
+   * contributed for it (spec 2026-09-29 §3.4): a `<module>` frame's
+   * `visible.context`, each function frame's `moduleContext`. `carried`
+   * accumulates those views per module node as the recursion walks outward.
    */
-  compose(composer: InferenceComposer, locals?: AskLocals): void {
-    this.infer.compose(composer, locals);
-    this.parent?.compose(composer.outer(), this.options.locals);
+  compose(composer: InferenceComposer, visible?: VisibleContext, carried = new Map<ModuleContext, ContextItem[][]>()): void {
+    const node = this.infer;
+    const module =
+      node instanceof ModuleContext
+        ? node
+        : node instanceof InvocationContext && node.parent instanceof ModuleContext
+          ? node.parent
+          : undefined;
+    if (module) {
+      const own = node instanceof ModuleContext ? [...(visible?.context ?? [])] : [...(node as InvocationContext).data.moduleContext];
+      carried.set(module, [...(carried.get(module) ?? []), own]);
+    }
+    if (node instanceof ModuleContext) node.compose(composer, visible, carried.get(node));
+    else node.compose(composer, visible);
+    let outer = composer.outer();
+    if (module && !(node instanceof ModuleContext) && !this.callerBelongsTo(module)) {
+      if (module.composeLexical(outer, carried.get(module) ?? [])) outer = outer.outer();
+    }
+    this.parent?.compose(outer, this.options.visible, carried);
+  }
+
+  /**
+   * Whether a caller frame is rooted in the module (a `<module>` frame) or
+   * defined in it (another function of the same file) — those render the
+   * module further out, once, with this frame's view carried up to them.
+   */
+  private callerBelongsTo(module: ModuleContext): boolean {
+    for (let f = this.parent; f; f = f.parent) {
+      if (f.infer === module || f.infer.parent === module) return true;
+    }
+    return false;
   }
 
   /**
@@ -176,10 +212,8 @@ export class Frame {
     this.parent?.history.push({ prompt: this.describe(), value });
   }
 
-  /** "fn" or "fn: instruction" — the collapsed record's prompt. */
+  /** The collapsed record's prompt: the function's name — there is no static instruction since context statements (spec 2026-09-29 §3.4). */
   private describe(): string {
-    const { fn, instruction } = this.infer.data as { fn?: unknown; instruction?: unknown };
-    const name = typeof fn === "string" ? fn : "<anonymous>";
-    return typeof instruction === "string" && instruction !== "" ? `${name}: ${instruction}` : name;
+    return this.fnName();
   }
 }

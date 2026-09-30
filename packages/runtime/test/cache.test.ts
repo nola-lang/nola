@@ -26,7 +26,7 @@ describe.skip("fingerprint cache", () => {
       model: {
         default: {
           name: "probe",
-          complete: async () => {
+          infer: async () => {
             wireCalls++;
             return { text: '"Evgen"' };
           },
@@ -48,7 +48,7 @@ describe.skip("fingerprint cache", () => {
       model: {
         default: {
           name: "probe",
-          complete: async () => {
+          infer: async () => {
             wireCalls++;
             return { text: '"v"' };
           },
@@ -77,7 +77,7 @@ describe.skip("fingerprint cache", () => {
     const { receipts, hook } = capture();
     const invoke = (answers: unknown[]) => {
       nolaRuntime.configure({ model: { default: mockProvider(answers) }, telemetry: [hook] });
-      const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+      const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
       return __nola.intents.Intent(
         async (__ctx: Frame) => {
           await __nola.ask(
@@ -93,7 +93,7 @@ describe.skip("fingerprint cache", () => {
             __ctx,
           );
         },
-        fileCtx.func({ fn: "go", instruction: "" }),
+        fileCtx.func({ fn: "go" }),
       );
     };
     await invoke(["A", "x"]);

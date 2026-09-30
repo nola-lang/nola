@@ -5,14 +5,14 @@ import { loadBuildOptions, loadCompilerOptions, loadNolaConfig } from "@nola-lan
 import { describe, expect, it } from "vitest";
 
 const INLINE_CONFIG = [
-  "const provider = { name: 'inline', complete: async () => ({ text: '\"x\"' }) };",
+  "const provider = { name: 'inline', infer: async () => ({ text: '\"x\"' }) };",
   "export default { model: { default: provider } };",
   "",
 ].join("\n");
 
 // Reads an env var at config-eval time so tests can observe whether .env was applied.
 const CONFIG_READS_ENV = [
-  "const provider = { name: process.env.NOLA_TEST_ENV_VAR ?? 'unset', complete: async () => ({ text: '\"x\"' }) };",
+  "const provider = { name: process.env.NOLA_TEST_ENV_VAR ?? 'unset', infer: async () => ({ text: '\"x\"' }) };",
   "export default { model: { default: provider } };",
   "",
 ].join("\n");
@@ -29,7 +29,7 @@ describe("loadNolaConfig", () => {
     await writeFile(join(dir, "nola.config.ts"), tsConfig);
     const cfg = await loadNolaConfig(dir);
     expect(cfg?.model.default.name).toBe("inline");
-    expect((await cfg?.model.default.complete({ system: "", messages: [] }))?.text).toBe('"x"');
+    expect((await cfg?.model.default.infer({ intent: { intent: "extract", input: { instruction: "p" }, output: { syntax: "json" } } }))?.text).toBe('"x"');
   });
 
   it("finds the config in a parent directory", async () => {
@@ -53,7 +53,7 @@ describe("loadNolaConfig", () => {
     const dir = await mkdtemp(join(tmpdir(), "nola-bare-"));
     await writeFile(
       join(dir, "nola.config.ts"),
-      "export default { model: { name: 'bare', complete: async () => ({ text: '\"x\"' }) } };\n",
+      "export default { model: { name: 'bare', infer: async () => ({ text: '\"x\"' }) } };\n",
     );
     const cfg = await loadNolaConfig(dir);
     expect(Object.keys(cfg?.model ?? {})).toEqual(["default"]);
@@ -84,7 +84,7 @@ describe("loadNolaConfig", () => {
     );
     await writeFile(
       join(dir, "src", "provider.ts"),
-      "export const canned = { name: 'from-src', complete: async () => ({ text: '\"x\"' }) };\n",
+      "export const canned = { name: 'from-src', infer: async () => ({ text: '\"x\"' }) };\n",
     );
     await writeFile(
       join(dir, "nola.config.ts"),

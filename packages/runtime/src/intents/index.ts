@@ -12,6 +12,7 @@ export {
   type FunctionScopeInit,
   InvocationContext,
 } from "./invocation/invocation-context.js";
+export { ModuleContext, type ModuleScopeInit } from "./invocation/module-context.js";
 
 /**
  * Runtime intent detection — checks the `__nolaBrand` instance property, not

@@ -13,7 +13,7 @@ describe("intrinsic decision types: the appendix import", () => {
     ].join("\n");
     const { code, diagnostics } = compileNola(src, "x.tsi");
     expect(diagnostics).toEqual([]);
-    expect(code).toContain(`import { __nola } from "@nola-lang/runtime";\n${IMPORT}\n__nola.useRuntime(18);`);
+    expect(code).toContain(`import { __nola } from "@nola-lang/runtime";\n${IMPORT}\n__nola.useRuntime(21);`);
     // the body is untouched: the type alias line (a verbatim span) is byte-identical
     expect(code.startsWith(src.split("\n")[0] as string)).toBe(true);
   });
@@ -39,7 +39,7 @@ describe("intrinsic decision types: the appendix import", () => {
   it("a type-only file that uses Choice still gets the appendix (the import needs it)", () => {
     const { code } = compileNola('export type D = Choice<"a" | "b">;\n', "x.tsi");
     expect(code).toContain('import type { Choice } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(18);");
+    expect(code).toContain("__nola.useRuntime(21);");
   });
 
   it("the lowered output type-checks with no import in the source", () => {

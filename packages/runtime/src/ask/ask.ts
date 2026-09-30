@@ -1,9 +1,15 @@
 import { type Askable, NolaResolutionError, Site } from "@nola-lang/core";
-import type { AskLocals } from "../infer-context/index.js";
+import type { VisibleContext } from "../infer-context/index.js";
 import { Intent } from "../intents/intent.js";
 import { runInvocation } from "../intents/invocation/lifecycle.js";
 import { ModuleContext } from "../intents/invocation/module-context.js";
 import type { Frame } from "../runtime/index.js";
+import { fmt } from "./fmt.js";
+
+/** The third argument of a lowered `__nola.ask` (spec 2026-09-29 §3.3): the `ask with <name>` alias plus what the site sees. */
+export interface AskSite extends VisibleContext {
+  readonly model?: string;
+}
 
 /**
  * `ask expr` — validate the operand is an Intent and run it against the asking
@@ -13,20 +19,16 @@ import type { Frame } from "../runtime/index.js";
  * `<module>` root is opened here — one per ask, with the asked intent's own
  * timeout as its clock (at module level the ask is the root; whether asks
  * share one module frame is this function's decision, never the emitted
- * text's). `model` is the `ask with <name>` alias; being the ask-site choice
- * it overrides an intent's own .withModel pin (forceModel still beats both —
- * resolveModel owns that precedence).
+ * text's). `site.model` is the `ask with <name>` alias; being the ask-site
+ * choice it overrides an intent's own .withModel pin (forceModel still beats
+ * both — resolveModel owns that precedence). `site.locals` and `site.context`
+ * are what the site sees; they ride the intent's options to the composer.
  */
-export async function ask<T>(
-  value: Askable<T>,
-  scope: Frame | ModuleContext,
-  model?: string,
-  locals?: AskLocals,
-): Promise<T> {
+export async function ask<T>(value: Askable<T>, scope: Frame | ModuleContext, site?: AskSite): Promise<T> {
   if (scope instanceof ModuleContext) {
     const timeout = Intent.isIntent(value) ? value.timeout : undefined;
     const root = scope.runtime.openFrame(scope, timeout === undefined ? {} : { timeout });
-    return runInvocation(root, (frame) => ask(value, frame, model, locals));
+    return runInvocation(root, (frame) => ask(value, frame, site));
   }
   const frame = scope;
   if (!Intent.isIntent(value)) {
@@ -37,35 +39,26 @@ export async function ask<T>(
     });
   }
   let intent = value as unknown as Intent<T>;
-  if (model !== undefined) intent = intent.withModel(model);
-  if (locals !== undefined) intent = intent.withLocals(locals);
+  if (site?.model !== undefined) intent = intent.withModel(site.model);
+  if (site?.locals !== undefined || site?.context !== undefined) {
+    intent = intent.withVisible({
+      ...(site.locals !== undefined ? { locals: site.locals } : {}),
+      ...(site.context !== undefined ? { context: site.context } : {}),
+    });
+  }
   return intent.run(frame);
 }
 
-/** `${expr}` prompt splice: strings verbatim, everything else JSON. */
-export function fmt(value: unknown): string {
-  if (typeof value === "string") return value;
-  return JSON.stringify(value) ?? String(value);
-}
-
-/** One interpolated value of a prompt template (see tpl). */
-function tplValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.map(tplValue).join("\n");
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === "object") return JSON.stringify(value) ?? "";
-  return String(value);
-}
-
 /**
- * The tag lowered prompt templates render through: strings as-is, arrays
- * joined with newlines (so `.map(...)` needs no `.join`), undefined/null as
- * nothing, Date as ISO, other objects as JSON. Deterministic — the rendered
- * text is fingerprint input.
+ * The context statement tag (spec 2026-09-29 §3.3): the lowered
+ * `void __nola_ctx_N; function __nola_ctx_N() { return __nola.ctx`…`; }`
+ * renders its text parts with every hole and juxtaposed value formatted by
+ * `fmt`. Cooked text, raw
+ * as the fallback for an escape the cooked form rejects. Receiving the live
+ * values — not their text — is the seam a later design (tools) extends.
  */
-export function tpl(strings: TemplateStringsArray, ...values: unknown[]): string {
-  let out = strings[0] ?? "";
-  for (let i = 0; i < values.length; i++) out += tplValue(values[i]) + (strings[i + 1] ?? "");
+export function ctx(strings: TemplateStringsArray, ...values: unknown[]): string {
+  let out = strings[0] ?? strings.raw[0] ?? "";
+  for (let i = 0; i < values.length; i++) out += fmt(values[i]) + (strings[i + 1] ?? strings.raw[i + 1] ?? "");
   return out;
 }

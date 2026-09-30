@@ -3,6 +3,7 @@ export { RUNTIME_AMBIENT_STUB } from "./ambient-stub.js";
 export { compileNola } from "./compile.js";
 export { collectDecisionTypeUses, DECISION_TYPE_NAMES, type DecisionTypeName } from "./decision-imports.js";
 export { finalizeDerivations } from "./finalize.js";
+export { isGeneratedIdentifier, isGeneratedNameDiagnostic } from "./generated-names.js";
 export { displayPathFor } from "./path.js";
 export {
   collectExportedTypeNames,

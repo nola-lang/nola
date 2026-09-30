@@ -2,10 +2,10 @@ import { Codes } from "@nola-lang/ast";
 import type { ModelConfigEntry, ModelRef, NolaConfig, NolaTelemetry } from "@nola-lang/core";
 import { isPlatformModel, NolaConfigError, redactError } from "@nola-lang/core";
 import { type ResolvedNolaConfig, resolveNolaConfig } from "../config.js";
-import { FileInferContext, SystemInferContext } from "../infer-context/index.js";
+import { SystemInferContext } from "../infer-context/index.js";
 import type { IntentOptions } from "../intents/intent.js";
 import type { InvocationContext } from "../intents/invocation/invocation-context.js";
-import type { ModuleContext } from "../intents/invocation/module-context.js";
+import { ModuleContext, type ModuleScopeInit } from "../intents/invocation/module-context.js";
 // call-time-only cycle with terminal-trace.ts (via ingest-envelope.ts): both directions resolve inside function bodies.
 import { terminalTrace } from "../terminal-trace.js";
 import { Frame } from "./frame.js";
@@ -124,14 +124,19 @@ export class NolaRuntime {
     return this.#system;
   }
 
-  readonly #fileContexts = new Map<string, FileInferContext>();
+  readonly #moduleContexts = new Map<string, ModuleContext>();
 
-  /** Memoized root context for a .tsi file, parented under `system` (no emitted module state — TDZ-safe). */
-  fileContext(file: string): FileInferContext {
-    let ctx = this.#fileContexts.get(file);
+  /**
+   * The memoized node of one .tsi file — its lineage root, `<module>` scope and
+   * the parent of its infer functions — under `system`. `init` is read on
+   * creation only: the emitted text is static, so every later caller's thunk
+   * is identical and an infer-function call never rebuilds the init.
+   */
+  moduleContext(file: string, init?: () => ModuleScopeInit): ModuleContext {
+    let ctx = this.#moduleContexts.get(file);
     if (!ctx) {
-      ctx = FileInferContext.create(file, this.system, this);
-      this.#fileContexts.set(file, ctx);
+      ctx = ModuleContext.create(file, init?.() ?? {}, this, this.system);
+      this.#moduleContexts.set(file, ctx);
     }
     return ctx;
   }

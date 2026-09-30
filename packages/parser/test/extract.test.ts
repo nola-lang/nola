@@ -26,6 +26,20 @@ describe("`..` extractor", () => {
     expect(e?.loc.start).toMatchObject({ line: 1, column: 13 });
   });
 
+  it("an identifier after `..` is not a spelling — the sigil needs a template (NOLA1005)", () => {
+    // `..choice` / `..scale` / `..prob` were sugar for `<Choice<…>>` etc.
+    // (decision types spec 2026-09-18 §5), retired 2026-09-23: the intrinsic
+    // types are written long-hand, and `..` is followed by a template or
+    // by nothing that parses.
+    const strict = parseNola('const d = ..choice`q`<{ a: "A" }>;\n', "x.tsi");
+    expect(strict.ast).toBeNull();
+    expect(strict.diagnostics[0]?.code).toBe("NOLA1005");
+    const tolerant = parseNola("const p = ..prob`q`;\n", "x.tsi", { tolerant: true });
+    expect(tolerant.ast).not.toBeNull();
+    expect(tolerant.diagnostics.map((d) => d.code)).toContain("NOLA1005");
+    expect((extracts(tolerant.ast as BaseNode)[0] as unknown as { kind?: string } | undefined)?.kind).toBeUndefined();
+  });
+
   it("parses extractors in nested expression positions", () => {
     const src = "const xs = [..`first`, ..`second`];\n";
     const { ast, diagnostics } = parseNola(src, "x.tsi");
@@ -67,12 +81,5 @@ describe("`..` extractor", () => {
     const { ast, diagnostics } = parseNola(src, "x.tsi");
     expect(ast).toBeNull();
     expect(diagnostics[0]?.code).toBe("NOLA1005");
-  });
-
-  it("an identifier after `..` is the sugar slot: an unknown word is NOLA1016 (decision types spec §5)", () => {
-    const src = "const n = ..name;\n";
-    const { ast, diagnostics } = parseNola(src, "x.tsi");
-    expect(ast).toBeNull();
-    expect(diagnostics[0]?.code).toBe("NOLA1016");
   });
 });

@@ -2,10 +2,14 @@ import type { JsonSchema } from "@nola-lang/core";
 
 // When a scalar/array schema is wrapped in the {value} envelope, the schema
 // constraint alone only binds providers that do constrained decoding.
-// Generate-then-validate backends follow the prompt, so the prompt must ask
+// Generate-then-validate backends follow the prompt, so the system turn asks
 // for the envelope too.
-export const ENVELOPE_NOTE =
-  ' Because the response schema is wrapped, reply with a JSON object of the form {"value": X} where X is the value that conforms to responseSchema.';
+export const ENVELOPE_NOTE = ' Reply with a JSON object of the form {"value": X}, where X is the requested value.';
+
+/** The schema rendered into the system turn for a backend that cannot enforce it (`structuredOutputs: false`). */
+export function schemaNote(schema: JsonSchema): string {
+  return `\n\n<schema>\n${JSON.stringify(schema)}\n</schema>\nReply with a single JSON value conforming to the schema.`;
+}
 
 /** Follow root-level $ref chains so the envelope decision sees the real shape. */
 export function resolveRootRef(schema: JsonSchema): JsonSchema {

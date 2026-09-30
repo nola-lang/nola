@@ -47,8 +47,11 @@ describe("@nola-lang/runtime public surface", () => {
     expect((root as Record<string, unknown>).effectiveLogLevel).toBeUndefined();
     expect((root as Record<string, unknown>).builtinLogger).toBeUndefined();
     expect(typeof root.terminalTrace).toBe("function");
-    // prompt templates: the tag lowered templates render through, and the renderer seam
-    expect(typeof root.tpl).toBe("function");
+    // prompt templates are retired (2026-09-28): no tag, no renderer seam
+    expect("tpl" in root).toBe(false);
+    // context statements (2026-09-29): nothing new is re-exported — the tag is reached as `__nola.ctx`, the item reader is internal
+    expect("ctx" in root).toBe(false);
+    expect("readItems" in root).toBe(false);
     expect(typeof root.buildInferenceModel).toBe("function");
     // the public Intent/Askable types are interfaces, not the class
     const check: Intent<string> | null = null;
@@ -66,17 +69,23 @@ describe("@nola-lang/runtime public surface", () => {
 });
 
 describe("provider contract surface", () => {
-  it("exports the model-era names and none of the message-era ones", () => {
-    // renderClassic stays in core: providers receive the rendering, nobody in a config needs to render.
-    expect("renderClassic" in root).toBe(false);
-    expect(typeof root.renderTaskFormat).toBe("function");
-    expect(typeof root.buildInferenceModel).toBe("function");
+  it("exports the intent-era names and none of the dialect-era ones", () => {
     expect(typeof root.describeModel).toBe("function");
-    // a hook narrows ProviderRequestEvent.payload with this — hooks must not need @nola-lang/core
-    expect(typeof root.isInferenceModel).toBe("function");
+    expect(typeof root.buildInferenceModel).toBe("function");
     expect(typeof root.redactDeep).toBe("function");
-    expect(root.SYSTEM_PREAMBLE).toMatch(/^You are the Nola language runtime/);
-    for (const gone of ["PromptBuilder", "fingerprintAsk", "defaultPromptRenderer", "ClassicPromptBuilder", "NolaInferenceBuilder"]) {
+    // rendering is the provider's: the renderer is reached through @nola-lang/providers, not the config surface
+    for (const gone of [
+      "renderClassic",
+      "renderPrompt",
+      "isInferenceModel",
+      "isInferModel",
+      "SYSTEM_PREAMBLE",
+      "renderTaskFormat",
+      "isTrivialStringSchema",
+      "PromptBuilder",
+      "fingerprintAsk",
+      "defaultPromptRenderer",
+    ]) {
       expect((root as Record<string, unknown>)[gone], gone).toBeUndefined();
     }
   });

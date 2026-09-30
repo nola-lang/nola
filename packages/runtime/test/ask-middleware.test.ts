@@ -1,4 +1,5 @@
-import type { AskReceipt, ClassicPrompt, NolaMiddleware, NolaTelemetry } from "@nola-lang/core";
+import type { AskReceipt, NolaMiddleware, NolaTelemetry } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,8 +39,8 @@ describe.skip("middleware in the ask path", () => {
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            sent = JSON.parse((req.payload as ClassicPrompt).messages[0]?.content ?? "{}").request;
+          infer: async (req) => {
+            sent = JSON.parse(renderPrompt(req.intent).messages[0]?.content ?? "{}").request;
             return { text: '"ok"' };
           },
         },
@@ -63,17 +64,17 @@ describe.skip("middleware in the ask path", () => {
 
   it("short-circuit: no provider call, askEnd still fires with servedBy=cache and attempts=0", async () => {
     const { receipts, events, hook } = receiptHook();
-    const complete = vi.fn(async () => ({ text: '"never"' }));
+    const infer = vi.fn(async () => ({ text: '"never"' }));
     const cache: NolaMiddleware = async () => ({ value: "cached", servedBy: "cache" });
     nolaRuntime.configure({
-      model: { default: { name: "probe", complete } },
+      model: { default: { name: "probe", infer } },
       middleware: [cache],
       telemetry: [hook],
     });
 
     await expect(ask()).resolves.toBe("cached");
 
-    expect(complete).not.toHaveBeenCalled();
+    expect(infer).not.toHaveBeenCalled();
     expect(events).toEqual(["askStart", "askEnd"]); // no providerRequest — truthful
     expect(receipts[0]).toMatchObject({ servedBy: "cache", attempts: 0, outcome: { ok: true, value: "cached" } });
   });
@@ -103,8 +104,8 @@ describe.skip("middleware in the ask path", () => {
     nolaRuntime.configure({
       model: {
         default: mockProvider(["d"]),
-        fast: { name: "fast", complete: async () => ({ text: '"from-fast"' }) },
-        slow: { name: "slow", complete: async () => ({ text: '"from-slow"' }) },
+        fast: { name: "fast", infer: async () => ({ text: '"from-fast"' }) },
+        slow: { name: "slow", infer: async () => ({ text: '"from-slow"' }) },
       },
       middleware: [reroute],
       telemetry: [hook],
@@ -129,8 +130,8 @@ describe.skip("middleware in the ask path", () => {
     nolaRuntime.configure({
       model: {
         default: mockProvider(["d"]),
-        real: { name: "real", complete: async () => ({ text: '"from-real"' }) },
-        mock: { name: "mock", complete: async () => ({ text: '"from-mock"' }) },
+        real: { name: "real", infer: async () => ({ text: '"from-real"' }) },
+        mock: { name: "mock", infer: async () => ({ text: '"from-mock"' }) },
       },
       forceModel: "mock",
       middleware: [reroute],

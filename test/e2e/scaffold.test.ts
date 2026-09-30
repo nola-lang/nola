@@ -119,18 +119,23 @@ describe("scaffolded project (feature-extraction, the default)", () => {
     expect(await run([NOLA, "check"], dir)).toContain("no errors");
   });
 
-  it("scaffolds the empty template and checks clean", async () => {
+  it("scaffolds the empty template: the stub is a .tsi entry that runs and checks clean", async () => {
     const dir = join(await mkdtemp(join(tmpdir(), "nola-empty-e2e-")), "app");
     await run([CREATE, dir, "--template", "empty", "--ide", "vscode", "--agents", "all"], ROOT);
-    for (const f of ["package.json", "tsconfig.json", "nola.config.ts", ".gitignore", "src/main.ts"]) {
+    for (const f of ["package.json", "tsconfig.json", "nola.config.ts", ".gitignore", "src/main.tsi"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
+    expect(existsSync(join(dir, "src", "main.ts"))).toBe(false);
     expect(existsSync(join(dir, "nola.replay.jsonl"))).toBe(false);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("nola run src/main.tsi");
     for (const f of [".vscode/launch.json", ".vscode/extensions.json"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
     const launch = JSON.parse(readFileSync(join(dir, ".vscode", "launch.json"), "utf8"));
     expect(launch.configurations[0].runtimeArgs).toContain("nola-lang/register");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code variable syntax
+    expect(launch.configurations[0].program).toBe("${workspaceFolder}/src/main.tsi");
     for (const f of [".agents/skills/nola/SKILL.md", ".claude/skills/nola/SKILL.md", "AGENTS.md"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
@@ -148,8 +153,10 @@ describe("scaffolded project (feature-extraction, the default)", () => {
       expect(existsSync(join(dir, ".claude", "skills", "nola", "references", ref)), ref).toBe(true);
     }
     linkDeps(dir);
-    const out = await run([NOLA, "check"], dir);
-    expect(out).toContain("no errors");
+    // The stub runs as the entry module — no ask in it yet, so no key and no ledger needed.
+    const out = await run([NOLA, "run", "src/main.tsi"], dir);
+    expect(out.trim().split("\n").at(-1)).toBe("Hello from Nola");
+    expect(await run([NOLA, "check"], dir)).toContain("no errors");
   });
 
   it("scaffolds an example template from the dev checkout, no network", async () => {

@@ -1,13 +1,10 @@
 import type { AskKind, JsonSchema } from "@nola-lang/core";
 import type { FunctionArg } from "../intents/invocation/invocation-context.js";
 import type { InferType } from "../types/infer-type.js";
-import type { ExtractPromptScope, FunctionPromptScope, PromptTemplate } from "./prompt-render.js";
 
 /** What the ask-site node contributes. */
 export interface IntentInput {
   instruction: string;
-  /** lowered `${.member}` prompt — rendered into `model.input.text` */
-  template?: PromptTemplate<ExtractPromptScope>;
   /** call intents only */
   callee?: string;
   hint?: string;
@@ -18,11 +15,11 @@ export interface ScopeDescription {
   fn: string;
   /** the module body's implicit scope */
   module?: true;
+  /** the module a function is DEFINED in, composed from that definition site — never a caller (spec 2026-09-26 §3.3) */
+  lexical?: true;
   file?: string;
   instruction: string;
   args: readonly FunctionArg[];
-  /** lowered `${.member}` marker — rendered into `scope.text` */
-  template?: PromptTemplate<FunctionPromptScope>;
 }
 
 export interface IntentComposer {

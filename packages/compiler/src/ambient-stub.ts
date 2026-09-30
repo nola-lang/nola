@@ -46,29 +46,18 @@ export interface TypeCarrier<T = unknown> extends InferType<T> {
 export interface InvocationContext extends InferContext {
   readonly __nolaFunctionScope: true;
 }
-export interface FunctionPromptScopeArg {
-  readonly name: string; readonly type?: string; readonly contextual: boolean; readonly value?: unknown;
-}
-export interface FunctionPromptScope {
-  readonly fn: string; readonly signature: string; readonly file?: string;
-  readonly args: readonly FunctionPromptScopeArg[];
-  readonly nested: boolean; readonly hasContext: boolean;
-  readonly default: string; readonly next: string;
-}
-export interface ExtractPromptScope {
-  readonly type: string; readonly schema: string; readonly hasContext: boolean;
-  readonly default: string; readonly format: string;
-}
-export interface FileInferContext extends InferContext {
-  func(init: {
-    fn: string; instruction?: string; template?: (scope: FunctionPromptScope) => string;
-    args?: Array<{ name: string; type?: InferType<unknown>; contextual?: boolean; value?: unknown }>;
-    locals?: Array<{ name: string; type?: InferType<unknown> }>;
-  }): InvocationContext;
-  module(init: { instruction?: string; template?: (scope: FunctionPromptScope) => string; locals?: Array<{ name: string; type?: InferType<unknown> }> }): ModuleContext;
+export interface ModuleScopeInit {
+  context?: Array<() => string>;
+  locals?: Array<{ name: string; type?: InferType<unknown> }>;
 }
 export interface ModuleContext extends InferContext {
   readonly __nolaModuleScope: true;
+  func(init: {
+    fn: string;
+    args?: Array<{ name: string; type?: InferType<unknown>; contextual?: boolean; value?: unknown }>;
+    locals?: Array<{ name: string; type?: InferType<unknown> }>;
+    moduleContext?: Array<() => string>;
+  }): InvocationContext;
 }
 export interface Frame {
   readonly infer: InferContext;
@@ -95,9 +84,9 @@ export type Prob<C extends ProbCriteria = never> = number & { readonly __nola_pr
 export declare const __nola: {
   intents: {
     Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: InvocationContext): Intent<T>;
-    ExtractIntent<T = unknown>(init: { instruction: string; template?: (scope: ExtractPromptScope) => string; type: unknown; loc: string; def?: string }): Askable<T>;
+    ExtractIntent<T = unknown>(init: { instruction: string; type: unknown; loc: string; def?: string }): Askable<T>;
     FunctionCallIntent<T = unknown>(init: {
-      fn: unknown; name: string; instruction: string; template?: (scope: ExtractPromptScope) => string; loc: string; def?: string; args: unknown[];
+      fn: unknown; name: string; instruction: string; loc: string; def?: string; args: unknown[];
     }): Askable<T>;
   };
   types: {
@@ -121,11 +110,11 @@ export declare const __nola: {
     unsupported<R extends string>(reason: R): UnsupportedType<R>;
   };
   context: {
-    file(file: string, emit?: number): FileInferContext;
+    module(file: string, emit?: number, init?: () => ModuleScopeInit): ModuleContext;
   };
-  ask<T>(value: Askable<T>, scope: Frame | ModuleContext, provider?: string, locals?: Record<string, unknown>): Promise<T>;
+  ask<T>(value: Askable<T>, scope: Frame | ModuleContext, site?: { model?: string; locals?: Record<string, unknown>; context?: Array<() => string> }): Promise<T>;
   fmt(value: unknown): string;
-  tpl(strings: TemplateStringsArray, ...values: unknown[]): string;
+  ctx(strings: TemplateStringsArray, ...values: unknown[]): string;
   useRuntime(v: number): void;
 };
 `;

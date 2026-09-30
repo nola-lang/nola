@@ -3,8 +3,8 @@
 ## The feature-extraction project: one .tsi file is the program
 
 The smallest Nola program is a single `.tsi` file run directly — `ask` is
-legal at the top level, a bare template literal as the FIRST statement is
-the instruction for the whole file, and `const .x` bindings are context the
+legal at the top level, a bare template literal on its own line is a context
+statement every ask below it sees, and `const .x` bindings are context the
 model sees at every ask that follows them (`npm create nola` scaffolds this
 shape as `feature-extraction`):
 
@@ -21,17 +21,17 @@ interface Person {
 
 const .message = "Alice Smith, 32, is a staff engineer at Acme Corp working on distributed systems.";
 
-const person = ask `the person described in the text`<Person>;
+const person = ask `the person described in the text`: Person;
 
 // declared after the first ask, so only the second ask sees it — one answer feeds the next
 const .role = person.job;
-const seniority = ask `the seniority level the role implies`<"junior" | "mid" | "senior" | "staff">;
+const seniority = ask `the seniority level the role implies`: "junior" | "mid" | "senior" | "staff";
 
 console.log(JSON.stringify({ ...person, seniority }));
 ```
 
-Rules that matter here: the instruction literal must be the very first
-statement (a comment before it is fine, an `import` or a type is not); a
+Rules that matter here: a context statement applies to the asks written
+after it, wherever it stands (an `import` or a type before it is fine); a
 `.` binding is visible to the asks declared after it in the same or an
 enclosing block, never to its own initializer; `ask` at the top level is
 legal in the module body and top-level blocks/loops, not inside a plain
@@ -63,16 +63,19 @@ import { createTicket } from "./tickets.js";
 
 const .message = "Hi, I can't log in since this morning and I have a customer demo in an hour — please help!";
 
-const ticket = ask createTicket(..`a short ticket title`<string>, ..`priority 1-5, where 1 is most urgent`<number>);
+const ticket = ask createTicket(
+  `a short ticket title`: string, 
+  `priority 1-5, where 1 is most urgent`: number
+);
 
 console.log(JSON.stringify(ticket));
 ```
 
 `ask` yields the callee's SETTLED value — a `Ticket`, not a `Promise<Ticket>`.
 The import uses the NodeNext `./tickets.js` specifier for the on-disk
-`tickets.ts`. Note there is no first-line instruction here: an `import` is a
-statement, so a template literal placed after it is not the file's first
-statement and would be a no-op.
+`tickets.ts`. Note there is no context statement here: a template literal on
+its own line after the `import` would be one, and every ask below it would
+see it.
 
 ## The typescript-interop project, end to end
 
@@ -102,7 +105,7 @@ export interface Person {
 }
 
 export infer function extractPerson(.message: string) {
-  const person = ask `the person described in the text`<Person>;
+  const person = ask `the person described in the text`: Person;
   return person;
 }
 ```
@@ -129,8 +132,8 @@ nola build                  # dist/ — plain JS + source maps + .d.ts
 
 ## Composing several asks in one invocation
 
-Every `ask` in one invocation shares that invocation's context — the `..`
-contextual parameters and the function's instruction marker. That is what lets
+Every `ask` in one invocation shares that invocation's context — the `.`
+contextual parameters and the function's context statements. That is what lets
 you split one big prompt into several small, individually-typed asks instead of
 demanding everything at once.
 
@@ -145,7 +148,7 @@ export infer function solve(.problem: string) {
   // other's answers automatically — the reasoning is handed to the second ask
   // explicitly through `${}`.
   const reasoning = ask `think step by step about the problem before answering`;
-  const answer = ask `the final numeric answer, given this reasoning: ${reasoning}`<number>;
+  const answer = ask `the final numeric answer, given this reasoning: ${reasoning}`: number;
   return { reasoning, answer };
 }
 ```
@@ -158,8 +161,8 @@ later prompt:
 export type Category = "billing" | "refund" | "fraud" | "other";
 
 export infer function classifyMessage(.message: string) {
-  const category = ask `the category of the customer message`<Category>;
-  const urgent = ask `does the message need urgent attention`<"yes" | "no">;
+  const category = ask `the category of the customer message`: Category;
+  const urgent = ask `does the message need urgent attention`: "yes" | "no";
 
   // plain TS from here on
   if (category === "fraud") return { category, urgent: true, escalate: true };
@@ -178,11 +181,11 @@ export interface Conclusion {
 }
 
 export infer function nextQuery(.question: string, .notes: string[]) {
-  return ask `the single best search query to advance the research; keywords only`<string>;
+  return ask `the single best search query to advance the research; keywords only`: string;
 }
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask `answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`: Conclusion;
 }
 ```
 
@@ -228,7 +231,7 @@ import { createTicket } from "./tickets.js";
 export infer function fileTicket(.request: string) {
   // Sigil-less: the extractor argument makes this call an intent. `2` is a
   // plain argument and is passed through untouched.
-  const id = ask createTicket(..`a short ticket title for the request`<string>, 2);
+  const id = ask createTicket(`a short ticket title for the request`: string, 2);
   return id;
 }
 ```
@@ -239,14 +242,15 @@ spelling that carries a hint:
 ```tsi
 export infer function fileTicketCarefully(.request: string) {
   return ask createTicket`file the ticket exactly as the customer described it`(
-    ..`a short ticket title`<string>,
-    ..`priority 1-5, where 1 is most urgent`<number>,
+    `a short ticket title`: string,
+    `priority 1-5, where 1 is most urgent`: number,
   );
 }
 ```
 
-Every extractor slot needs an explicit `<T>`, and all slots of one call
-resolve together in a single provider round trip.
+Every extractor slot needs an explicit type (an untyped template in the
+arguments is a plain string), and all slots of one call resolve together in a
+single provider round trip.
 
 `createTicket` is async, but `id` is a `string`, not a `Promise<string>` — a
 call intent awaits a promise-returning callee itself (`ask` ≈ `await`), so
@@ -254,9 +258,41 @@ call intent awaits a promise-returning callee itself (`ask` ≈ `await`), so
 ask, `.withRetry(n)` on a call intent re-invokes it on failure — only use it
 when the target is idempotent.
 
+## An agent loop with a live context statement
+
+A context statement is read at EACH ask that sees it, so one placed before a
+loop shows the model the current state on every pass — no re-prompting code:
+
+```tsi
+type Problem = { brief: string; solved: boolean };
+
+export infer function solveAll(.query: string) {
+  `Solve every problem in the query, one at a time.`
+  const solved: Problem[] = [];
+  `Already solved:` solved.map((p) => p.brief);
+  while (solved.length < 5) {
+    const next = ask `the next unsolved problem, or a problem with solved: true when none is left`: Problem;
+    if (next.solved) break;
+    solved.push(next);
+  }
+  return solved;
+}
+```
+
+Every `ask` inside the loop sees `Already solved: ["…", "…"]` with the list as
+it is at that moment. The value is your words (JSON), not an `<input>` block;
+use `const .solved` instead if the model should treat it as data.
+
+The statement is rendered once per ask, not once per pass: five passes do not
+put five copies in front of the model, and the model never sees a history of
+earlier renderings. A statement written INSIDE the loop body is scoped to
+those braces like a `const` — only the asks inside them see it, and an ask
+after the loop does not. What changes from pass to pass is the value a
+statement reads, never the set of statements.
+
 ## Typing the answers
 
-Prefer a NAMED, exported `type` or `interface` for `<T>` over an inline object
+Prefer a NAMED, exported `type` or `interface` as the extractor's type over an inline object
 literal: it documents the contract, it is reusable from plain TS, and JSDoc
 comments on its members become descriptions in the schema the LLM sees.
 
@@ -279,7 +315,7 @@ export interface Invoice {
 }
 
 export infer function extractInvoice(.document: string) {
-  return ask `the invoice data from the document`<Invoice>;
+  return ask `the invoice data from the document`: Invoice;
 }
 ```
 
@@ -296,9 +332,9 @@ export enum Sentiment {
 }
 
 export infer function triage(.message: string) {
-  const category = ask `the category of the customer message`<Category>;
-  const sentiment = ask `the overall sentiment of the message`<Sentiment>;
-  const urgent = ask `does the message need urgent attention`<"yes" | "no">;
+  const category = ask `the category of the customer message`: Category;
+  const sentiment = ask `the overall sentiment of the message`: Sentiment;
+  const urgent = ask `does the message need urgent attention`: "yes" | "no";
   return { category, sentiment, urgent: urgent === "yes" };
 }
 ```
@@ -323,7 +359,7 @@ export interface Person {
 import type { Person } from "./models.js";
 
 export infer function extractPerson(.text: string) {
-  return ask `the person described in the text`<Person>;
+  return ask `the person described in the text`: Person;
 }
 ```
 
@@ -347,7 +383,7 @@ export type TreeNode = {
 };
 
 export infer function parseTree(.input: string) {
-  return ask `the tree structure described in the input`<TreeNode>;
+  return ask `the tree structure described in the input`: TreeNode;
 }
 ```
 
@@ -357,7 +393,7 @@ export infer function parseTree(.input: string) {
 export type CalendarEvent = { title: string; at: Date };
 
 export infer function nextEvent(.calendar: string) {
-  const event = ask `the next event on the calendar`<CalendarEvent>;
+  const event = ask `the next event on the calendar`: CalendarEvent;
   const when: Date = event.at;   // a Date, not a string
   return when;
 }

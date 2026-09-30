@@ -1,5 +1,13 @@
+// A module-level context statement: every infer function declared below it
+// sees it, so both functions in this file share the researcher's brief.
+`You are a careful researcher. Search for facts first; then answer only from the notes you collected.`
+
+// A `${}` hole in any instruction is the developer's words too: a value you
+// control, spliced where it stands. Anything a user supplied goes in `.name`.
+const MAX_WORDS = 6;
+
 export infer function nextQuery(.question: string, .notes: string[]) {
-  const query = ask `the single best search query to advance the research; keywords only`<string>;
+  const query = ask `the single best search query to advance the research; keywords only, at most ${MAX_WORDS} words`: string;
   return query;
 }
 
@@ -10,5 +18,5 @@ export interface Conclusion {
 }
 
 export infer function conclude(.question: string, .notes: string[]) {
-  return ask `answer the research question using only the collected notes`<Conclusion>;
+  return ask `answer the research question using only the collected notes`: Conclusion;
 }

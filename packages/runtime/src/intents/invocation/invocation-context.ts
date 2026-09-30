@@ -1,6 +1,11 @@
 import type { InferenceComposer } from "../../ask/composer.js";
-import type { FunctionPromptScope, PromptTemplate } from "../../ask/prompt-render.js";
-import { type AskLocals, InferContext } from "../../infer-context/infer-context.js";
+import {
+  type AskLocals,
+  type ContextItem,
+  InferContext,
+  readItems,
+  type VisibleContext,
+} from "../../infer-context/infer-context.js";
 import type { NolaRuntime } from "../../runtime/index.js";
 import type { InferType } from "../../types/infer-type.js";
 
@@ -43,26 +48,23 @@ export interface FunctionArgInit {
 
 export interface FunctionScopeInit {
   fn: string;
-  /** the marker text; for a template, the raw literal text with its holes verbatim */
-  instruction?: string;
-  /** lowered `${.member}` marker — replaces the CONTEXT block when present */
-  template?: PromptTemplate<FunctionPromptScope>;
   args?: readonly FunctionArgInit[];
   /** the body's contextual bindings (scope-bodies spec §5.2) — values arrive per ask */
   locals?: readonly LocalInit[];
+  /** the module's TOP-LEVEL context items above this function's declaration, in source order (spec 2026-09-29 §3.3) */
+  moduleContext?: readonly ContextItem[];
 }
 
 type FunctionScopeData = {
   fn: string;
-  instruction: string;
-  template?: PromptTemplate<FunctionPromptScope>;
   args: readonly FunctionArg[];
   locals: readonly LocalInit[];
+  moduleContext: readonly ContextItem[];
 };
 
 /** One infer-function invocation scope. */
 export class InvocationContext extends InferContext<FunctionScopeData> {
-  /** @internal created via FileInferContext.func (and tests) only. Parentless = free-standing scope. */
+  /** @internal created via ModuleContext.func (and tests) only. Parentless = free-standing scope. */
   static create(init: FunctionScopeInit, runtime: NolaRuntime, parent?: InferContext): InvocationContext {
     const args = Object.freeze(
       (init.args ?? []).map((a) =>
@@ -72,10 +74,9 @@ export class InvocationContext extends InferContext<FunctionScopeData> {
     return new InvocationContext(
       Object.freeze({
         fn: init.fn,
-        instruction: init.instruction ?? "",
-        ...(init.template ? { template: init.template } : {}),
         args,
         locals: Object.freeze((init.locals ?? []).map((l) => Object.freeze({ name: l.name, type: l.type }))),
+        moduleContext: Object.freeze([...(init.moduleContext ?? [])]),
       }),
       runtime,
       parent,
@@ -84,19 +85,18 @@ export class InvocationContext extends InferContext<FunctionScopeData> {
 
   /**
    * Contributes this frame's ScopeDescription to the composer — fn, source
-   * file (omitted when the lineage has no file root), the authored
-   * instruction, the harvested args plus the ask site's visible contextual
-   * bindings, and the marker template when the author wrote one.
+   * file (omitted when the lineage has no file root), the context items the
+   * ask site saw (read now, joined by newlines), and the harvested args plus
+   * the site's visible contextual bindings.
    */
-  override compose(composer: InferenceComposer, locals?: AskLocals): void {
-    const { fn, instruction, args, template } = this.data;
+  override compose(composer: InferenceComposer, visible?: VisibleContext): void {
+    const { fn, args } = this.data;
     const file = this.sourceFile();
     composer.scope().describe({
       fn,
       ...(file === "<unknown>" ? {} : { file }),
-      instruction,
-      args: [...args, ...localArgs(this.data.locals, locals)],
-      ...(template ? { template } : {}),
+      instruction: readItems(visible?.context),
+      args: [...args, ...localArgs(this.data.locals, visible?.locals)],
     });
   }
 }

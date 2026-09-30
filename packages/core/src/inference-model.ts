@@ -18,15 +18,18 @@ export interface InferenceScope {
   fn: string;
   /** true ⇔ the module body's implicit `<module>` scope */
   module?: true;
+  /**
+   * true ⇔ a module scope composed from the DEFINITION site of the scope
+   * inside it (the module its function is declared in), not opened by a
+   * caller (spec 2026-09-26 §3.3). Its args are always empty: bindings are
+   * never carried lexically.
+   */
+  lexical?: true;
   /** display path of the defining .tsi; absent without a file root */
   file?: string;
-  /** the marker text ("" when none) */
+  /** the scope's instruction text ("" when none; a holed instruction is already formatted) */
   instruction: string;
   args: InferenceScopeArg[];
-  /** rendered marker template — present only when the author wrote one */
-  text?: string;
-  /** true when the template read `.next`: `text` already contains the remainder */
-  coversRemainder?: boolean;
   parent?: InferenceScope;
 }
 
@@ -39,17 +42,16 @@ export interface InferenceCorrection {
 
 /**
  * The canonical, pure-JSON description of one ask. Fingerprints, ledgers,
- * receipts and hook payloads are defined over it; chat messages are a
- * derived view (`renderClassic`). No closures, no InferType instances.
+ * receipts and hook events are defined over it; the text a provider sends
+ * is a derived view (`renderPrompt`, or the provider's own). No closures,
+ * no InferType instances.
  */
 export interface InferenceModel {
   /** "extract" for an extractor, "call" for the slot-filling ask of a call intent */
   intent: "extract" | "call";
   input: {
-    /** the authored backtick text (or the call intent's synthesized request) */
+    /** the authored backtick text, holes already formatted (or the call intent's synthesized request) */
     instruction: string;
-    /** rendered `${.member}` template for this site — present only when the author wrote one */
-    text?: string;
     /** call intents only: the callee's name */
     callee?: string;
     /** call intents only: the authored hint; absent when the author wrote none */

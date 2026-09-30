@@ -1,0 +1,37 @@
+// One .tsi file is the whole program: run it with `npx nola-lang run src/main.tsi`.
+`You are a support engineer working through a customer's message. Answer from the message alone; never invent a problem.`
+
+interface Problem {
+  /** one line, in the customer's own words */
+  brief: string;
+  description: string;
+}
+
+// A `.` binding is data: every ask below sees the message as an <input> block.
+const .query = `Hi, this is Sam from Northwind.
+Since yesterday our nightly export job fails with "disk quota exceeded".
+Also, two of our users never receive the password-reset email.
+Oh, and the August invoice still shows our old company name.`;
+
+const problems: Problem[] = [];
+
+// A context statement — text, then a value, then more text on the next line
+// (a line that starts with a backtick continues the statement) — is read at
+// EACH ask that sees it: inside the loop the model sees the list as it stands
+// on that pass, so it never reports the same problem twice.
+`Problems recorded so far:` problems.map((p) => p.brief)
+`Never report one of them again.`;
+
+while (true) {
+  // A context statement inside a block is scoped like a `const` declared there:
+  // only the asks inside these braces see it, and nothing after the loop does.
+  // It does NOT pile up across passes — each ask sees every visible statement
+  // exactly once, rendered at that ask, however many times the loop has run.
+  // (The list above changes between passes; the set of statements does not.)
+  `Answer null once every problem in the message has been recorded.`
+  const problem = ask `the next problem the customer describes`: Problem | null;
+  if (problem === null) break;
+  problems.push(problem);
+}
+
+console.log(JSON.stringify(problems));

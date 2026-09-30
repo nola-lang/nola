@@ -131,13 +131,6 @@ describe("planFor — state and context", () => {
     expect(bare.state).toBe("Is it urgent?");
     expect(bare.questions.value?.instructions).toBe("Determine the value the request asks for.");
   });
-
-  it("a rendered template (input.text) wins over the raw instruction", () => {
-    const model = modelOf({ schema: { type: "boolean" }, instruction: "raw" });
-    model.input.text = "rendered";
-    const r = planFor(model, opt);
-    expect(r.ok && r.plan.state).toBe("rendered");
-  });
 });
 
 describe("planFor — questions", () => {

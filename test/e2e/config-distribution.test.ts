@@ -30,7 +30,7 @@ describe("zero-ceremony production run", () => {
     writeFileSync(join(app, "package.json"), JSON.stringify({ name: "prod-app", type: "module" }));
     writeFileSync(
       join(app, "src", "provider.ts"),
-      "export const canned = { name: 'canned', complete: async () => ({ text: JSON.stringify('hello from dist') }) };\n",
+      "export const canned = { name: 'canned', infer: async () => ({ text: JSON.stringify('hello from dist') }) };\n",
     );
     writeFileSync(
       join(app, "nola.config.ts"),

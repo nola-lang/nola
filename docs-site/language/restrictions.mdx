@@ -1,17 +1,17 @@
 ---
 title: Restrictions and reserved syntax
-description: What you cannot write in a .tsi file today — reserved words, deferred syntax and its "reserved" errors, generated-code names, and the Bun/Deno limit.
+description: Check which syntax Nola reserves, where infer and ask are allowed, and which runtimes can load .tsi files.
 sidebar:
   order: 110
 ---
 
-Nola adds little and reserves a little more. This page is the complete list of what a `.tsi` file refuses today, and why.
+This page lists unsupported syntax, reserved names and runtime requirements for `.tsi` files.
 
 ## Reserved words
 
 - **`ask` and `with`** are reserved words in `.tsi`. `ask` stays legal as a member or property name (`obj.ask`); using it as a plain identifier is [`NOLA1003`](/docs/reference/error-codes/#nola1003).
 - **`infer`** is contextual: a keyword only directly before `function` at statement or export position. `T extends infer U` in a conditional type is untouched.
-- **`__nola`** and any identifier starting with `__nola` are reserved *by convention* — nothing rejects them, but `__nola.ask(…)`, `__nola.intents.ExtractIntent(…)`, `__nola_file_ctx` and friends are what the compiler *emits*, so declaring one shadows the lowered code and breaks it without a diagnostic. Not an API you call.
+- **Names starting with `__nola`** are used by generated code. Declaring one can shadow a generated binding and break the program without a diagnostic. Avoid these names and use the public Nola syntax instead of calling generated helpers.
 
 ```tsi
 // not-checked — WRONG: emitted code, not a user-facing API
@@ -24,36 +24,38 @@ export infer function read(.doc: string) {
 ```tsi
 // read.tsi — RIGHT
 export infer function read(.doc: string) {
-  const v = ask `the value`<string>;
+  const v = ask `the value`: string;
   return v;
 }
 ```
 
 ## Syntax that is reserved for a later version
 
-The grammar is shaped to accept these; today each one is a clear error rather than a silent misparse.
+The following forms are unsupported. The table shows the error to expect and, where available, the supported alternative.
 
 | You write | What happens |
 | --- | --- |
 | `async infer function f(…)` | parse error — an infer function is never `async` in source; `await` is already legal in its body |
 | `export default infer function f(…)` | does not parse — export by name and import the name |
 | `infer` on a method, arrow function or function expression | plain parse error ([`NOLA1001`](/docs/reference/error-codes/#nola1001)) — `infer` is a keyword only before `function` at statement/export position |
-| `infer function*` (generator), an instruction marker on a class method or a bodiless `declare function` | [`NOLA1004`](/docs/reference/error-codes/#nola1004) — reserved |
+| `infer function*` (generator), a marker on a class method, or a bodiless `infer function` | [`NOLA1004`](/docs/reference/error-codes/#nola1004) — reserved |
 | `fn(..)` — the bare derive-all call | [`NOLA1004`](/docs/reference/error-codes/#nola1004) |
 | `var .x = …` — a `var` contextual binding | [`NOLA1014`](/docs/reference/error-codes/#nola1014) — write `const .x` or `let .x` ([Contextual bindings](/docs/language/contextual-parameters/#contextual-bindings)) |
 | `.` on a destructuring pattern or a defaulted parameter | [`NOLA1011`](/docs/reference/error-codes/#nola1011) — use a plain identifier parameter |
-| an instruction marker on a plain function — `` function name`…`() `` | [`NOLA1007`](/docs/reference/error-codes/#nola1007) — only `infer function` takes one |
+| a marker between a function's name and its parameters — `` infer function name`…`() `` / `` function name`…`() `` | [`NOLA1019`](/docs/reference/error-codes/#nola1019) (reserved) / [`NOLA1007`](/docs/reference/error-codes/#nola1007) — write the text as a context statement in the body |
+| an operator or an arrow after a value in a context statement — `` `total` a + b `` | [`NOLA1020`](/docs/reference/error-codes/#nola1020) — wrap the expression in parentheses |
+| a context statement outside a scope body — in a plain function, a callback, a static block, or as the unbraced body of an `if` or a loop | [`NOLA2017`](/docs/reference/error-codes/#nola2017) — no ask can carry it there; move it into the scope body, or add braces to the `if` or loop |
 
-Further language features are deferred and are simply **parse errors** today (`NOLA1001`, no specific "reserved" code): abstract functions, type and interface intents, `ask if` / `ask for` / `ask while` / `ask switch`, and class methods. Only the forms in the table above carry a specific reserved-construct diagnostic. They are listed here so you recognise the error; nothing on this site documents them as available.
+Other proposed forms also remain unsupported: abstract functions, type and interface intents, `ask if`, `ask for`, `ask while`, `ask switch`, and infer class methods. They produce a general parse error (`NOLA1001`) rather than a dedicated reserved-syntax diagnostic.
 
 ## Runtimes
 
-- **Node ≥ 22.18** runs `.tsi` — the first 22 release that loads plain `.ts` (`src/main.ts`) natively; an older 22 fails there with `ERR_UNKNOWN_FILE_EXTENSION` (see [Node loader](/docs/tooling/node-loader/#runtimes)). The loader is Node's module-hooks API, which Bun and Deno do not run — `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine (`bun install`, `bun run start`, `pnpm start`, `yarn start` — the `nola` bin is a Node script); only the runtime must be Node. Built output runs anywhere Node does.
-- **Server-only in v0.** A client bundle that imports `.tsi` fails the build with [`NOLA4001`](/docs/reference/error-codes/#nola4001); executing an ask in a browser is [`NOLA3013`](/docs/reference/error-codes/#nola3013). Move the import behind a server boundary (SSR entry, route handler, server action).
+- **Node ≥ 22.18** is required to load `.tsi` alongside plain `.ts` files. The loader uses Node’s module hooks; running it directly with Bun or Deno is unsupported ([`NOLA3015`](/docs/reference/error-codes/#nola3015)). You can still use npm, pnpm, Yarn or Bun as your package manager, provided Node runs the program. See [Node loader](/docs/tooling/node-loader/#runtimes).
+- **Server-side execution only.** Importing `.tsi` into a client bundle fails with [`NOLA4001`](/docs/reference/error-codes/#nola4001); running an ask in a browser raises [`NOLA3013`](/docs/reference/error-codes/#nola3013). Put the import in a server entry point, route handler or server action.
 
 ## Not restrictions
 
-Things people assume are forbidden and are not:
+The following are supported:
 
 - `await` inside an infer function — legal, for any ordinary promise.
 - Constructing an extractor at module level — legal and inert. Asking at module level — also legal: a top-level `ask` runs as its own `<module>` invocation (see [ask](/docs/language/ask/#at-module-level)).

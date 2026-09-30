@@ -1,13 +1,15 @@
-import { type ClassicPrompt, type InvocationEndEvent, type InvocationStartEvent, NOLA_EMIT } from "@nola-lang/core";
+import { type InvocationEndEvent, type InvocationStartEvent, NOLA_EMIT, renderPrompt } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, NolaVersionError, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
+// internal — the runtime index does not re-export the item reader
+import { readItems } from "../src/infer-context/index.js";
 
 afterEach(() => nolaRuntime.reset());
 
-/** What lowering emits for the module body: `__nola_file_ctx().module({...})`. */
-const moduleCtx = (file = "main.tsi") => __nola.context.file(file).module({});
+/** What lowering emits for the module body: `__nola_module_ctx()` → `__nola.context.module(file, emit, init?)`. */
+const moduleCtx = (file = "main.tsi") => __nola.context.module(file);
 
 const extract = (instruction = "a label") =>
   __nola.intents.ExtractIntent<string>({ instruction, type: { type: "string" }, loc: "1:15" });
@@ -40,22 +42,22 @@ describe("module-body ask (scope-bodies spec §3)", () => {
     expect(new Set(starts.map((s) => s.invocationId)).size).toBe(2);
   });
 
-  it("a bare module scope contributes no CONTEXT block — the prompt is the plain TASK", async () => {
+  it("a bare module scope contributes no context block — the prompt is the task alone", async () => {
     const payloads: string[] = [];
     nolaRuntime.configure({
       model: {
         default: {
           name: "probe",
-          complete: async (req) => {
-            payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
+          infer: async (req) => {
+            payloads.push(renderPrompt(req.intent).messages[0]?.content ?? "");
             return { text: '"x"' };
           },
         },
       },
     });
     await __nola.ask(extract(), moduleCtx());
-    expect(payloads[0]).not.toContain("CONTEXT");
-    expect(payloads[0]).toContain("Produce the data requested below.");
+    expect(payloads[0]).not.toContain("<context");
+    expect(payloads[0]).toBe("<task>\na label\n</task>");
   });
 
   it("`ask fn()` chains the callee under the <module> frame", async () => {
@@ -67,7 +69,7 @@ describe("module-body ask (scope-bodies spec §3)", () => {
     const fn = () =>
       __nola.intents.Intent(
         async (__frame: Frame) => __nola.ask(extract(), __frame),
-        __nola.context.file("main.tsi").func({ fn: "label", instruction: "" }),
+        __nola.context.module("main.tsi").func({ fn: "label" }),
       );
     await expect(__nola.ask(fn(), moduleCtx())).resolves.toBe("v");
     expect(starts.map((s) => s.fn)).toEqual(["<module>", "label"]);
@@ -77,7 +79,7 @@ describe("module-body ask (scope-bodies spec §3)", () => {
   it("the asked intent's timeout is the <module> root's clock — it can exceed ask.timeoutMs", async () => {
     nolaRuntime.configure({
       model: {
-        default: { name: "slow", complete: () => new Promise((r) => setTimeout(() => r({ text: '"late"' }), 80)) },
+        default: { name: "slow", infer: () => new Promise((r) => setTimeout(() => r({ text: '"late"' }), 80)) },
       },
       ask: { timeoutMs: 20 },
     });
@@ -88,11 +90,42 @@ describe("module-body ask (scope-bodies spec §3)", () => {
     expect(moduleCtx("a.tsi")).toBe(moduleCtx("a.tsi"));
     expect(moduleCtx("a.tsi")).not.toBe(moduleCtx("b.tsi"));
   });
+
+  it("the init thunk is read once, on creation — a later caller's thunk is ignored", () => {
+    let reads = 0;
+    const first = __nola.context.module("m.tsi", undefined, () => {
+      reads += 1;
+      return { context: [() => "first"] };
+    });
+    const again = __nola.context.module("m.tsi", undefined, () => {
+      reads += 1;
+      return { context: [() => "second"] };
+    });
+    expect(again).toBe(first);
+    expect(reads).toBe(1);
+    expect(readItems(first.data.context)).toBe("first");
+  });
+
+  it("func() parents a function scope under the module node, which answers the source file", () => {
+    const mod = __nola.context.module("m.tsi");
+    const fn = mod.func({ fn: "go" });
+    expect(fn.parent).toBe(mod);
+    expect(fn.sourceFile()).toBe("m.tsi");
+    expect(mod.sourceFile()).toBe("m.tsi");
+  });
+
+  it("after nolaRuntime.reset() the next accessor call rebuilds the node from its thunk", () => {
+    const before = __nola.context.module("m.tsi", undefined, () => ({ context: [() => "kept"] }));
+    nolaRuntime.reset();
+    const after = __nola.context.module("m.tsi", undefined, () => ({ context: [() => "kept"] }));
+    expect(after).not.toBe(before);
+    expect(readItems(after.data.context)).toBe("kept");
+  });
 });
 
-describe("the file accessor checks the emit contract", () => {
+describe("the module accessor checks the emit contract", () => {
   it("a matching contract passes, a skewed one fails at the first accessor call", () => {
-    expect(() => __nola.context.file("x.tsi", NOLA_EMIT)).not.toThrow();
-    expect(() => __nola.context.file("x.tsi", NOLA_EMIT - 1)).toThrow(NolaVersionError);
+    expect(() => __nola.context.module("x.tsi", NOLA_EMIT)).not.toThrow();
+    expect(() => __nola.context.module("x.tsi", NOLA_EMIT - 1)).toThrow(NolaVersionError);
   });
 });

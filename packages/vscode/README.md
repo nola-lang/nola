@@ -11,8 +11,8 @@ same way JSX is compiled away.
 ```ts
 // analyze.tsi
 export infer function analyzeUserRequest(userId: string, .message: string) {
-  const ticketId = ask ..`ticket id mentioned in the message`<string>;
-  const isFraud = ask ..`does the message look fraudulent`<boolean>;
+  const ticketId = ask ..`ticket id mentioned in the message`: string;
+  const isFraud = ask ..`does the message look fraudulent`: boolean;
   return { userId, ticketId, isFraud };
 }
 ```
@@ -27,7 +27,7 @@ const result = await analyzeUserRequest("user-1", "Ticket TCK-4711: suspicious a
 
 `.message` is a *contextual* parameter — its value is shown to the model in every
 `ask` of that invocation; `userId` is a plain argument the model never sees. The
-TypeScript type *is* the schema: `<boolean>` is validated, and a `Date` comes
+TypeScript type *is* the schema: `: boolean` is validated, and a `Date` comes
 back as a real `Date`.
 
 ## What the extension gives you
@@ -36,14 +36,14 @@ The extension bundles the Nola language server and a tsserver plugin; nothing
 needs to be installed globally.
 
 - **Syntax highlighting** for `.tsi`: the `infer` / `ask` keywords, the `..`
-  extractor marker with its `` `instruction` `` and `<T>`, an infer function's
-  `` `instruction` `` marker, and `ask with <provider>` routing — layered on the
+  extractor marker with its `` `instruction` `` and its type (`: T` or `<T>`), an infer function's
+  first-statement `` `instruction` ``, and `ask with <provider>` routing — layered on the
   full TypeScript grammar, so everything else colors as it does in `.ts`.
 - **Diagnostics** — Nola parse and compile errors (`NOLA1xxx` / `NOLA2xxx`)
   and TypeScript errors, reported at the original `.tsi` positions.
 - **Hover, completion, go-to-definition** inside `.tsi` files — over plain TS,
   infer functions, extractor result types, and provider aliases. Prompt
-  templates included: typing `${.` inside an instruction (function marker,
+  templates included: typing `${.` inside an instruction (a body or module instruction,
   extractor, call hint) completes the prompt-scope members, and TS errors
   inside a template point at the exact source range.
 - **Plain TypeScript interop** — `.ts` files that import `.tsi` modules get
@@ -66,12 +66,12 @@ Everything below is highlighted, type-checked and completable in `.tsi` files.
 
 | Construct | Syntax | Meaning |
 |---|---|---|
-| **Infer function** | `infer function name(…) { … }` — optionally `` name`instruction`(…) `` | An LLM-backed function, importable from plain TS/JS. Calling it runs nothing; it returns a lazy, thenable `Intent<T>`. `await` is legal in the body for ordinary promises. |
-| **Contextual parameter** | `.name: T` | The argument's value joins the prompt of every `ask` in the invocation. Plain parameters contribute name and type only. *One dot in, two dots out.* |
-| **Extractor** | `` ..`instruction`<T> `` | A request to pull a `T` from context. Supports `${}` interpolation; may be constructed anywhere; resolved with `ask`. Untyped (`` ..`instruction` ``) yields free text. |
-| **`ask` operator** | `ask <intent>` | Resolves an intent the way `await` resolves a promise — same precedence. Legal only directly inside an infer function body; `ask` is a reserved word in `.tsi`. |
+| **Infer function** | `infer function name(…) { … }` — its first statement may be an `` `instruction` `` literal | An LLM-backed function, importable from plain TS/JS. Calling it runs nothing; it returns a lazy, thenable `Intent<T>`. `await` is legal in the body for ordinary promises. |
+| **Contextual parameter** | `.name: T` | The argument's value joins the prompt of every `ask` in the invocation. Plain parameters contribute name and type only. *One dot in, `ask` out.* |
+| **Extractor** | `` ..`instruction`: T `` | A request to pull a `T` from context. Supports `${}` interpolation; may be constructed anywhere; resolved with `ask`. Untyped (`` ..`instruction` ``) yields free text. |
+| **`ask` operator** | `ask <intent>` | Resolves an intent the way `await` resolves a promise — same precedence. Legal only directly inside an infer function body or the module body; `ask` is a reserved word in `.tsi`. |
 | **Model routing** | `ask with <name> <intent>` | Resolves one ask through a named model from `nola.config.ts` (static identifier; `.withModel()` is the dynamic form). |
-| **Call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument, `` fn(..`x`<T>, …) `` | The model fills the extractor-shaped arguments, then the function is called; async results are awaited. Only the hint form carries instruction text. |
+| **Call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument, `` fn(`x`: T, …) `` (the slot's `..` is implied) | The model fills the extractor-shaped arguments, then the function is called; async results are awaited. Only the hint form carries instruction text. |
 | **Prompt template** | `${.member}` inside any instruction literal | Reads the intent's prompt scope (`.default`, `.next`, `.type`, `.args`, …); the literal then replaces that intent's built-in prompt block. |
 | **Intent methods** | `.withRetry(n)` · `.withModel()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. `.detached()` exists only on the `Intent` an infer function returns. |
 
@@ -130,12 +130,12 @@ family appears in completion alongside the language server's suggestions.
 |---|---|
 | `infer` | `infer function name(params) { … }` |
 | `inferc` | infer function with a contextual `.param` |
-| `inferi` | infer function carrying an `` `instruction` `` for the model |
-| `ask` | `` ask ..`instruction`<Type> `` — a typed extractor |
+| `inferi` | infer function whose first statement is its `` `instruction` `` for the model |
+| `ask` | `` ask ..`instruction`: Type `` — a typed extractor |
 | `askfree` | `` ask ..`instruction` `` — free text, kept in the invocation's history |
-| `askwith` | `` ask with provider ..`instruction`<Type> `` — routed through a named provider |
-| `calli` | `` callee``(..`instruction`<Type>) `` — a call intent (the model fills the argument) |
-| `extract` | `` ..`instruction`<Type> `` — a bare extractor to resolve later |
+| `askwith` | `` ask with provider ..`instruction`: Type `` — routed through a named provider |
+| `calli` | `` callee``(`instruction`: Type) `` — a call intent (the model fills the argument) |
+| `extract` | `` ..`instruction`: Type `` — a bare extractor to resolve later |
 
 ## Other editors
 

@@ -1,11 +1,13 @@
 ---
 title: Models and providers
-description: The model entry — one model or a named map of ask-with targets — the openai/anthropic/google provider factories, compatible endpoints, mockProvider, routing.
+description: Choose a default model, route asks to named models, connect compatible endpoints and use mockProvider for offline tests.
 sidebar:
   order: 20
 ---
 
-A **provider** is a vendor — `openai`, `anthropic`, `google`. A **model** is a configured instance a provider factory returns — `openai("gpt-5-mini")`. `model` is either one model — `model: openai({ model: "gpt-5-mini" })`, shorthand for `{ default: … }` — or a named map. In the map `default` is required (a plain `ask` uses it); every other key is a name you choose, and that name is exactly what `ask with <name>` and `.withModel("<name>")` accept.
+A **provider** is a vendor, such as `openai`, `anthropic` or `google`. A **model** is the configured instance returned by its factory, such as `openai("gpt-5-mini")`.
+
+Set `model` to a single instance or a named map. A single instance is shorthand for `{ default: … }`. In a map, `default` is required and handles a plain `ask`. Choose names for the other entries and use them with `ask with <name>` or `.withModel("<name>")`.
 
 The simplest config lets the Nola platform serve inference:
 
@@ -16,7 +18,11 @@ import { defineConfig } from "@nola-lang/runtime";
 export default defineConfig({ model: "nola" });   // reads NOLA_API_KEY; the platform picks the model
 ```
 
-The string `"nola"` is short for [`nola.infer()`](/docs/reference/providers-api/#nola), the platform model — it is the only string the `model` slot takes. With it as `default`, `ask with <name>` accepts *any* name — one that matches a configured map key pins that model as usual, and any other name (`fast`, `careful`, `cheap`, …) travels with the request as a free-form **inference profile** that the platform's routing resolves to a model and parameters server-side. No temperature, topK or reasoning-effort tuning in your code. A local model map keeps strict name validation — unknown names are [`NOLA3004`](/docs/reference/error-codes/#nola3004). `nola.infer("<provider>/<model>")` names the upstream explicitly.
+The string `"nola"` is shorthand for [`nola.infer()`](/docs/reference/providers-api/#nola). It is the only string accepted directly as a model.
+
+When the default model is `"nola"`, `ask with <name>` first looks for a matching model-map entry. If there is none, Nola sends the name as an **inference profile** for the platform to resolve into a model and parameters. This lets you use names such as `fast` or `careful` without choosing the underlying model in your code. To choose it explicitly, use `nola.infer("<provider>/<model>")`.
+
+With a local default model, every name must match an entry in the map. An unknown name produces [`NOLA3004`](/docs/reference/error-codes/#nola3004).
 
 ```ts
 // nola.config.ts
@@ -35,16 +41,18 @@ export default defineConfig({
 ```tsi
 // summarize.tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast `a rough summary`<string>;
-  return ask with careful `a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`: string;
+  return ask with careful `a polished summary of: ${draft}`: string;
 }
 ```
 
-An `ask with` name that is not a key of the map fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
+In this example, `fast` and `careful` select the corresponding entries. An unknown name produces [`NOLA3004`](/docs/reference/error-codes/#nola3004), with a list of configured names.
 
 ## Factories
 
-`openai`, `anthropic` and `google` come from `@nola-lang/providers`. A bare model string is shorthand for `{ model }` — `openai("gpt-5-mini")` is `openai({ model: "gpt-5-mini" })` with every other option defaulted; pass the object form when you need anything else. (`nola` from `@nola-lang/runtime` is not a factory but the platform wrapper — see [Providers API](/docs/reference/providers-api/#nola).)
+Import `openai`, `anthropic` and `google` from `@nola-lang/providers`. Pass a model string when you only need to choose a model: `openai("gpt-5-mini")` is equivalent to `openai({ model: "gpt-5-mini" })`. Use the object form for additional options.
+
+The platform factories, `nola.infer()` and `nola.tracer()`, come from `@nola-lang/runtime`. See [Providers API](/docs/reference/providers-api/#nola).
 
 | Option | `openai` | `anthropic` | `google` |
 | --- | --- | --- | --- |
@@ -55,11 +63,11 @@ An `ask with` name that is not a key of the map fails at run time with [`NOLA300
 | `fetch` | an injectable `fetch` implementation | same | same |
 | `maxOutputTokens` | — | provider-level default cap | — |
 
-Every factory reads its API key **lazily, at the first request** — the config loads without the key present, and a missing key surfaces as a provider error at the first ask. `model: "nola"` reads `NOLA_API_KEY` the same way, and the hosted service chooses the model (trial keys are restricted to a server-side set), and `NOLA_API_URL` overrides its endpoint for development.
+Factories read API keys at the first request, so the config can load without a key. A missing key produces a provider error at the first ask. The platform model reads `NOLA_API_KEY` in the same way. It lets the hosted service choose the model; trial keys are limited to the models allowed by the service. Set `NOLA_API_URL` to use a different platform endpoint during development.
 
 ## OpenAI-compatible endpoints
 
-Any service that speaks the Chat Completions dialect works through `openai({ baseUrl })` — no dedicated factory needed:
+Use `openai({ baseUrl })` for services that support the Chat Completions API:
 
 ```ts
 // nola.config.ts
@@ -82,11 +90,11 @@ export default defineConfig({
 });
 ```
 
-Structured output degrades gracefully on generate-then-validate backends: `openai()` recovers the model's answer from Groq-style `json_validate_failed` errors, and the JSON contract is always re-validated Nola-side regardless of what the backend enforced.
+Some backends generate an answer before checking its schema. For Groq-style `json_validate_failed` errors, `openai()` recovers that answer so Nola can validate it. Nola always checks the returned JSON against the requested schema, even if the backend has already checked it.
 
 ## mockProvider
 
-`mockProvider` returns canned answers — deterministic, no API key, the right default for examples and tests. It takes either a **queue** of values (one per ask, in order) or a **function** of the request:
+Use `mockProvider` for examples and tests that need no API key or network access. Pass a queue of values, consumed one per provider call, or a function that receives the request. A correction attempt consumes another queue entry:
 
 ```ts
 // nola.config.ts
@@ -96,24 +104,24 @@ import { defineConfig } from "@nola-lang/runtime";
 export default defineConfig({
   model: {
     default: mockProvider([{ name: "Alice Smith", age: 32 }]),
-    echo: mockProvider((req) => ({ prompt: req.payload.messages[0]?.content })),
+    echo: mockProvider((req) => ({ prompt: req.prompt.messages[0]?.content })),
   },
 });
 ```
 
-See [Testing](/docs/guides/testing/) for the patterns around it.
+See [Testing](/docs/guides/testing/) for examples.
 
 ## Routing precedence
 
-Highest first:
+Nola chooses a model in this order:
 
-1. **`forceModel`** — a hermetic override: when set, EVERY ask resolves through this provider, including intents pinned with `ask with` or `.withModel()`. It must name a key of the `model` map ([`NOLA3004`](/docs/reference/error-codes/#nola3004) otherwise).
-2. **The ask-site pin** — `ask with <name>` or `.withModel(…)`. When the platform serves inference (`model: "nola"`) a name that matches no map key is an inference profile rather than a pin: the ask resolves one step further down and the name rides the request.
-3. **`model.default`** — the bare `model` when no map was written.
+1. **`forceModel`** overrides every ask, including those that use `ask with` or `.withModel()`. It must name an entry in the model map; otherwise Nola raises [`NOLA3004`](/docs/reference/error-codes/#nola3004).
+2. **`ask with <name>` or `.withModel(…)`** selects a model for that ask. If the default model is the platform and the name has no matching map entry, the name becomes an inference profile and the request goes to the default model.
+3. **`model.default`** handles asks with no explicit selection. A single `model` value becomes the default automatically.
 
-A profile survives `forceModel` (it still rides the request the forced provider serves — a mock ignores it) and joins the ask fingerprint, so `ask with fast` and a plain `ask` record and replay as distinct ledger entries.
+An inference profile is still sent when `forceModel` is set, although a mock provider ignores it. The profile is part of the ask fingerprint, so `ask with fast` and a plain `ask` have separate replay entries.
 
-The CI pattern:
+For CI, use `forceModel` to send every ask to a mock:
 
 ```ts
 // nola.config.ts
@@ -130,10 +138,10 @@ export default defineConfig({
 });
 ```
 
-`forceModel` is the one runtime-enforced mechanism, so a pinned provider in a dependency can never leak a real API call into a test run.
+Because `forceModel` also overrides model choices inside dependencies, those asks use the mock during a test run.
 
 ## Writing your own provider
 
-A provider is any object with a `name` and a `complete(request)` method that returns `{ text }`. The contract and a minimal implementation are on [Providers API](/docs/reference/providers-api/#custom-providers).
+To implement a provider, return an object with a `name` and an `infer(request)` method that resolves to `{ text }`; render the request's `intent` yourself or with `renderPrompt`. See the contracts and example in [Providers API](/docs/reference/providers-api/#custom-providers).
 
 Next: [Resilience](/docs/config/resilience/)

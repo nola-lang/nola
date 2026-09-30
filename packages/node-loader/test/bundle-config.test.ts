@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { bundleConfig, bundleSelfConfiguringConfig } from "@nola-lang/node-loader";
 import { describe, expect, it } from "vitest";
 
-const PROVIDER_TS = "export const canned = { name: 'canned', complete: async () => ({ text: '\"hi\"' }) };\n";
+const PROVIDER_TS = "export const canned = { name: 'canned', infer: async () => ({ text: '\"hi\"' }) };\n";
 
 async function makeProject(prefix: string, config: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));

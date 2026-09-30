@@ -1,18 +1,21 @@
 ---
 title: Contextual parameters
-description: .name parameters put a value in front of the model; plain parameters do not. Which types are derivable, and what to do when one is not.
+description: Add a leading dot to include a parameter or local binding in model context. Learn which types are supported and how context is shared.
 sidebar:
   order: 30
 ---
 
-A parameter written with one leading dot is a **contextual parameter**: its name, type and run-time value are composed into the prompt of every `ask` in that invocation. A plain parameter is an ordinary argument — the model sees its name in the function's signature and that no value is available; never its type or value.
+A parameter with a leading dot is a **contextual parameter**. Its value is included in the prompt for every `ask` in that invocation, as an `<input name="…">` block. A plain parameter is not rendered at all.
 
 ## What the model sees
 
 | Parameter | In the prompt |
 | --- | --- |
-| `.issue: Issue` (contextual) | name, type **and value** |
-| `fallback: string` (plain) | name only, marked `(value not available)` |
+| `.issue: Issue` (contextual) | `<input name="issue">` with the value |
+| `fallback: string` (plain) | nothing |
+| `${fallback}` in the instruction | the value spliced into your words, where it stands |
+
+See [The prompt](/docs/language/prompt/) for the full rendering. An interpolated value is part of the instruction text, which the model follows; a contextual parameter is data in its own `<input>` block, which the system turn tells the model not to follow. Text you did not write yourself, such as a customer's message or a document, belongs in a contextual parameter, never in a `${}` hole.
 
 ```tsi
 // classify-issue.tsi
@@ -20,50 +23,50 @@ export type Issue = { id: string; description: string };
 
 // `issue` is visible to the model; `fallback` is a normal JS value only.
 export infer function classifyIssue(.issue: Issue, fallback: string) {
-  const kind = ask `the kind of this issue`<string>;
+  const kind = ask `the kind of this issue`: string;
   return kind || fallback;
 }
 ```
 
-The mnemonic is *one dot in, `ask` out*: `.name` sends a value into the model, `` ask `instruction` `` brings one out (spelled `` ..`instruction` `` where `ask` is not directly in front of it — see [Extractors](/docs/language/extractors/#two-spellings-one-construct)).
+Use the leading dot for input you want the model to see. Use an [extractor](/docs/language/extractors/#two-spellings-one-construct), such as `` ask `instruction`: T ``, to request an answer.
 
 ## Several compose into one block
 
-Any number of contextual parameters is fine; they compose into one context block that every `ask` in the invocation shares:
+You can declare several contextual parameters. They appear together in the context block shared by the invocation’s asks:
 
 ```tsi
 // research.tsi
 export infer function nextQuery(.question: string, .notes: string[]) {
-  return ask `the single best search query to advance the research`<string>;
+  return ask `the single best search query to advance the research`: string;
 }
 ```
 
 ## Derivable types
 
-Because a contextual value is serialized into the prompt, its type must be *derivable* to an inference schema — the same rule extractors follow: whatever the TypeScript checker resolves to a JSON-shaped structure, including unions, `Partial<T>`, `interface … extends`, `Record<string, T>` and types from packages. The full table lives on [Schema derivation](/docs/reference/schema-derivation/).
+Nola derives an inference schema for each contextual parameter. Supported types include JSON-shaped objects, unions, `Partial<T>`, `interface … extends`, `Record<string, T>` and types imported from packages. See [Schema derivation](/docs/reference/schema-derivation/) for the full list.
 
 `Map`, `Set`, `Promise`, `RegExp`, functions and a generic type used without arguments are not derivable. Under the default policy a contextual parameter with such a type is a compile error, [`NOLA2008`](/docs/reference/error-codes/#nola2008).
 
 ## When a type is not derivable
 
-Three ways out, in order of preference:
+If a type cannot be derived, you can convert the value to a supported shape, keep it as a plain parameter, or change the derivation policy. Prefer converting it when the model needs the data:
 
 ```tsi
 // top-label.tsi
 // 1. Pass a JSON-shaped view as the contextual parameter.
 export infer function topLabel(.index: { label: string; count: number }[]) {
-  return ask `the label with the highest count`<string>;
+  return ask `the label with the highest count`: string;
 }
 
 // 2. Keep the exotic value, but as a PLAIN parameter — the model never sees
 //    its value, so nothing needs deriving.
 export infer function topLabelFrom(.summary: string, index: Map<string, number>) {
-  const label = ask `the label with the highest count`<string>;
+  const label = ask `the label with the highest count`: string;
   return { label, count: index.get(label) ?? 0 };
 }
 ```
 
-3. Relax the policy in `nola.config.ts`: `"prune"` drops just the underivable members and keeps the rest of the type; `"omit"` drops the whole type silently.
+To change the policy in `nola.config.ts`, use `"prune"` to drop only unsupported members or `"omit"` to omit the entire type from the context schema.
 
 ```ts
 // nola.config.ts
@@ -76,11 +79,11 @@ export default defineConfig({
 });
 ```
 
-Keep that value a literal — the editor reads it statically and cannot execute your config, so a computed value is invisible to it.
+Write this setting as a literal. The editor reads the config without executing it, so it cannot use a computed value.
 
 ## Contextual bindings
 
-The same dot works on a `const` or `let` **inside a body** — an infer function's or the module's. A contextual binding is context for every `ask` that comes after it in the same body, in its block or an enclosing one:
+You can also add a leading dot to a `const` or `let` declaration inside an infer function or at module level. This **contextual binding** is visible to later asks in the same block and its nested blocks:
 
 ```tsi
 // support.tsi
@@ -89,15 +92,15 @@ type Customer = { id: string; tier: "free" | "pro" };
 export infer function reply(.mail: string) {
   const .tone = "brief, friendly";
   const .customer: Customer = { id: "c1", tier: "pro" };
-  return ask `a reply to the mail`<string>;
+  return ask `a reply to the mail`: string;
 }
 ```
 
-- The binding renders after the parameters in the function's `CONTEXT` block — `- tone = "brief, friendly"` — and its **current** value is read when the ask runs, so a reassigned `let .x` contributes what it holds at that moment.
+- Bindings appear after parameters in the function’s `<context>` block, as `<input name="tone">` blocks. The value is read when the ask runs, so reassigning a `let` changes what later asks see.
 - Visibility is lexical: an ask sees the bindings declared before it, in its block or an enclosing block of the same body. `const .bio = ask …` never lists itself, and nothing declared after an ask reaches it.
 - An annotated binding (`const .customer: Customer`) derives its type exactly as a contextual parameter does, under the same `underivableContextType` policy; an unannotated one carries the value alone.
-- `ask fn()` hands the bindings visible at the call site to `fn` as its caller's context, the way parameters already travel.
-- At module level the bindings give the implicit `<module>` scope its `CONTEXT` block — see [ask at module level](/docs/language/ask/#at-module-level). They do **not** reach an infer function merely declared in the same file; context chains where `ask` happens.
+- `ask fn()` passes the bindings visible at the call site as part of the caller’s context.
+- At module level, bindings populate the implicit `<module>` context. They reach an infer function when you call it with `ask`, not merely because it is declared in the same file. A module [context statement](/docs/language/context-statements/) is different: it applies to every ask below it, including inside the infer functions declared below it. See [ask at module level](/docs/language/ask/#at-module-level).
 - `var .x` is not a binding form ([`NOLA1014`](/docs/reference/error-codes/#nola1014)); a pattern after the dot is [`NOLA1011`](/docs/reference/error-codes/#nola1011); a dotted binding inside a plain function is [`NOLA1010`](/docs/reference/error-codes/#nola1010).
 
 ## Errors
@@ -108,4 +111,4 @@ export infer function reply(.mail: string) {
 - [`NOLA1011`](/docs/reference/error-codes/#nola1011) — `.` on a destructuring pattern or a parameter with a default value; reserved — use a plain identifier parameter.
 - [`NOLA1014`](/docs/reference/error-codes/#nola1014) — `var .x`: a contextual binding is `const .x` or `let .x`.
 
-Next: [Extractors](/docs/language/extractors/)
+Next: [Context statements](/docs/language/context-statements/)

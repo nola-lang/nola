@@ -1,12 +1,4 @@
-import type {
-  InferenceModel,
-  InferRequest,
-  NolaErrorResponse,
-  NolaInferRequest,
-  NolaInferResponse,
-  PlatformModel,
-  ProviderResponse,
-} from "@nola-lang/core";
+import type { InferRequest, InferResult, NolaErrorResponse, NolaInferRequest, NolaInferResponse, PlatformModel } from "@nola-lang/core";
 import { NOLA_API_URL, NOLA_PROTOCOL, NOLA_USAGE_HEADERS, NolaProviderError, PLATFORM_MODEL, parseRetryAfter } from "@nola-lang/core";
 import { NOLA_VERSION } from "./version.js";
 
@@ -60,20 +52,6 @@ function parseErrorBody(text: string): NolaErrorResponse["error"] | undefined {
 }
 
 /**
- * Protocol 1 wire compatibility: the deployed `/v1/infer` validator pins
- * `intent: "extract"` and knows no `callee`/`hint`, so a call intent's model
- * is POSTed in the extract shape — the instruction already carries the
- * synthesized request, and the server treats both kinds alike today.
- * Receipts, hook events and the console keep the real kind. Lift once the
- * platform accepts "call" (handoff 2026-09-07-infer-intent-call.md).
- */
-function toWireIntent(model: InferenceModel): InferenceModel {
-  if (model.intent !== "call") return model;
-  const { instruction, text } = model.input;
-  return { ...model, intent: "extract", input: { instruction, ...(text !== undefined ? { text } : {}) } };
-}
-
-/**
  * The platform-served model: a Nola Protocol `/v1/infer` client — users
  * reach it through `nola.infer()` (config v2 §2: no argument, a
  * "<provider>/<model>" selector, or the connection options).
@@ -113,7 +91,7 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
     console.warn(`Nola free usage: ${used} / ${limit} runs — ${Math.max(0, left)} left. Run \`nola account\` to add credits.`);
   };
 
-  const attemptOnce = async (req: InferRequest): Promise<ProviderResponse> => {
+  const attemptOnce = async (req: InferRequest): Promise<InferResult> => {
     const requestedAt = Date.now();
     const envName = options.apiKeyEnv ?? "NOLA_API_KEY";
     const apiKey = options.apiKey ?? process.env[envName];
@@ -128,7 +106,8 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
       protocol: NOLA_PROTOCOL,
       version: NOLA_VERSION,
       ...(req.trace ? { askId: req.trace.askId, invocationId: req.trace.invocationId, spanPath: req.trace.spanPath } : {}),
-      intent: toWireIntent(req.model),
+      // the intent as is — the platform's validator admits every kind, call intents with their callee and hint
+      intent: req.intent,
       ...(options.model !== undefined ? { model: options.model } : {}),
       ...(req.profile !== undefined ? { profile: req.profile } : {}),
       ...(req.project !== undefined ? { project: req.project } : {}),
@@ -163,7 +142,7 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
     return { text: data.text, durationMs: Date.now() - requestedAt };
   };
 
-  const infer = async (req: InferRequest): Promise<ProviderResponse> => {
+  const infer = async (req: InferRequest): Promise<InferResult> => {
     let delay = retry.delayMs;
     let lastError: unknown;
     for (let attempt = 0; attempt <= retry.maxRetries; attempt++) {

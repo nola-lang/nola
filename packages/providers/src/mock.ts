@@ -1,8 +1,8 @@
-import type { LanguageModel, ProviderRequest } from "@nola-lang/core";
-import { DECISION_MODEL } from "@nola-lang/core";
+import type { InferRequest, LanguageModel, RenderedPrompt } from "@nola-lang/core";
+import { DECISION_MODEL, renderPrompt } from "@nola-lang/core";
 
-/** What a mock callback sees: the classic request — `payload` IS the rendering (reshape 2026-09-01). */
-export type MockRequest = ProviderRequest;
+/** What a mock callback sees: the intent, plus its default rendering on demand. */
+export type MockRequest = InferRequest & { readonly prompt: RenderedPrompt };
 
 export interface MockOptions {
   /**
@@ -14,6 +14,15 @@ export interface MockOptions {
   decisions?: boolean;
 }
 
+/** The request with a memoized `prompt` getter — rendered only when a callback reads it. */
+function withPrompt(req: InferRequest): MockRequest {
+  let rendered: RenderedPrompt | undefined;
+  return Object.defineProperty({ ...req }, "prompt", {
+    enumerable: false,
+    get: () => (rendered ??= renderPrompt(req.intent)),
+  }) as MockRequest;
+}
+
 export function mockProvider(
   source: unknown[] | ((req: MockRequest) => unknown),
   options: MockOptions = {},
@@ -22,13 +31,13 @@ export function mockProvider(
   return {
     ...(options.decisions ? { [DECISION_MODEL]: true } : {}),
     name: "mock",
-    async complete(req) {
+    async infer(req) {
       let value: unknown;
       if (queue) {
         if (queue.length === 0) throw new Error("mockProvider queue exhausted");
         value = queue.shift();
       } else {
-        value = (source as (req: MockRequest) => unknown)(req);
+        value = (source as (req: MockRequest) => unknown)(withPrompt(req));
       }
       return { text: JSON.stringify(value) };
     },

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ClassicPrompt } from "@nola-lang/core";
+import { renderPrompt } from "@nola-lang/core";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,8 +15,8 @@ function configureProbe(payloads: string[]) {
     model: {
       default: {
         name: "probe",
-        complete: async (req) => {
-          payloads.push((req.payload as ClassicPrompt).messages[0]?.content ?? "");
+        infer: async (req) => {
+          payloads.push(renderPrompt(req.intent).messages[0]?.content ?? "");
           return { text: JSON.stringify(`v${payloads.length}`) };
         },
       },
@@ -25,7 +25,7 @@ function configureProbe(payloads: string[]) {
 }
 
 function lowered() {
-  const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+  const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
   const b = () =>
     __nola.intents.Intent(
       async (__ctx: Frame) =>
@@ -33,7 +33,7 @@ function lowered() {
           __nola.intents.ExtractIntent({ instruction: "inner", type: { type: "string" }, loc: "5:3" }),
           __ctx,
         ),
-      fileCtx.func({ fn: "b", instruction: "" }),
+      fileCtx.func({ fn: "b" }),
     );
   return { fileCtx, b };
 }
@@ -52,12 +52,12 @@ describe("ask-site chaining (only ask wires context)", () => {
           );
           return await b(); // bare await — no ask, no frame
         },
-        fileCtx.func({ fn: "a", instruction: "" }),
+        fileCtx.func({ fn: "a" }),
       );
     await a();
     const bPayload = payloads[1] ?? "";
-    expect(bPayload).toContain("CONTEXT — inside b(), x.tsi\n"); // rooted, not under a
-    expect(bPayload).not.toContain("inside a()"); // no inherited caller context
+    expect(bPayload).toContain('<context function="b"/>'); // rooted, not under a
+    expect(bPayload).not.toContain('function="a"'); // no inherited caller context
     // TODO(history): assert no inherited previousExtractions once history composition lands.
   });
 
@@ -75,12 +75,12 @@ describe("ask-site chaining (only ask wires context)", () => {
           );
           return await helper();
         },
-        fileCtx.func({ fn: "a", instruction: "" }),
+        fileCtx.func({ fn: "a" }),
       );
     await a();
     const bPayload = payloads[1] ?? "";
-    expect(bPayload).toContain("CONTEXT — inside b(), x.tsi\n");
-    expect(bPayload).not.toContain("inside a()");
+    expect(bPayload).toContain('<context function="b"/>');
+    expect(bPayload).not.toContain('function="a"');
     // TODO(history): assert no inherited previousExtractions once history composition lands.
   });
 });

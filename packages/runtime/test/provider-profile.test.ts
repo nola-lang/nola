@@ -1,5 +1,5 @@
 import { Codes } from "@nola-lang/ast";
-import type { AskReceipt, ModelConfigEntry, ProviderRequest } from "@nola-lang/core";
+import type { AskReceipt, InferRequest, ModelConfigEntry } from "@nola-lang/core";
 import { isPlatformModel, NolaConfigError } from "@nola-lang/core";
 import { mockProvider } from "@nola-lang/providers";
 import { ExtractIntent, nola, nolaRuntime } from "@nola-lang/runtime";
@@ -9,10 +9,10 @@ import { openTestFrame } from "./helpers/frame.js";
 afterEach(() => nolaRuntime.reset());
 
 /** Captures every request it serves. */
-function probeProvider(seen: ProviderRequest[]) {
+function probeProvider(seen: InferRequest[]) {
   return {
     name: "probe",
-    complete: async (req: ProviderRequest) => {
+    infer: async (req: InferRequest) => {
       seen.push(req);
       return { text: '"ok"' };
     },
@@ -76,7 +76,7 @@ describe("resolveModelProfile — free-form ask-site names when the platform ser
   });
 
   it("forceModel still wins, and a platform default keeps the profile for record/replay parity", () => {
-    const seen: ProviderRequest[] = [];
+    const seen: InferRequest[] = [];
     nolaRuntime.configure({ model: { default: platform(), probe: probeProvider(seen) }, forceModel: "probe" });
     const { model, profile } = nolaRuntime.current().resolveModelProfile("fast");
     expect(model.name).toBe("probe");
@@ -101,7 +101,7 @@ describe("resolveModelProfile — free-form ask-site names when the platform ser
 
 describe("the profile on the ask path", () => {
   it("withModel('fast') under a platform default reaches the model as request.profile and lands on the receipt", async () => {
-    const seen: ProviderRequest[] = [];
+    const seen: InferRequest[] = [];
     const receipts: AskReceipt[] = [];
     const profilesSeen: (string | undefined)[] = [];
     nolaRuntime.configure({
@@ -123,7 +123,7 @@ describe("the profile on the ask path", () => {
   });
 
   it("a plain ask sends no profile", async () => {
-    const seen: ProviderRequest[] = [];
+    const seen: InferRequest[] = [];
     nolaRuntime.configure({ model: { default: platform(), probe: probeProvider(seen) }, forceModel: "probe" });
     await extract().run(openTestFrame());
     expect(seen[0]?.profile).toBeUndefined();

@@ -32,8 +32,10 @@ export async function collectExampleFromDisk(examplesDir: string, name: string):
 }
 
 /**
- * Structured rewrite for a scaffolded example's package.json — examples stay
- * runnable workspaces in-repo, so they carry no __NAME__ placeholders.
+ * Structured rewrite for a scaffolded template's package.json — examples stay
+ * runnable workspaces in-repo (and `empty` follows their convention), so no
+ * template carries __NAME__ placeholders: the name is set here and the
+ * workspace `*` ranges become the lockstep `^<version>`.
  */
 export function rewriteExamplePackageJson(content: string, opts: { name: string; version: string }): string {
   const pkg = JSON.parse(content) as Record<string, unknown>;

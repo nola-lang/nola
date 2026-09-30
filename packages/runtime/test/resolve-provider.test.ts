@@ -13,7 +13,7 @@ function intent() {
   });
 }
 
-const ctx = () => openTestFrame({ data: { fn: "t", instruction: "" } });
+const ctx = () => openTestFrame({ data: { fn: "t" } });
 
 afterEach(() => nolaRuntime.reset());
 
@@ -22,7 +22,7 @@ describe("__nola.ask provider alias (ask with <name> lowering)", () => {
     nolaRuntime.configure({
       model: { default: named("d", "from-default"), fast: named("f", "from-fast") },
     });
-    await expect(__nola.ask(intent(), ctx(), "fast")).resolves.toBe("from-fast");
+    await expect(__nola.ask(intent(), ctx(), { model: "fast" })).resolves.toBe("from-fast");
   });
 
   it("uses the default provider when no alias is given", async () => {
@@ -41,7 +41,7 @@ describe("__nola.ask provider alias (ask with <name> lowering)", () => {
       },
     });
     const pinned = intent().withModel("slow");
-    await expect(__nola.ask(pinned, ctx(), "fast")).resolves.toBe("from-fast");
+    await expect(__nola.ask(pinned, ctx(), { model: "fast" })).resolves.toBe("from-fast");
   });
 
   it("forceModel stays hermetic: it beats the ask-site alias", async () => {
@@ -49,11 +49,11 @@ describe("__nola.ask provider alias (ask with <name> lowering)", () => {
       model: { default: named("d", "from-default"), fast: named("f", "from-fast"), mock: named("m", "from-mock") },
       forceModel: "mock",
     });
-    await expect(__nola.ask(intent(), ctx(), "fast")).resolves.toBe("from-mock");
+    await expect(__nola.ask(intent(), ctx(), { model: "fast" })).resolves.toBe("from-mock");
   });
 
   it("an unknown alias rejects with ConfigUnknownModel at resolve time", async () => {
     nolaRuntime.configure({ model: { default: named("d", "from-default") } });
-    await expect(__nola.ask(intent(), ctx(), "slow")).rejects.toThrow(NolaConfigError);
+    await expect(__nola.ask(intent(), ctx(), { model: "slow" })).rejects.toThrow(NolaConfigError);
   });
 });

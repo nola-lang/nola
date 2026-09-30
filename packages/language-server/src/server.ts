@@ -24,6 +24,7 @@ import {
 import { create as createTypeScriptServices } from "volar-service-typescript";
 import type { URI } from "vscode-uri";
 import { decorateDocumentsForCaseInsensitiveFs } from "./document-lookup.js";
+import { hideGeneratedNames } from "./generated-names.js";
 import { createNolaServicePlugin } from "./nola-service.js";
 
 const WATCHED_EXTENSIONS = ["tsi", "ts", "cts", "mts", "tsx", "js", "cjs", "mjs", "jsx", "json"];
@@ -67,7 +68,12 @@ connection.onInitialize((params) => {
         }
       },
     })),
-    [...createTypeScriptServices(tsdk.typescript), createNolaServicePlugin(tsdk.typescript, { sourceRoot })],
+    // The TypeScript services see the LOWERED text: its generated names leave
+    // their diagnostics (an unused `__nola_ctx_N`) and completion lists.
+    [
+      ...createTypeScriptServices(tsdk.typescript).map(hideGeneratedNames),
+      createNolaServicePlugin(tsdk.typescript, { sourceRoot }),
+    ],
   );
 });
 

@@ -1,11 +1,11 @@
 ---
 title: The Node loader
-description: node --import nola-lang/register — lowers .tsi in memory with inline source maps, loads nola.config.ts and .env, falls back .js to .ts. The dev and debug path.
+description: Run and debug .tsi files without a build step using the Node loader, with source maps, project configuration, and environment variables.
 sidebar:
   order: 20
 ---
 
-The loader is what runs `.tsi` under plain `node` without a build step — the `tsx` model. `nola run` is a shortcut for it.
+The Nola loader runs `.tsi` files in Node without a separate build step. Use it during development or when debugging. `nola run` registers the loader for you.
 
 ## Usage
 
@@ -17,25 +17,29 @@ nola run src/main.ts                             # the same, registered for the 
 
 ## What the loader does
 
-- **Registers Node module hooks** (`module.register`) for the project and lowers every imported `.tsi` in memory — nothing is written to disk.
+- **Registers Node module hooks** (`module.register`) for the project and compiles imported `.tsi` files in memory.
 - **Inlines source maps** that point at the on-disk `.tsi` files, so breakpoints bind in `.tsi` source and, with `--enable-source-maps`, stack traces report `.tsi` positions.
-- **Loads `nola.config.ts`** — bundled and evaluated before your entry runs — and configures the process. The config itself cannot import `.tsi` ([`NOLA3012`](/docs/reference/error-codes/#nola3012)): it is evaluated before the hooks register.
-- **Applies the `.env` beside your `nola.config.ts`** before evaluating it, dotenv-style: a variable already present in the real environment wins over the file. (No config file means no `.env` is read.)
-- **Falls back from `./x.js` to `x.ts`** for a missing relative specifier (a real on-disk `.js` always wins) — which is why `.tsi` files import plain TS with the NodeNext `.js` form.
-- **Serves views** of plain TypeScript modules for `./x.tsi` imports with no `x.tsi` on disk — yours and the compiler's — so cross-file schemas work without generated files ([Types as values](/docs/language/types-as-values/#views-of-plain-typescript)).
+- **Loads `nola.config.ts`** before your entry point runs. The config is bundled and evaluated before the module hooks register, so it cannot import `.tsi` files ([`NOLA3012`](/docs/reference/error-codes/#nola3012)).
+- **Reads the `.env` beside `nola.config.ts`** before evaluating the config. Existing environment variables take precedence. Without a config file, the loader does not read `.env`.
+- **Resolves `./x.js` to `x.ts`** when the `.js` file is missing. An existing `.js` file takes precedence. This supports the NodeNext `.js` imports used in `.tsi` files.
+- **Serves views of TypeScript modules** when a `./x.tsi` import has no matching `.tsi` file on disk. This lets cross-file schemas work without generated files, including imports emitted by the compiler. See [Types as values](/docs/language/types-as-values/#views-of-plain-typescript).
 
 ## Debugging
 
-Because the loader is `--import`-able, any `.tsi` or `.ts` entry debugs under the ordinary Node debugger. The VS Code launch configuration on [Editor setup](/docs/start/editor-setup/#debugging-with-f5) is exactly `node --import nola-lang/register --enable-source-maps` with two extra keys that let VS Code trust the inline maps and skip the runtime.
+You can debug a `.tsi` or `.ts` entry point with Node's debugger. The VS Code launch configuration in [Editor setup](/docs/start/editor-setup/#debugging-with-f5) runs `node --import nola-lang/register --enable-source-maps`. It also tells VS Code to use the inline source maps and skip runtime code while stepping.
 
 ## Not for production
 
-The loader is the development and debugging path. For deployment, `nola build` writes plain JS with a wired config, and the output runs under `node` with no `--import` at all — see [Deploying](/docs/guides/deploying/).
+For deployment, prefer `nola build`. It writes JavaScript with the configuration included, so you can run the output with `node` without registering the loader. See [Deploying](/docs/guides/deploying/) for the build workflow and the option to run source directly.
 
 ## Runtimes
 
-The hooks are Node's module-hooks API (Node ≥ 22.18). Bun and Deno do not run them: `bun --bun`, `bun src/main.ts` and `deno run` fail with [`NOLA3015`](/docs/reference/error-codes/#nola3015). Any package manager is fine — `bun run start` / `pnpm start` / `yarn start` all launch the `nola` bin, which is a Node script.
+The loader requires Node ≥ 22.18 and uses Node's module hooks. Running it in Bun or Deno (`bun --bun`, `bun src/main.ts`, or `deno run`) fails with [`NOLA3015`](/docs/reference/error-codes/#nola3015). You can still use those tools as package managers: `bun run start`, `pnpm start`, and `yarn start` launch the `nola` executable under Node.
 
-The loader handles `.tsi`; plain `.ts` files next to it — the entry `src/main.ts`, helpers — are Node's job, through its native type stripping. That is on by default from Node 22.18 (and 23.6). On an older Node 22 it still sits behind a flag, and Node refuses `.ts` outright: `npm start` and the F5 launch fail with `ERR_UNKNOWN_FILE_EXTENSION` for `src/main.ts`. The scaffolder prints this warning when it sees such a Node. Upgrade Node; if you cannot, set `NODE_OPTIONS=--experimental-strip-types` for `npm start` and add `"--experimental-strip-types"` to `runtimeArgs` in `.vscode/launch.json`. Nola deliberately does not strip `.ts` itself: its own stripper would accept syntax Node's refuses, so a project would work on the old Node and break on the upgrade.
+Nola handles `.tsi` files. Node handles plain `.ts` files, including entry points and helpers, through native type stripping. This is enabled by default from Node 22.18 and 23.6.
+
+On earlier Node 22 releases, `npm start` or F5 may fail with `ERR_UNKNOWN_FILE_EXTENSION` for `src/main.ts`. The scaffolder warns about this. Upgrade Node when possible. As a workaround, set `NODE_OPTIONS=--experimental-strip-types` for `npm start` and add `"--experimental-strip-types"` to `runtimeArgs` in `.vscode/launch.json`.
+
+Using Node's type stripping keeps plain TypeScript files subject to the same syntax rules inside and outside a Nola project.
 
 Next: [VS Code extension](/docs/tooling/vscode/)

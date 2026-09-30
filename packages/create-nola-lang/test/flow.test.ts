@@ -9,6 +9,7 @@ import {
   BACK,
   EXAMPLE_QUESTION,
   exampleMenu,
+  FETCH_FAILURE_HINT,
   INSTALL_OPEN_QUESTION,
   INSTALL_QUESTION,
   lastOutputLine,
@@ -388,8 +389,12 @@ describe("runFlow — editor step", () => {
     expect(code).toBe(0);
     expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
     expect(existsSync(join(dir, ".vscode", "extensions.json"))).toBe(true);
+    // empty's stub is a .tsi entry, so the launch config runs it through the loader
+    const launch = JSON.parse(await readFile(join(dir, ".vscode", "launch.json"), "utf8"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code variable syntax
+    expect(launch.configurations[0].program).toBe("${workspaceFolder}/src/main.tsi");
     // the entry file greets the user with the VS Code next steps the launch config enables
-    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    const main = await readFile(join(dir, "src", "main.tsi"), "utf8");
     expect(main).toContain("F5");
     expect(main).not.toContain("__NEXT_STEPS__");
   });
@@ -425,7 +430,7 @@ describe("runFlow — editor step", () => {
     await runFlow({ dir, template: "empty" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
     expect(existsSync(join(dir, ".vscode", "extensions.json"))).toBe(true);
-    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    const main = await readFile(join(dir, "src", "main.tsi"), "utf8");
     expect(main).toContain("F5");
   });
 
@@ -433,7 +438,7 @@ describe("runFlow — editor step", () => {
     const dir = join(await tmp(), "app");
     await runFlow({ dir, template: "empty", ide: "none" }, { interactive: false, prompter: scripted({}) });
     expect(existsSync(join(dir, ".vscode"))).toBe(false);
-    const main = await readFile(join(dir, "src", "main.ts"), "utf8");
+    const main = await readFile(join(dir, "src", "main.tsi"), "utf8");
     expect(main).not.toContain("F5");
     expect(main).toContain("npm start");
   });
@@ -471,7 +476,7 @@ describe("runFlow — install + open VS Code step", () => {
     const code = await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher, packageManager: "pnpm" });
     expect(code).toBe(0);
     expect(asked.at(-1)).toBe(`${INSTALL_OPEN_QUESTION}|true`);
-    expect(calls).toEqual(["install:pnpm:app", "code:app:src/main.ts"]);
+    expect(calls).toEqual(["install:pnpm:app", "code:app:src/main.tsi"]);
     // the install runs under a spinner: title, the latest output line, then the success line
     expect(p.notes).toContain("progress: Installing dependencies (pnpm install)");
     expect(p.notes).toContain("progress update: added 12 packages in 3s");
@@ -603,7 +608,7 @@ describe("runFlow — install + open VS Code step", () => {
       output: ["npm ERR! code E404\n", "npm ERR! 404 Not Found - GET https://registry.npmjs.org/nope\n"],
     });
     await runFlow({ dir, provider: "none" }, { interactive: true, prompter: p, launcher });
-    expect(calls).toEqual(["install:npm:app", "code:app:src/main.ts"]);
+    expect(calls).toEqual(["install:npm:app", "code:app:src/main.tsi"]);
     const notes = p.notes.join("\n");
     expect(p.notes).toContain("progress fail: npm install failed (exit code 1)");
     expect(notes).toContain("npm ERR! code E404\nnpm ERR! 404 Not Found");
@@ -864,10 +869,11 @@ async function seedConfig(home: string, apiUrl = "https://api.nola.sh") {
 const sessionOf = async (home: string) => JSON.parse(await readFile(join(home, ".nola", CREDENTIALS_FILE), "utf8"));
 
 describe("template menu", () => {
-  it("the first menu is the templates by feature, feature-extraction first, triage-ticket (typesafe.ai) before empty, then one row that opens the examples", () => {
+  it("the first menu is the featured examples by feature — feature-extraction first, agent-loop third, triage-ticket (typesafe.ai) before empty — then one row that opens the rest", () => {
     expect(templateMenu().map((o) => o.value)).toEqual([
       "feature-extraction",
       "function-calling",
+      "agent-loop",
       "typescript-interop",
       "triage-ticket",
       "empty",
@@ -877,7 +883,8 @@ describe("template menu", () => {
     expect(more.label).toBe("More examples…");
     expect(more.hint).toContain("file-ticket");
     expect(more.hint).not.toContain("triage-ticket");
-    for (const o of templateMenu().slice(0, 5)) {
+    expect(more.hint).not.toContain("agent-loop");
+    for (const o of templateMenu().slice(0, 6)) {
       expect(o.label).toBe(o.value === "triage-ticket" ? "triage-ticket (typesafe.ai)" : o.value);
     }
   });
@@ -895,6 +902,11 @@ describe("template menu", () => {
     ]);
     expect(rows.find((o) => o.value === "file-ticket")?.label).toBe("file-ticket");
     expect((rows.at(-1) as PrompterOption).label).toBe("← Back");
+  });
+
+  it("a failed example fetch is followed by the one template that needs no download: empty is the only builtin", () => {
+    expect(FETCH_FAILURE_HINT).toContain('Only "empty"');
+    expect(FETCH_FAILURE_HINT).not.toContain("feature-extraction");
   });
 
   it("More examples… opens the second menu and the chosen example is the template", async () => {

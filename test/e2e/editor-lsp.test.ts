@@ -21,6 +21,7 @@ const REPORT_PATH = join(FIXTURE, "src", "report.tsi");
 interface LspDiagnostic {
   code?: string | number;
   source?: string;
+  message?: string;
   range: {
     start: { line: number; character: number };
     end: { line: number; character: number };
@@ -230,6 +231,64 @@ describe("LSP over examples/cross-file-types", () => {
     expect(diags.map((d) => d.code)).not.toContain(2304);
   });
 
+  // A context statement's value is verbatim-mapped (spec 2026-09-29 §3.6):
+  // completion inside it is TypeScript's own answer at that position.
+  it("completes inside a context statement's value", async () => {
+    const content = "export infer function escalate(.ticket: string, oncall: string) {\n  `Page` onc\n  return ask `step`<string>;\n}\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "context-value.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    await waitForDiagnostics(uri, () => true);
+    const completion = await server.sendCompletionRequest(uri, positionOf(content, "`Page` onc", "`Page` onc".length));
+    const labels = new Set((completion?.items ?? []).map((i) => i.label));
+    expect(labels.has("oncall")).toBe(true);
+    // An identifier position sees the whole scope of the LOWERED file, as at any expression
+    // position of a .tsi; the server drops the names the lowering generated. After a dot,
+    // below, it is the value's members only.
+    for (const generated of ["__nola", "__frame", "__nola_module_ctx", "__nola_ctx_1"]) {
+      expect(labels.has(generated), generated).toBe(false);
+    }
+  });
+
+  // A context statement no ask sees lowers to a `function __nola_ctx_N()` read only by its
+  // own `void __nola_ctx_N;` step location, so TypeScript has nothing to report; the server
+  // also drops a TS6133 on any generated name (a greyed-out hint without noUnusedLocals, an
+  // error with it). The author's own unused name is still reported.
+  it("never reports a generated name as unused (a context statement after the last ask)", async () => {
+    const content =
+      "export infer function triage(.ticket: string) {\n  const id = ask `the order id`<string>;\n  `Nothing asks after this note.`\n  const unused = 1;\n  return id;\n}\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "unused-item.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 6133));
+    expect(diags.filter((d) => d.code === 6133).map((d) => d.message)).toEqual([
+      "'unused' is declared but its value is never read.",
+    ]);
+    expect(diags.filter((d) => String(d.message).includes("__nola"))).toEqual([]);
+  });
+
+  // After a dot inside a value: the members, never the global scope of a stale program.
+  it("completion after `oncall.` inside a context statement's value lists the string's members", async () => {
+    const content = "export infer function escalate(.ticket: string, oncall: string) {\n  `Page` oncall.to\n  return ask `step`<string>;\n}\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "context-value-dot.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    await waitForDiagnostics(uri, () => true);
+    const labels = await completionOnDotTrigger(uri, positionOf(content, "oncall.to", "oncall.".length));
+    expect(labels).toContain("toUpperCase");
+    expect(labels).not.toContain("__nola");
+    expect(labels).not.toContain("console");
+  });
+
+  // TypeScript answers a near-miss spelling (`oncal` for `oncall`) with 2552 and a
+  // suggestion; a name with nothing close in scope is the plain 2304.
+  it("an unknown name in a value is TS2304 at the value's own range", async () => {
+    const content = "export infer function escalate(.ticket: string, oncall: string) {\n  `Page` nobody `now`;\n  return ask `step`<string>;\n}\n";
+    const uri = pathToFileURL(join(FIXTURE, "src", "context-value-2304.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 2304));
+    const ts2304 = diags.find((d) => d.code === 2304);
+    expect(ts2304?.range.start).toEqual(positionOf(content, "nobody `now`", 0));
+    expect(ts2304?.range.end).toEqual(positionOf(content, "nobody `now`", "nobody".length));
+  });
+
   // Volar looks an open document up by the exact string of its URI. When the
   // editor's spelling of a file differs from the tsconfig's only in case (a
   // folder opened as `d:/Work/...` on a `d:/work/...` disk), the project's
@@ -237,7 +296,7 @@ describe("LSP over examples/cross-file-types", () => {
   // file from DISK: the program TypeScript answers from lags the editor by
   // one autosave while the mappings follow the editor. A `.` typed after
   // `console` was then answered at a position where the program had no dot —
-  // the whole global scope (`__nola`, `__nola_file_ctx`, ...) — and the
+  // the whole global scope (`__nola`, `__nola_module_ctx`, ...) — and the
   // derivation pass flashed errors under <T>. The server now falls back to a
   // case-insensitive lookup on case-insensitive file systems.
   it.skipIf(!CASE_INSENSITIVE_FS)("a document opened under a differently cased URI still completes against the editor's text", async () => {
@@ -276,13 +335,14 @@ describe("LSP over examples/cross-file-types", () => {
     expect(String(target.targetUri ?? target.uri)).toContain("models.ts");
   });
 
-  it("go-to-definition on `<Person>` at the ask site lands in models.ts (anchor mapping)", async () => {
-    // The <T> span is inside a REPLACED region, but its bytes are copied
+  it("go-to-definition on the `: Person` type at the ask site lands in models.ts (anchor mapping)", async () => {
+    // The type span is inside a REPLACED region, but its bytes are copied
     // verbatim into the generated ExtractIntent<T> — the anchor mapping makes
-    // navigation work there.
+    // navigation work there (the example writes the colon spelling since
+    // 2026-09-29; the anchor is the same for `<Person>`).
     const text = readFileSync(REPORT_PATH, "utf8");
     const doc = await server.openTextDocument(REPORT_PATH, "nola");
-    const defs = await server.sendDefinitionRequest(doc.uri, positionOf(text, "<Person>;", 3));
+    const defs = await server.sendDefinitionRequest(doc.uri, positionOf(text, ": Person;", 3));
     const list = Array.isArray(defs) ? defs : defs ? [defs] : [];
     expect(list.length).toBeGreaterThan(0);
     const target = (list[0] ?? {}) as { targetUri?: string; uri?: string };
@@ -309,12 +369,12 @@ describe("LSP over examples/cross-file-types", () => {
     expect(formatted).toContain("  const s = ask ..`n`<string>;");
   });
 
-  it("a tagged infer function's semantic token covers the name only, not the instruction", async () => {
-    // The lowering DELETES the instruction from the header, so the generated
-    // offset at the end of the name is also the offset at the start of `(`.
-    // If the mapping lets a range's end land on the next span, the `function`
-    // semantic token stretches over the instruction and VS Code paints the
-    // prose function-yellow instead of string.
+  it("a reserved marker's semantic token covers the name only, never the dropped text", async () => {
+    // The reserved marker (NOLA1019) is DROPPED from the lowered text in the
+    // editor's tolerant compile, so the generated offset at the end of the
+    // name is also the offset at the start of `(`. If the mapping lets a
+    // range's end land on the next span, the `function` semantic token
+    // stretches over the dropped prose and VS Code paints it function-yellow.
     const content = [
       "export infer function getUserById`get user from this userData`(.userData: string) {",
       "  return 1;",
@@ -492,32 +552,20 @@ describe("LSP over examples/cross-file-types", () => {
     });
   }
 
-  // Prompt templates: `${.` inside an infer-function marker is a scope access
-  // (spec 2026-08-17). The marker is copied into the wrapper closer with anchor
-  // mappings, so a `.`-triggered completion after `${.` must answer with the
-  // FunctionPromptScope members — and only those, never the global scope.
-  it("completion after `${.` inside an infer-function marker lists the prompt scope", async () => {
-    // VS Code auto-closes the brace, so the keystroke state is `${.}` with the
-    // cursor after the dot — the NOLA1015 recovery placeholder.
-    const head = "export infer function tpl`CTX ${.";
-    const content = [`${head}}\`(t: string) {`, "  return t;", "}", ""].join("\n");
-    const uri = pathToFileURL(join(FIXTURE, "src", "markertpl.tsi")).href;
-    await server.openInMemoryDocument(uri, "nola", content);
-    const labels = await completionOnDotTrigger(uri, { line: 0, character: head.length });
-    for (const m of ["args", "signature", "fn", "next", "default", "nested", "hasContext"]) expect(labels).toContain(m);
-    expect(labels).not.toContain("console");
-  });
-
-  it("completion after `${.` inside an extractor lists the extract scope", async () => {
+  // Instruction interpolation (spec 2026-09-28): a `${expr}` hole in a body
+  // instruction is ordinary TypeScript kept in place, so `.`-triggered
+  // completion inside it answers with the value's members — never the
+  // global scope, never a retired prompt-scope member.
+  it("completion after `${t.` inside a body instruction lists the parameter's members", async () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${...} in .tsi fixture source
-    const content = ["export infer function tplx(t: string) {", "  const v = ask ..`x ${.}`<string>;", "  return v;", "}", ""].join(
-      "\n",
-    );
-    const uri = pathToFileURL(join(FIXTURE, "src", "extracttpl.tsi")).href;
+    const line = "  `CTX ${t.toUpperCase()}`";
+    const content = ["export infer function holes(t: string) {", line, "  return t;", "}", ""].join("\n");
+    const uri = pathToFileURL(join(FIXTURE, "src", "bodyholes.tsi")).href;
     await server.openInMemoryDocument(uri, "nola", content);
-    const labels = await completionOnDotTrigger(uri, positionOf(content, "ask ..`x ${.", "ask ..`x ${.".length));
-    for (const m of ["type", "schema", "format", "default", "hasContext"]) expect(labels).toContain(m);
+    const labels = await completionOnDotTrigger(uri, { line: 1, character: "  `CTX ${t.".length });
+    expect(labels).toContain("toUpperCase");
     expect(labels).not.toContain("console");
+    expect(labels).not.toContain("default");
   });
 
   // Both marker sites, typed keystroke by keystroke into a file that was valid

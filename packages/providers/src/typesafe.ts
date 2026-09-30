@@ -60,9 +60,9 @@ export function typesafe(optionsOrModel?: TypesafeOptions | string): LanguageMod
       }
       const askThreshold = (req.params?.providerOptions as { threshold?: unknown } | undefined)?.threshold;
       const threshold = typeof askThreshold === "number" ? askThreshold : (options.threshold ?? DEFAULT_THRESHOLD);
-      // Jev has no conversation: a correction turn (req.model.correction) has
+      // Jev has no conversation: a correction turn (req.intent.correction) has
       // nothing to say to it, so the ask is re-answered from the same state.
-      const mapped = planFor(req.model, { threshold });
+      const mapped = planFor(req.intent, { threshold });
       if (!mapped.ok) {
         throw new NolaProviderError(`TypeSafe cannot serve this ask: ${mapped.reason}`, { definitive: true });
       }

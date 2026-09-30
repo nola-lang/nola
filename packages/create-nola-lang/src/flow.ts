@@ -24,7 +24,7 @@ import { nodeVersionWarning } from "./node-version.js";
 import { openBrowser } from "./open-url.js";
 import { detectPackageManager, type PackageManager, packageManagerCommands } from "./package-manager.js";
 import { isProviderId, PROVIDERS, type ProviderId, providerById, providerIds } from "./providers.js";
-import { entryFile, exampleNames, featuredNames, TEMPLATES, type TemplateDef, templateByName, templateNames } from "./registry.js";
+import { entryFile, exampleNames, featuredNames, type TemplateDef, templateByName, templateNames } from "./registry.js";
 import { ownVersion, scaffold, vendorEnvVar } from "./scaffold.js";
 import { applyTrial } from "./trial.js";
 
@@ -148,9 +148,10 @@ function templateOption(t: TemplateDef): PrompterOption {
 /*
  * The template step is TWO menus (clack's select has no sections): the first
  * lists the first-menu templates — feature-extraction, function-calling,
- * typescript-interop, triage-ticket (the featured example), empty — and one
- * "More examples…" row; that row opens the remaining curated examples, with a
- * Back row to return. `--template <name>` answers either level directly.
+ * agent-loop, typescript-interop, triage-ticket (the featured examples),
+ * empty (the one builtin) — and one "More examples…" row; that row opens the
+ * remaining curated examples, with a Back row to return. `--template <name>`
+ * answers either level directly.
  */
 export const TEMPLATE_QUESTION = "Select a template:";
 export const EXAMPLE_QUESTION = "Select an example:";
@@ -159,13 +160,7 @@ export const MORE_EXAMPLES = "more-examples";
 /** the examples menu's last row — back to the first menu */
 export const BACK = "back";
 
-/** `"feature-extraction", "function-calling", …` — for the fetch-failure note. */
-const builtinNames = () =>
-  TEMPLATES.filter((t) => t.source === "builtin")
-    .map((t) => `"${t.name}"`)
-    .join(", ");
-
-/** The first menu: the builtin templates and the featured example in registry order, then the examples row. */
+/** The first menu: the featured examples and `empty` in registry order, then the examples row. */
 export function templateMenu(): PrompterOption[] {
   const featured = featuredNames().map((name) => templateOption(templateByName(name) as TemplateDef));
   return [...featured, { value: MORE_EXAMPLES, label: "More examples…", hint: exampleNames().join(", ") }];
@@ -174,8 +169,15 @@ export function templateMenu(): PrompterOption[] {
 /** The second menu: the curated examples the first menu does not carry, in registry order, then Back. */
 export function exampleMenu(): PrompterOption[] {
   const examples = exampleNames().map((name) => templateOption(templateByName(name) as TemplateDef));
-  return [...examples, { value: BACK, label: "← Back", hint: "the builtin templates" }];
+  return [...examples, { value: BACK, label: "← Back", hint: "the first menu" }];
 }
+
+/**
+ * The note a failed example fetch gets (interactive: the menu is asked
+ * again). Only `empty` ships inside the CLI; every other template is fetched
+ * from GitHub, so an offline machine can still scaffold that one.
+ */
+export const FETCH_FAILURE_HINT = 'Only "empty" ships inside the CLI and needs no download — every other template is fetched from GitHub.';
 
 /** Ask the two-level template menu until a template is chosen; null = cancelled. */
 async function selectTemplate(prompter: Prompter): Promise<string | null> {
@@ -466,7 +468,8 @@ export interface RunFlowArgs {
 export const FLOW_OPTIONS = {
   template: {
     type: "string",
-    description: "template to scaffold (feature-extraction, function-calling, typescript-interop, empty, or a curated example)",
+    description:
+      "template to scaffold: feature-extraction (the default), function-calling, agent-loop, typescript-interop, triage-ticket, empty, or another curated example",
   },
   add: { type: "boolean", description: "add Nola to the existing project in [dir] instead of scaffolding" },
   ide: { type: "string", description: "editor setup: vscode (the default) | none" },
@@ -819,7 +822,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       return 0;
     } catch (err) {
       if (err instanceof ExampleFetchError && interactive) {
-        prompter.note(`${err.message}\nThe builtin templates (${builtinNames()}) work offline.`);
+        prompter.note(`${err.message}\n${FETCH_FAILURE_HINT}`);
         input.dir = outcome.dir; // keep the chosen dir, re-pick the template
         input.template = undefined;
         continue;

@@ -1,4 +1,4 @@
-import type { InferenceModel, ProviderParams, ProviderRequest } from "@nola-lang/core";
+import type { InferenceModel, InferRequest, ProviderParams } from "@nola-lang/core";
 import { ExtractIntent, fingerprintRequest, nolaRuntime } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { openTestFrame } from "./helpers/frame.js";
@@ -9,7 +9,7 @@ afterEach(() => nolaRuntime.reset());
 function probeProvider(seen: (ProviderParams | undefined)[]) {
   return {
     name: "probe",
-    complete: async (req: ProviderRequest) => {
+    infer: async (req: InferRequest) => {
       seen.push(req.params);
       return { text: '"ok"' };
     },
@@ -63,7 +63,7 @@ describe("ProviderParams", () => {
         input: { instruction: "m" },
         output: { syntax: "json", schema: { type: "string" } },
       }) as const satisfies InferenceModel;
-    const base = { payload: modelOf() };
+    const base = { intent: modelOf() };
     const a = fingerprintRequest(base);
     const b = fingerprintRequest({ ...base, params: { temperature: 0 } });
     const c = fingerprintRequest({ ...base, params: { temperature: 1 } });

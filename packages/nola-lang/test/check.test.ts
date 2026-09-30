@@ -45,6 +45,62 @@ describe("cmdCheck", () => {
   });
 });
 
+// A context statement no ask sees lowers to a hoisted `function __nola_ctx_N()`
+// that only its own `void __nola_ctx_N;` step-location read references. That
+// read is what keeps noUnusedLocals quiet today; check also drops TS6133 on any
+// generated name (a `_` prefix does not exempt a declaration, and the author
+// cannot act on one), and nothing else. This holds the user-visible rule.
+describe("cmdCheck under noUnusedLocals", () => {
+  const TSCONFIG = JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      target: "ES2022",
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      noUnusedLocals: true,
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    include: ["src"],
+  });
+  // A module's top-level items are listed by its init (always read); a
+  // block-scoped one and a function body's are read only by the asks that see them.
+  const NOTES = [
+    "export infer function triage(.ticket: string) {",
+    "  const id = ask `the order id`<string>;",
+    "  `Nothing asks after this note.`",
+    "  return id;",
+    "}",
+    "",
+    "const summary = ask `a one-line summary`<string>;",
+    "if (summary) {",
+    "  `Nor in this block.`",
+    "}",
+    "`Nor after this one.`",
+    "",
+  ].join("\n");
+
+  async function project(notes: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "nola-check-unused-"));
+    await writeFile(join(dir, "tsconfig.json"), TSCONFIG);
+    await writeFile(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "notes.tsi"), notes);
+    return dir;
+  }
+
+  it("a context statement no ask sees (its `__nola_ctx_N` is never read) checks clean", async () => {
+    const { errors } = await cmdCheck(await project(NOTES));
+    expect(errors).toEqual([]);
+  });
+
+  it("an unused name of the author's is still TS6133", async () => {
+    const { errors } = await cmdCheck(await project(NOTES.replace("`Nor after", "const unused = 1;\n`Nor after")));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("notes.tsi:11:7 TS6133: 'unused' is declared but its value is never read.");
+  });
+});
+
 describe("cmdCheck roots the project's plain .ts files (vue-tsc role)", () => {
   const TSCONFIG = JSON.stringify({
     compilerOptions: {

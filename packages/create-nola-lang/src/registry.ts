@@ -2,31 +2,40 @@
  * The template menu. Static by design: it is versioned in lockstep with the
  * git tag the example fetcher pulls from, so names and labels cannot drift.
  *
+ * `empty` is the ONLY builtin template (config + tsconfig + a stub entry,
+ * shipped inside this package). Every other template IS a curated example:
+ * its files come from `examples/` — on disk in a dev checkout, from GitHub
+ * (the lockstep release tag) in production — and the scaffolder adds the
+ * project name, the lockstep ranges, the recommended `.gitignore`, the
+ * chosen provider's config and the next-steps comment on top.
+ *
  * The first menu leads (in this order) and is organized BY FEATURE:
  * `feature-extraction` (the default) and `function-calling` are each one
  * `.tsi` file with a top-level ask — the two things Nola does —
+ * `agent-loop` is the same shape around a top-level `while`,
  * `typescript-interop` is the infer-function shape called from plain
- * TypeScript, `triage-ticket` (a FEATURED example: fetched from examples/
- * like the rest, listed here because it is the one-file shape on a
- * non-chat vendor) and `empty`. The other curated examples follow (behind
- * "More examples…"). extract-person is deliberately absent —
- * typescript-interop IS extract-person plus the replay ledger.
+ * TypeScript, `triage-ticket` the one-file shape on a non-chat vendor, then
+ * `empty` (a stub `src/main.tsi` to write your own in). The other curated
+ * examples follow (behind "More examples…").
+ * extract-person is deliberately absent — typescript-interop IS
+ * extract-person plus the replay ledger.
  */
 export interface TemplateDef {
   name: string;
   /** one-line menu description */
   label: string;
+  /** where the files come from: this package's `templates/` dir, or `examples/` */
   source: "builtin" | "example";
   /**
-   * An example listed on the FIRST menu, in registry order beside the
-   * builtin templates, instead of behind "More examples…". Its files still
-   * come from examples/ (`source` is unchanged).
+   * An example listed on the FIRST menu, in registry order beside `empty`,
+   * instead of behind "More examples…". Its files still come from examples/
+   * (`source` is unchanged).
    */
   featured?: true;
   /**
    * The file that IS the program — what `start` runs, launch.json's
    * `program`, what VS Code opens, where the next-steps comment lands.
-   * Absent = the plain-TS `src/main.ts` every other template has.
+   * Absent = the plain-TS `src/main.ts` the other examples have.
    */
   entry?: string;
   /**
@@ -42,17 +51,32 @@ export interface TemplateDef {
 export const DEFAULT_ENTRY = "src/main.ts";
 
 export const TEMPLATES: readonly TemplateDef[] = [
-  { name: "feature-extraction", label: "extract typed data from context", source: "builtin", entry: "src/main.tsi" },
+  {
+    name: "feature-extraction",
+    label: "extract typed data from context",
+    source: "example",
+    featured: true,
+    entry: "src/main.tsi",
+  },
   {
     name: "function-calling",
     label: "call an async function from a TypeScript file",
-    source: "builtin",
+    source: "example",
+    featured: true,
+    entry: "src/main.tsi",
+  },
+  {
+    name: "agent-loop",
+    label: "an agent loop in one .tsi file: a top-level while with an ask, and a context statement read on every pass",
+    source: "example",
+    featured: true,
     entry: "src/main.tsi",
   },
   {
     name: "typescript-interop",
     label: "an infer function example, imported and awaited from plain TypeScript",
-    source: "builtin",
+    source: "example",
+    featured: true,
   },
   {
     name: "triage-ticket",
@@ -62,7 +86,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
     entry: "src/main.tsi",
     provider: { label: "typesafe.ai", envVar: "TYPESAFE_API_KEY" },
   },
-  { name: "empty", label: "nola.config + tsconfig only, bring your own code", source: "builtin" },
+  { name: "empty", label: "nola.config + tsconfig only, bring your own code", source: "builtin", entry: "src/main.tsi" },
   { name: "file-ticket", label: "call intents: the model fills a function's arguments", source: "example" },
   { name: "extract-resume", label: "nested arrays of objects, JSDoc schema descriptions", source: "example" },
   { name: "extract-invoice", label: "same-file type references, optional fields", source: "example" },
@@ -71,7 +95,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
   { name: "research-notes", label: "TS control flow orchestrating nola functions", source: "example" },
 ];
 
-/** The first menu's templates: the builtins and the featured example, in registry order. */
+/** The first menu's templates: the featured examples and `empty`, in registry order. */
 export function featuredNames(): string[] {
   return TEMPLATES.filter((t) => t.source === "builtin" || t.featured).map((t) => t.name);
 }

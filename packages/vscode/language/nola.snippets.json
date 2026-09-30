@@ -11,32 +11,32 @@
   },
   "Infer function with instruction": {
     "prefix": "inferi",
-    "description": "Infer function carrying an instruction for the LM",
-    "body": ["infer function ${1:name}`${2:instruction}`(${3}) {", "\t$0", "}"]
+    "description": "Infer function whose first statement is a context statement for the LM",
+    "body": ["infer function ${1:name}(${2}) {", "\t`${3:instruction}`", "\t$0", "}"]
   },
   "Ask (typed extractor)": {
     "prefix": "ask",
-    "description": "Resolve a typed extractor: ask ..`instruction`<Type>",
-    "body": ["ask ..`${1:instruction}`<${2:Type}>"]
+    "description": "Resolve a typed extractor: ask `instruction`: Type",
+    "body": ["ask `${1:instruction}`: ${2:Type}"]
   },
   "Ask (free text)": {
     "prefix": "askfree",
     "description": "Resolve an untyped extractor — free text, kept in this invocation's history",
-    "body": ["ask ..`${1:instruction}`"]
+    "body": ["ask `${1:instruction}`"]
   },
   "Ask with provider": {
     "prefix": "askwith",
-    "description": "Route an ask through a named provider from nola.config.ts",
-    "body": ["ask with ${1:provider} ..`${2:instruction}`<${3:Type}>"]
+    "description": "Route an ask through a named model from nola.config.ts",
+    "body": ["ask with ${1:model} `${2:instruction}`: ${3:Type}"]
   },
   "Call intent": {
     "prefix": "calli",
     "description": "Call a function with LM-filled arguments",
-    "body": ["${1:callee}`${2}`(", "\t..`${3:instruction}`<${4:Type}>,", ")"]
+    "body": ["${1:callee}`${2}`(", "\t`${3:instruction}`: ${4:Type},", ")"]
   },
   "Extractor": {
     "prefix": "extract",
     "description": "A bare extractor intent — resolve it later with ask",
-    "body": ["..`${1:instruction}`<${2:Type}>"]
+    "body": ["..`${1:instruction}`: ${2:Type}"]
   }
 }

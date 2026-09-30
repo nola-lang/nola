@@ -124,8 +124,8 @@ export default defineConfig({
 
 ```tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast `a rough summary`<string>;
-  return ask with careful `a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`: string;
+  return ask with careful `a polished summary of: ${draft}`: string;
 }
 ```
 
@@ -232,11 +232,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.13",
-    "@nola-lang/runtime": "^0.1.13"
+    "@nola-lang/providers": "^0.1.14",
+    "@nola-lang/runtime": "^0.1.14"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.13",
+    "nola-lang": "^0.1.14",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }

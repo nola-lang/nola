@@ -1,11 +1,11 @@
 ---
 title: Ask options — timeouts, params, system message
-description: ask.timeoutMs and .withTimeout, params (temperature, maxOutputTokens, providerOptions) with nearest-wins merging, and the system.message text.
+description: Configure provider timeouts, set parameters with .withParams(), and add system text to every ask. Includes limits of the built-in providers.
 sidebar:
   order: 40
 ---
 
-Three knobs shape how an ask reaches the model: how long an invocation may take, which wire parameters go with the request, and what extra system text every prompt carries.
+Set a timeout for provider requests, attach provider-specific parameters to an intent, or add system text to every prompt. This page covers each option and where it takes effect.
 
 ## Timeouts
 
@@ -21,17 +21,17 @@ export default defineConfig({
 ```
 
 - `ask.timeoutMs` is the default **per-invocation** timeout (60 000 ms when unset). It is the root frame's abort signal: when it elapses, every provider call in that invocation receives the signal. `0` disables it.
-- `.withTimeout(ms)` on the intent an infer function returns overrides it for that invocation. On a single ask inside a body — `ask (..`…`<T>).withTimeout(ms)` — it bounds just that ask, next to the invocation's clock: whichever fires first wins. See [Intent methods](/docs/language/intent-methods/).
+- `.withTimeout(ms)` on the intent an infer function returns overrides it for that invocation. On a single ask inside a body — `ask (..`…`: T).withTimeout(ms)` — it bounds just that ask, next to the invocation's clock: whichever fires first wins. See [Intent methods](/docs/language/intent-methods/).
 - The timeout bounds **provider round trips only**. Once a call intent's arguments are filled, the callee's own promise runs to completion, the same as a plain `await fn()` in your code.
 
 ## Params
 
-Wire-tuning knobs travel with the intent:
+Attach request parameters with `.withParams()`:
 
 ```tsi
 // tuned.tsi
 export infer function tagline(.product: string) {
-  return ask (..`a creative tagline`<string>).withParams({
+  return ask (..`a creative tagline`: string).withParams({
     temperature: 0.9,
     maxOutputTokens: 200,
     providerOptions: { reasoning: { effort: "low" } },   // passed through to the provider untouched
@@ -39,10 +39,11 @@ export infer function tagline(.product: string) {
 }
 ```
 
-- `temperature` and `maxOutputTokens` are typed; `providerOptions` is an opaque, JSON-serializable bag of provider-specific knobs passed through to the provider's `complete()` untouched.
-- **Merge rule:** patch fields win per field, and `providerOptions` merges per key rather than being replaced wholesale — both when chaining `.withParams()` and along the frame chain (nearest wins).
-- Params are part of the ask **fingerprint**: two asks that differ only in params never share a replay entry — see [Record and replay](/docs/config/record-and-replay/).
-- **What acts on them:** params reach the provider's `complete()` as `request.params`, and a custom provider can honor them. The built-in `openai`, `anthropic` and `google` providers do **not** forward them to the wire in 0.1.x — their request bodies are fixed by the factory options, so `.withParams({ temperature: 0.9 })` changes the fingerprint and nothing else there. For a real output cap with Anthropic use the factory's `maxOutputTokens` option — see [Providers](/docs/config/providers/).
+- `temperature` and `maxOutputTokens` are typed fields. Use `providerOptions` for other JSON-serializable options; Nola passes them to the provider's `complete()` method unchanged.
+- Chaining `.withParams()` merges fields, with later values taking precedence. `providerOptions` merges by key. The same rule applies across nested frames: the nearest value wins.
+- Params are part of the ask fingerprint. Changing them creates a different replay entry. See [Record and replay](/docs/config/record-and-replay/).
+
+The built-in `openai`, `anthropic` and `google` providers currently ignore these params when making requests. With those providers, `.withParams({ temperature: 0.9 })` changes the fingerprint but does not change the response settings. A custom provider can read them from `request.params`. For an Anthropic output limit, use the factory's `maxOutputTokens` option instead; see [Providers](/docs/config/providers/).
 
 ## System message
 
@@ -57,6 +58,6 @@ export default defineConfig({
 });
 ```
 
-`system.message` is extra system-prompt text composed after the Nola protocol preamble on every ask. Use it for global tone and policy; use instruction markers and prompt templates for anything specific to one function or one ask.
+`system.message` replaces Nola's default system text on every ask; import `DEFAULT_SYSTEM` from `@nola-lang/providers` to keep it and add to it. Use it for guidance that applies throughout the app, such as tone or policy. Put guidance for a particular function or ask in its instruction.
 
 Next: [Environments and secrets](/docs/config/environments-and-secrets/)

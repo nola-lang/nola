@@ -15,7 +15,7 @@ describe("openai provider config", () => {
         auth = new Headers(init?.headers).get("authorization");
         return new Response(okBody, { status: 200 });
       };
-      await openai({ apiKeyEnv: "NOLA_TEST_LLM_KEY", fetch: fetchStub, model: "m" }).complete(req);
+      await openai({ apiKeyEnv: "NOLA_TEST_LLM_KEY", fetch: fetchStub, model: "m" }).infer(req);
       expect(auth).toBe("Bearer k-123");
     } finally {
       delete process.env.NOLA_TEST_LLM_KEY;
@@ -25,7 +25,7 @@ describe("openai provider config", () => {
   it("missing key: names the exact env var, points at nola.config.ts, and is definitive", async () => {
     delete process.env.NOLA_TEST_MISSING_KEY;
     const p = openai({ apiKeyEnv: "NOLA_TEST_MISSING_KEY", fetch: async () => new Response(okBody), model: "m" });
-    const err = (await p.complete(req).catch((e: unknown) => e)) as NolaProviderError;
+    const err = (await p.infer(req).catch((e: unknown) => e)) as NolaProviderError;
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.message).toMatch(/NOLA_TEST_MISSING_KEY/);
     expect(err.message).toMatch(/nola\.config\.ts/);
@@ -40,7 +40,7 @@ describe("openai provider config", () => {
         model: "m",
         fetch: async () => new Response("boom", { status: 500, statusText: "Server Error" }),
       });
-      const err = (await p.complete(req).catch((e: unknown) => e)) as NolaProviderError;
+      const err = (await p.infer(req).catch((e: unknown) => e)) as NolaProviderError;
       expect(err).toBeInstanceOf(NolaProviderError);
       expect(err.status).toBe(500);
     } finally {

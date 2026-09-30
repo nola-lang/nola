@@ -1,11 +1,10 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { Codes } from "@nola-lang/ast";
-import type { ChatModel, InferRequest, LanguageModel, PlatformModel, ProviderRequest } from "@nola-lang/core";
+import type { InferRequest, LanguageModel, PlatformModel } from "@nola-lang/core";
 import {
   DECISION_MODEL,
   fingerprintRequest,
   isDecisionModel,
-  isInferModel,
   isPlatformModel,
   NolaConfigError,
   NolaProviderError,
@@ -13,56 +12,32 @@ import {
   redactDeep,
   redactSecrets,
 } from "@nola-lang/core";
+import { requireInfer } from "./require-infer.js";
 
 /**
  * Pass-through provider that appends `{ fingerprint, request, response }` JSONL
  * entries. The fingerprint is computed from the RAW request (so replay-time
  * lookups match) and is never redacted; persisted content strings are. The
- * payload is stored as sent — the classic rendering for a chat provider, the
- * model for the platform model — and `record` MIRRORS the inner kind
- * (platform-config design 2026-09-03): a platform inner yields a branded
- * platform model exposing infer; record(openai()) exposes complete.
+ * ledger stores the INTENT (the ask as data, never a rendering), and `record`
+ * carries the inner's brands: a platform inner yields a branded platform
+ * model, a decision inner a decision model.
  */
 export function record(inner: PlatformModel, ledgerPath: string): PlatformModel;
 export function record(inner: LanguageModel, ledgerPath: string): LanguageModel;
-export function record(
-  inner: LanguageModel | PlatformModel,
-  ledgerPath: string,
-): LanguageModel | PlatformModel {
-  // the brands ride along: the platform's (its own rules) and the decision capability
+export function record(inner: LanguageModel, ledgerPath: string): LanguageModel {
+  requireInfer([inner], "record");
   const brands = {
     ...(isPlatformModel(inner) ? { [PLATFORM_MODEL]: true as const } : {}),
     ...(isDecisionModel(inner) ? { [DECISION_MODEL]: true as const } : {}),
   };
-  if (isInferModel(inner)) {
-    return {
-      ...brands,
-      name: `record(${inner.name})`,
-      async infer(req: InferRequest) {
-        const res = await inner.infer(req);
-        const entry = {
-          fingerprint: fingerprintRequest({
-            payload: req.model,
-            ...(req.params ? { params: req.params } : {}),
-            ...(req.profile !== undefined ? { profile: req.profile } : {}),
-          }),
-          request: { payload: redactDeep(req.model), ...(req.params ? { params: req.params } : {}) },
-          response: { text: redactSecrets(res.text) },
-        };
-        appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
-        return res;
-      },
-    } as unknown as PlatformModel;
-  }
-  const chat = inner as ChatModel;
   return {
     ...brands,
     name: `record(${inner.name})`,
-    async complete(req: ProviderRequest) {
-      const res = await chat.complete(req);
+    async infer(req: InferRequest) {
+      const res = await inner.infer(req);
       const entry = {
         fingerprint: fingerprintRequest(req),
-        request: { payload: redactDeep(req.payload), ...(req.params ? { params: req.params } : {}) },
+        request: { intent: redactDeep(req.intent), ...(req.params ? { params: req.params } : {}) },
         response: { text: redactSecrets(res.text) },
       };
       appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
@@ -75,17 +50,17 @@ export function record(
  * Offline provider serving recorded responses by request fingerprint. Strict:
  * an unrecorded request is a definitive error, never a silent live call.
  *
- * A fingerprint is computed over the classic rendering as first composed —
- * whichever payload shape arrives (see `fingerprintRequest`) — so a ledger
- * recorded through any provider replays for any other, and one ask's first
- * attempt and its correction retry hash identically — a recorded correction pair appends TWO
- * ledger lines under the SAME key. Entries are served FIFO per fingerprint:
- * each `complete()` shifts the next recorded response off that key's queue,
- * so a replayed session reproduces the correction turn instead of jumping
- * straight to the corrected answer. Once only one entry remains for a key it
- * keeps serving that last one — a single-entry key (the common case) behaves
- * exactly as a plain map lookup, and repeat asks beyond what was recorded
- * still get an answer instead of failing.
+ * A fingerprint is computed over the intent as first composed (see
+ * `fingerprintRequest`), so a ledger recorded through any provider replays
+ * for any other, and one ask's first attempt and its correction retry hash
+ * identically — a recorded correction pair appends TWO ledger lines under
+ * the SAME key. Entries are served FIFO per fingerprint: each `infer()`
+ * shifts the next recorded response off that key's queue, so a replayed
+ * session reproduces the correction turn instead of jumping straight to the
+ * corrected answer. Once only one entry remains for a key it keeps serving
+ * that last one — a single-entry key (the common case) behaves exactly as a
+ * plain map lookup, and repeat asks beyond what was recorded still get an
+ * answer instead of failing.
  */
 export function replay(ledgerPath: string): LanguageModel {
   let raw: string;
@@ -122,7 +97,7 @@ export function replay(ledgerPath: string): LanguageModel {
     // a ledger serves whatever it holds — a replayed decision ask needs no live capability
     ...{ [DECISION_MODEL]: true as const },
     name: "replay",
-    async complete(req: ProviderRequest) {
+    async infer(req: InferRequest) {
       const fingerprint = fingerprintRequest(req);
       const queue = entries.get(fingerprint);
       if (!queue || queue.length === 0) {

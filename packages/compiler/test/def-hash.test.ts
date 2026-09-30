@@ -18,8 +18,8 @@ describe("def stamps (AskDefinition spec §2)", () => {
   });
 
   it("extractor: def hashes file + raw text (holes verbatim) + type source; line shifts don't change it", () => {
-    const src = "export infer function f(.name: string) {\n  return ask ..`hello ${.name}`<string>;\n}\n";
-    const expected = defHash("src/x.tsi", "extract", "hello ${.name}", "string");
+    const src = "export infer function f(.name: string) {\n  return ask ..`hello ${name}`<string>;\n}\n";
+    const expected = defHash("src/x.tsi", "extract", "hello ${name}", "string");
     expect(lower(src)).toContain(`def: ${JSON.stringify(expected)}`);
     // Two blank lines above: the ask moved — same def.
     expect(lower(`\n\n${src}`)).toContain(`def: ${JSON.stringify(expected)}`);

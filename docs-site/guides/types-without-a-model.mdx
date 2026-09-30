@@ -5,11 +5,13 @@ sidebar:
   order: 95
 ---
 
-Every exported type Nola can see is also a runtime value: `User.toJsonSchema()`, `User.validate(input)`, `User.parse(input)` and a `~standard` object that implements both Standard Schema and Standard JSON Schema ([Types as values](/docs/language/types-as-values/)). None of that needs a language model. This guide is the complete recipe for a plain TypeScript project that uses Nola for exactly that and nothing else — no `.tsi` file, no `nola.config.ts`, no provider, no API key.
+Nola can derive runtime values from your exported TypeScript types. These values provide `toJsonSchema()`, `validate(input)`, `parse(input)` and a `~standard` object for Standard Schema and Standard JSON Schema. See [Types as values](/docs/language/types-as-values/) for the API.
+
+You can use these features in a plain TypeScript project without a model, provider key or `nola.config.ts`. This guide shows the setup, including how to run, type-check and build it.
 
 ## Install
 
-`nola-lang` is the build tool and stays a devDependency; `@nola-lang/runtime` is the only thing your code imports at run time. `@nola-lang/providers` is not needed.
+Install `nola-lang` as a devDependency and `@nola-lang/runtime` as a dependency. This setup does not use `@nola-lang/providers`.
 
 ```json
 {
@@ -19,20 +21,20 @@ Every exported type Nola can see is also a runtime value: `User.toJsonSchema()`,
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/runtime": "^0.1.13"
+    "@nola-lang/runtime": "^0.1.14"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.13",
+    "nola-lang": "^0.1.14",
     "typescript": "^5.6.0"
   }
 }
 ```
 
-Keep the tsconfig `include` directory-style (`["src"]`), as every Nola project does.
+Use a directory-style `include`, such as `["src"]`, in `tsconfig.json`.
 
 ## The one rule
 
-Your types stay where they are, in ordinary `.ts` files. To get their values, import the module through its **view** — the same path with a `.tsi` extension. No `models.tsi` exists on disk, so `./models.tsi` means "`models.ts`, plus a value for every exported type alias and interface":
+Keep your types in ordinary `.ts` files. To use them as values, import the module through its **view**: the same path with a `.tsi` extension. When no `models.tsi` exists on disk, Nola resolves `./models.tsi` to a view of `models.ts` with values for its exported type aliases and interfaces:
 
 ```ts
 // src/models.ts — plain TypeScript, untouched
@@ -80,17 +82,17 @@ greet(user);                                           // functions come through
 Event["~standard"].jsonSchema.input({ target: "openapi-3.0" });
 ```
 
-Everything else in the module — functions, constants, classes — is re-exported by the view, so `./models.tsi` can replace `./models.js` in the importing file outright. `import type { User }` keeps only the type, as before.
+The view re-exports functions, constants and classes, so you can import `greet` from the same path. Use `import type { User }` when you need only the TypeScript type.
 
 ## Run it in development
 
-The loader resolves the view on the fly:
+Run the entry with Nola's loader to resolve the view:
 
 ```sh
 node --import nola-lang/register src/main.ts
 ```
 
-With the sample above and an invalid body, `validate` reports every problem at once:
+Pass your input as `body`. For example, a body with an invalid role and a number among its tags produces these validation issues:
 
 ```txt
 {"ok":false,"issues":[
@@ -99,19 +101,19 @@ With the sample above and an invalid body, `validate` reports every problem at o
 ]}
 ```
 
-There is no configuration to write. The loader looks for `nola.config.ts` and is content without one; a config becomes necessary only when something asks a model.
+The loader works without `nola.config.ts` for this use case. A config becomes necessary when your code asks a model.
 
 ## Type-check
 
-Two routes; pick one.
+Use `nola check`, or generate declarations for plain `tsc`.
 
-**`nola check`** type-checks the whole project, plain `.ts` files included, and resolves `./models.tsi` to the live view. It needs nothing beyond the tsconfig:
+**`nola check`** type-checks the project, including plain `.ts` files, and resolves `./models.tsi` directly:
 
 ```sh
 npx nola-lang check
 ```
 
-**Plain `tsc`** cannot resolve a `.tsi` import by itself. Let Nola write the declaration of each view next to its module, and tell TypeScript to honour arbitrary extensions:
+**Plain `tsc`** needs a declaration file to resolve the `.tsi` import. Generate the declarations and enable `allowArbitraryExtensions`:
 
 ```sh
 npx nola-lang declarations     # writes src/models.d.tsi.ts
@@ -127,15 +129,17 @@ npx nola-lang declarations     # writes src/models.d.tsi.ts
 }
 ```
 
-Add `*.d.tsi.ts` to `.gitignore` and rerun `nola declarations` when a viewed module's exports change (the bundler plugins below do this for you). From here `tsc --noEmit`, and any framework build that runs plain TypeScript, sees `User` as `InferType<User>`.
+Add `*.d.tsi.ts` to `.gitignore`. Rerun `nola declarations` when a viewed module's exports change; the bundler plugins below do this during the build. TypeScript can then resolve the import and sees the `User` value as `InferType<User>`.
 
 ## Editor
 
-Either route above gives a working editor. With the [VS Code extension](/docs/start/editor-setup/), `./models.tsi` resolves to the view directly — hover shows `InferType<User>`, go-to-definition lands on the interface in `models.ts` — and no generated files are involved. Without the extension, the `nola declarations` route makes any TypeScript-aware editor resolve the import through the adjacent declaration file.
+With the [VS Code extension](/docs/start/editor-setup/), the editor resolves `./models.tsi` directly. Hover shows `InferType<User>`, and go-to-definition opens the interface in `models.ts`.
+
+In other TypeScript-aware editors, generate declarations with `nola declarations` so the editor can resolve the import through the adjacent declaration file.
 
 ## Production
 
-Bundle it. Every Nola bundler plugin resolves views, and the output runs under plain `node` with `@nola-lang/runtime` as its only Nola dependency:
+A Nola bundler plugin can resolve views while building the application. The resulting JavaScript runs under Node with `@nola-lang/runtime` as its only Nola runtime dependency. For example, with Vite:
 
 ```ts
 // vite.config.ts
@@ -148,18 +152,18 @@ export default defineConfig({
 });
 ```
 
-`@nola-lang/esbuild`, `@nola-lang/webpack`, `@nola-lang/rollup`, `@nola-lang/rolldown`, `@nola-lang/rspack` and `@nola-lang/next` (webpack mode) share the same core. Turbopack is the one exception: it does not resolve a hand-written `./models.tsi` import from a `.ts` file ([Bundlers and Turbopack](/docs/language/types-as-values/#bundlers-and-turbopack)).
+The same view support is available in `@nola-lang/esbuild`, `@nola-lang/webpack`, `@nola-lang/rollup`, `@nola-lang/rolldown`, `@nola-lang/rspack` and `@nola-lang/next` in webpack mode. Turbopack does not resolve a hand-written `./models.tsi` import from a `.ts` file; see [Bundlers and Turbopack](/docs/language/types-as-values/#bundlers-and-turbopack).
 
-Without a bundler, `npx nola-lang build --out dist` writes the view as a real `dist/src/models.tsi.js` + `dist/src/models.tsi.d.ts` pair, ready for a JavaScript entry that imports the built path — the same shape as any Nola build ([Deploying](/docs/guides/deploying/)). A `tsc`-compiled `main.js` that still says `import … from "./models.tsi"` does not resolve under plain `node`; that import only runs under the loader or through a bundler.
+Without a bundler, run `npx nola-lang build --out dist` to emit `dist/src/models.tsi.js` and its declaration file. Your JavaScript entry must import that built path. If a `tsc`-compiled `main.js` still imports `./models.tsi`, plain Node cannot resolve it; use the loader, a bundler or the built `.tsi.js` path. See [Deploying](/docs/guides/deploying/).
 
 ## What you get, and the limits
 
-- `validate` reports **every** issue, revives `Date` fields, and rejects unknown properties; `parse` throws [`NOLA3016`](/docs/reference/error-codes/#nola3016) with the same issues.
+- `validate` collects validation issues, revives `Date` fields and rejects unknown properties. `parse` throws [`NOLA3016`](/docs/reference/error-codes/#nola3016) with the same issues when validation fails.
 - JSDoc tags such as `@format email`, `@minimum 1` or `@minItems 1` become schema keywords and are enforced ([Constraints](/docs/language/types-as-values/#constraints)).
 - `toJsonSchema()` is draft 2020-12; `~standard.jsonSchema` also serves `draft-07` and `openapi-3.0` ([Standard Schema](/docs/language/types-as-values/#standard-schema)).
-- The schema comes from the **resolved** type: unions, `Partial`/`Pick`/`Omit`, `extends`, `Record`, tuples and types imported from packages all derive ([Schema derivation](/docs/reference/schema-derivation/)). `Map`, `Set`, `Promise`, functions and a generic used without arguments do not, and `nola check` says so at the type.
-- Keep one basename per module: a `models.ts` next to a `models.tsi` makes the on-disk `.tsi` win and warns.
+- Nola derives the resolved type, including unions, `Partial`/`Pick`/`Omit`, `extends`, `Record`, tuples and types imported from packages. `Map`, `Set`, `Promise`, functions and generics used without arguments are unsupported; `nola check` reports them at the type. See [Schema derivation](/docs/reference/schema-derivation/).
+- Use distinct basenames for source modules. If `models.ts` and `models.tsi` both exist, the real `.tsi` file takes precedence over the view, and Nola warns about the collision.
 
 ## Adding a model later
 
-Nothing above changes. Add a `nola.config.ts` with a `model`, write the first `.tsi` file, and the same `User` that validated request bodies is the `<User>` an extractor fills in — one type, one schema, one validator. See [Add Nola to an existing project](/docs/start/add-to-existing-project/).
+Add a `nola.config.ts` with a `model`, then write a `.tsi` file with an extractor. You can reuse `User` as its result type, so validation and inference continue to use the same type definition. See [Add Nola to an existing project](/docs/start/add-to-existing-project/).

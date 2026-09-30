@@ -3,22 +3,6 @@
   "injectionSelector": "L:source.tsi -comment -string",
   "patterns": [
     {
-      "begin": "(?:\\b(export)\\s+)?\\b(infer)\\s+(function)\\s+([_$[:alpha:]][_$[:alnum:]]*)\\s*(`)",
-      "beginCaptures": {
-        "1": { "name": "keyword.control.export.ts" },
-        "2": { "name": "storage.modifier.async.nola" },
-        "3": { "name": "meta.function.ts storage.type.function.ts" },
-        "4": { "name": "meta.function.ts meta.definition.function.ts entity.name.function.ts" },
-        "5": { "name": "string.template.ts punctuation.definition.string.template.begin.ts" }
-      },
-      "end": "`",
-      "endCaptures": {
-        "0": { "name": "string.template.ts punctuation.definition.string.template.end.ts" }
-      },
-      "contentName": "string.template.ts",
-      "patterns": [{ "include": "source.ts#template-substitution-element" }]
-    },
-    {
       "match": "(?:\\b(export)\\s+)?\\b(infer)\\b(?=\\s+function\\b)",
       "captures": {
         "1": { "name": "keyword.control.export.ts" },
@@ -46,6 +30,16 @@
         "0": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.end.ts" }
       },
       "contentName": "meta.type.parameters.ts",
+      "patterns": [{ "include": "source.ts#type" }]
+    },
+    {
+      "comment": "`: T` glued to an extractor's closing backtick (colon-typed extractors, spec 2026-09-23) — exactly the parser's condition, so a spaced ternary colon after a template consequent (`cond ? `yes` : `no``) is left to TypeScript. The end pattern is the TypeScript grammar's own type-annotation end; nested brackets across lines are handled by source.ts#type.",
+      "begin": "(?<=`)(:)(?=\\s*\\S)",
+      "beginCaptures": {
+        "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
+      },
+      "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+      "contentName": "meta.type.annotation.ts",
       "patterns": [{ "include": "source.ts#type" }]
     }
   ]

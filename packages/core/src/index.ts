@@ -1,7 +1,6 @@
 import type { InferenceModel } from "./inference-model.js";
-import type { InferRequest, PlatformModel } from "./platform-model.js";
-import type { ProviderPayload } from "./provider-dialect.js";
-import type { ClassicPrompt } from "./render-classic.js";
+import type { PlatformModel } from "./platform-model.js";
+import type { RenderedPrompt } from "./render-prompt.js";
 
 /**
  * The decision question behind a schema node (decision types spec
@@ -163,8 +162,44 @@ export class Site {
  * intrinsic names a file uses. An emit-17 runtime has no choice/scale/prob keys.
  * Same emit (unreleased, 2026-09-19): `choice(criteria, { numeric: ["1"] })`
  * lists the labels written as number literals — `Choice<1 | 2>`, `Choice<1 | "a">`.
+ *
+ * Emit 19: module scope unification (spec 2026-09-26) — one node per file:
+ * `__nola.context.module(path, 19, init?)` replaces `context.file`; the
+ * appendix accessor is `__nola_module_ctx()` in every file that uses the
+ * runtime; the infer-function closer hangs under it
+ * (`__nola_module_ctx().func({...})`); the init — the module instruction,
+ * template and bindings — rides a thunk the runtime reads once, on creation.
+ * An emit-18 runtime has no `context.module`.
+ *
+ * Same emit (2026-09-26, body-instruction-only spec): the infer-function
+ * marker is reserved (NOLA1019); the body's first-statement literal is the
+ * only instruction and its template lowers in place as `__nola_fn_tpl`, the
+ * closer's `template:` a name instead of an arrow — a function value either
+ * way, so no contract change. NOLA2013 retired.
+ *
+ * Emit 20: instruction interpolation (spec 2026-09-28) — the `${.member}`
+ * prompt template is retired: no `template` field on any init, no
+ * `__nola.tpl`. A scope instruction with `${expr}` holes stays in place as
+ * `const __nola_fn_instr = …` (infer body; read at the call) or
+ * `function __nola_module_instr() { return …; }` (module; the init carries
+ * `instruction: __nola_module_instr`, a thunk read at each ask), each hole
+ * wrapped in `__nola.fmt(...)`. An emit-19 build with a template calls the
+ * missing tag and carries a field the runtime would ignore, hence the bump.
+ *
+ * Emit 21: context statements (spec 2026-09-29) — every bare template literal
+ * statement in a scope body is a context item, lowered in place as
+ * `void __nola_ctx_N; function __nola_ctx_N() { return __nola.ctx`…`; }` (the
+ * new tag receives the live values; the `void` read is the statement's step
+ * location — added the day the emit shipped, no contract change);
+ * `__nola.ask(X, scope, { model?, locals?, context? })`
+ * takes one options object (alias and bindings were positional); the
+ * function init drops `instruction` and gains `moduleContext` (the top-level
+ * module items above the declaration, by reference); the module init's
+ * `instruction` becomes `context` (the top-level items, canonical order). An
+ * emit-20 build calls the missing tag and passes a string where an object is
+ * read, hence the bump.
  */
-export const NOLA_EMIT = 18;
+export const NOLA_EMIT = 21;
 
 /**
  * The narrow public tier: an intent resolvable ONLY through `ask` — what a
@@ -267,56 +302,42 @@ export interface AskTrace {
   spanPath: readonly string[];
 }
 
-export interface ProviderRequest {
-  /**
-   * The ask as a classic (unmanaged) provider consumes it: the rendered
-   * ClassicPrompt, always. A managed provider takes the canonical
-   * InferenceModel through `infer(InferRequest)` instead — the method name
-   * is the dialect (reshape design 2026-09-01).
-   */
-  payload: ClassicPrompt;
+/**
+ * The one request every model receives (prompt-rendering spec 2026-09-28
+ * §3.4): the canonical, frozen InferenceModel plus the ask's params,
+ * profile, project, signal and trace. A model renders the intent itself —
+ * `renderPrompt` (core) is the default rendering, re-exported by
+ * @nola-lang/providers for provider authors.
+ */
+export interface InferRequest {
+  /** the ask as data — frozen; carries `output` (the schema) and, on the correction attempt, `correction` */
+  intent: InferenceModel;
   params?: ProviderParams;
-  signal?: AbortSignal;
-  trace?: AskTrace;
   /**
    * Free-form inference profile: an `ask with <name>` / `.withModel("<name>")`
-   * name that names no configured model, legal only under a platform
-   * default. Present on BOTH request shapes for forced-replay fingerprint
-   * parity (a platform default + forceModel naming a replay() entry
-   * delivers the profile to an unmanaged provider); classic providers
-   * otherwise ignore it. Part of the ask fingerprint.
+   * name that names no configured model, legal only under a platform default.
+   * Part of the ask fingerprint; every model receives it (forced-replay parity),
+   * only the platform acts on it.
    */
   profile?: string;
+  /** The app's project name — deployment metadata for the platform, NEVER part of the ask fingerprint. */
+  project?: string;
+  signal?: AbortSignal;
+  trace?: AskTrace;
 }
 
-export type ProviderResponse = {
+export interface InferResult {
   text: string;
   durationMs?: number;
-};
-
-/**
- * The two provider dialects (decision types spec 2026-09-18 §6.2, relaxing
- * config v2's "the platform model is the only infer-dialect model"): the
- * METHOD NAME is the dialect. `complete` receives the classic rendering,
- * `infer` receives the canonical InferenceModel. Any provider may implement
- * either; a model carrying both is a config error (NOLA3003).
- */
-export interface ChatModel {
-  name: string;
-  complete(req: ProviderRequest): Promise<ProviderResponse>;
-}
-
-export interface InferModel {
-  name: string;
-  infer(req: InferRequest): Promise<ProviderResponse>;
+  usage?: { inputTokens?: number; outputTokens?: number };
+  /** what a text-rendering provider actually sent — becomes the receipt's `effectivePrompt` */
+  sent?: RenderedPrompt;
 }
 
 /** A configured model instance — what a provider factory returns and what the config's `model` slot holds. */
-export type LanguageModel = ChatModel | InferModel;
-
-/** The infer dialect, by method presence (no brand). */
-export function isInferModel(value: unknown): value is InferModel {
-  return !!value && typeof value === "object" && typeof (value as { infer?: unknown }).infer === "function";
+export interface LanguageModel {
+  name: string;
+  infer(req: InferRequest): Promise<InferResult>;
 }
 
 /** A model pin: an instance, or the name of a `model` map entry. */
@@ -412,8 +433,8 @@ export interface ProviderRequestEvent {
   readonly askId: string;
   readonly attempt: number;
   readonly provider: string;
-  /** the payload as sent on this attempt (carries the correction turn on attempt 2) */
-  readonly payload: ProviderPayload;
+  /** the intent as sent on this attempt (carries the correction turn on attempt 2) — the rendering is the provider's, echoed on the response */
+  readonly intent: InferenceModel;
   readonly params?: ProviderParams;
   /** inference profile riding the request (`ask with <name>` under managed mode) */
   readonly profile?: string;
@@ -425,6 +446,8 @@ export interface ProviderResponseEvent {
   readonly provider: string;
   readonly text: string;
   readonly durationMs: number;
+  /** the provider's echo of what it sent, when it rendered text */
+  readonly sent?: RenderedPrompt;
 }
 
 export interface ValidationFailedEvent {
@@ -472,7 +495,7 @@ export interface InvocationEndEvent {
 
 /**
  * Observers. Fed from fixed points OUTSIDE the middleware pipeline, so middleware
- * cannot suppress them. Hooks may not mutate payloads or short-circuit; a throwing
+ * cannot suppress them. Hooks may not mutate events or short-circuit; a throwing
  * hook is swallowed with one warning.
  */
 export interface NolaTelemetry {
@@ -666,22 +689,18 @@ export {
   type NolaIngestKind,
   type NolaTrialResponse,
 } from "./nola-protocol.js";
-export { type InferRequest, isPlatformModel, PLATFORM_MODEL, type PlatformModel } from "./platform-model.js";
-export { isInferenceModel, type ProviderPayload } from "./provider-dialect.js";
+export { isPlatformModel, PLATFORM_MODEL, type PlatformModel } from "./platform-model.js";
 export { redactDeep, redactError, redactSecrets } from "./redact.js";
 export {
-  type ClassicPrompt,
-  CORRECTION_PROMPT,
-  isTrivialStringSchema,
+  DEFAULT_SYSTEM,
   joinBlocks,
-  outputSchema,
-  renderClassic,
-  renderClassicText,
-  renderScopeBlock,
+  type RenderedPrompt,
+  renderContextBlock,
+  renderPrompt,
   renderTaskBlock,
-  renderTaskFormat,
-  SYSTEM_PREAMBLE,
+  renderTranscript,
+  renderUserText,
   scopeChain,
-} from "./render-classic.js";
+} from "./render-prompt.js";
 export { parseRetryAfter } from "./retry-after.js";
 export { formatIssue, formatIssuePath, formatIssues, type ValidationIssue } from "./validation.js";

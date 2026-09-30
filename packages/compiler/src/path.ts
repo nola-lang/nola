@@ -4,12 +4,12 @@ function toPosix(p: string): string {
 }
 
 /**
- * The path baked into lowered output (`file:` fields, `__nola.context.file(...)`).
+ * The path baked into lowered output (`file:` fields, `__nola.context.module(...)`).
  *
  * Absolute paths would leak the build machine's layout into `dist/` and make builds
  * non-reproducible across checkouts, so emit a posix-separated path relative to the
  * project root instead. Nothing at run time resolves this string — it is a memo key
- * for `fileContext` and a label in errors, logs, and receipts.
+ * for `moduleContext` and a label in errors, logs, and receipts.
  *
  * Falls back to the input when there is no root, or when the file sits outside it
  * (a `../..` chain is no more portable than the absolute path it came from). Callers

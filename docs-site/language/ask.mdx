@@ -1,11 +1,11 @@
 ---
 title: The ask operator
-description: ask resolves an extractor, a call intent or another infer function's intent to its value — like await, with the same precedence. Plus ask with <provider>.
+description: Resolve extractors, call intents and infer functions with ask. Choose a named model with ask with, and learn when to use await.
 sidebar:
   order: 50
 ---
 
-`ask` is a unary prefix operator with `await`'s precedence. It resolves any *askable* to its value. Because it binds like `await`, a method chain on the operand attaches to the operand — `` ask `x`<string>.withRetry(2) `` is `` ask (..`x`<string>).withRetry(2) ``; the parentheses are optional but recommended for readability.
+`ask` resolves an *askable* to its value. It is a unary prefix operator with the same precedence as `await`. A method chain applies to the operand before it is resolved: `` ask (..`x`: string).withRetry(2) `` retries the extractor, then asks. With the angle-bracket spelling the parentheses can go, `` ask `x`<string>.withRetry(2) `` means the same; after a colon type they are needed, because a `.` there would continue the type name (see [Extractors](/docs/language/extractors/#the-angle-bracket-spelling)). Parentheses can make longer chains easier to read.
 
 ## What ask accepts
 
@@ -14,7 +14,7 @@ An askable is one of three things: an extractor, a call intent, or the `Intent` 
 ```tsi
 // users.tsi
 export infer function getUserById(.name: string) {
-  return ask `the user record for the named person`<{ name: string; id: string }>;
+  return ask `the user record for the named person`: { name: string; id: string };
 }
 ```
 
@@ -25,7 +25,7 @@ import { getUserById } from "./users.tsi";
 type User = { name: string };
 
 export infer function report(.text: string) {
-  const user = ask `the user named in the text`<User>;   // extractor
+  const user = ask `the user named in the text`: User;   // extractor
   const record = ask getUserById(user.name);               // another infer function
   return record;
 }
@@ -41,7 +41,7 @@ Call intents are the third kind — see [Call intents](/docs/language/call-inten
 | an infer function body | `await` | ordinary promises (fetch, a database, any library) |
 | plain TypeScript | `await` | the intent an infer function returned — this opens an *invocation* |
 
-A raw extractor or call intent is never bare-`await`ed. It carries no context of its own; it borrows the frame of the `ask` that resolves it, so awaiting one directly throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at run time:
+Use `ask` to resolve a raw extractor or call intent. It needs the context of an invocation; awaiting it directly throws [`NOLA3010`](/docs/reference/error-codes/#nola3010) at runtime:
 
 ```ts
 // not-checked — WRONG: nothing supplies the inference context
@@ -51,7 +51,7 @@ const name = await nameIntent;
 
 ```tsi
 // person.tsi
-export const nameIntent = ..`the user's full name`<string>;
+export const nameIntent = ..`the user's full name`: string;
 
 // RIGHT — resolve it with `ask` inside an infer function
 export infer function whoIsIt(.text: string) {
@@ -70,13 +70,13 @@ console.log(name);
 
 ## `ask with <name>`
 
-`ask with <name>` resolves one ask through a named provider from `nola.config.ts`:
+`ask with <name>` selects a named model from `nola.config.ts` for one ask:
 
 ```tsi
 // summarize.tsi
 export infer function summarize(.text: string) {
-  const draft = ask with fast `a rough summary`<string>;
-  const final = ask with careful `a polished summary of: ${draft}`<string>;
+  const draft = ask with fast `a rough summary`: string;
+  const final = ask with careful `a polished summary of: ${draft}`: string;
   return final;
 }
 ```
@@ -96,11 +96,11 @@ export default defineConfig({
 ```
 
 - `<name>` must be a **static identifier**. A string literal, a number or a parenthesized expression after `with` is [`NOLA1009`](/docs/reference/error-codes/#nola1009); a dotted name (`provider.fast`) is read as the identifier `provider` plus a stray `.fast` and fails as a plain syntax error instead.
-- The name is matched against the config at ask time, not compile time. A name that matches a key of the `model` map pins that model. When the platform serves inference — `model: "nola"` — an unmatched name is **not** an error: the ask goes to the platform and the name travels with the request as a free-form *inference profile* (`fast`, `careful`, whatever you choose), which Nola's smart routing turns into a model and parameters server-side, so you never hand-tune temperature or reasoning effort per ask. With any other default an unmatched name fails at run time with [`NOLA3004`](/docs/reference/error-codes/#nola3004), listing the configured names.
-- For a *dynamic* choice use the intent method instead: `` ask (..`a rough summary`<string>).withModel(useFast ? "fast" : "careful") `` — see [Intent methods](/docs/language/intent-methods/).
+- Names are resolved at ask time. A name that matches a key in the `model` map selects that model. With `model: "nola"`, an unmatched name is sent to the platform as an *inference profile*, which the platform uses for routing. With any other default model, an unmatched name raises [`NOLA3004`](/docs/reference/error-codes/#nola3004) and lists the configured names.
+- For a *dynamic* choice use the intent method instead: `` ask (..`a rough summary`: string).withModel(useFast ? "fast" : "careful") `` — see [Intent methods](/docs/language/intent-methods/).
 - `ask without` is a plain ask of an identifier named `without`, not a pin.
 
-With the platform serving, the whole example above needs no model map at all:
+To use the platform for both asks, configure a single model. The names `fast` and `careful` become inference profiles:
 
 ```ts
 // nola.config.ts
@@ -109,43 +109,46 @@ import { defineConfig } from "@nola-lang/runtime";
 export default defineConfig({ model: "nola" });   // `ask with fast` / `ask with careful` become inference profiles
 ```
 
-Routing precedence, highest first: `forceModel` in the config → the ask-site pin (`ask with` / `.withModel`) → `model.default` (the bare `model` when no map was written). See [Providers](/docs/config/providers/).
+Routing uses `forceModel` first, then the selection from `ask with` or `.withModel`, then `model.default` (or the single configured `model`). See [Providers](/docs/config/providers/).
 
 ## Where ask is legal
 
-Directly inside an infer function body, or directly in the module body of a `.tsi` file — top-level statements, including inside a top-level block, loop or `try`. Not inside a plain function or a nested closure (even one written inside an infer function), and not in a class field initializer or `static` block, where `await` itself is illegal ([`NOLA2001`](/docs/reference/error-codes/#nola2001)). `ask` is a reserved word in `.tsi` files (still legal as a member or property name, `obj.ask`); using it as an identifier is [`NOLA1003`](/docs/reference/error-codes/#nola1003).
+`ask` is allowed directly inside an infer function or at the top level of a `.tsi` file, including in blocks, loops and `try` statements. It is not allowed inside a plain function or a nested closure, even one declared inside an infer function. Class field initializers and `static` blocks also reject it ([`NOLA2001`](/docs/reference/error-codes/#nola2001)).
+
+`ask` is a reserved word in `.tsi` files. It is allowed as a member or property name, such as `obj.ask`, but using it as an identifier raises [`NOLA1003`](/docs/reference/error-codes/#nola1003).
 
 ## At module level
 
-A `.tsi` file's module body is an implicit infer function named `<module>`: a top-level `ask` resolves its operand right there, so a script needs no wrapper function.
+A top-level `ask` runs in an implicit invocation named `<module>`. This lets you write a script without wrapping it in an infer function.
 
 ```tsi
 // triage.tsi
 export infer function label(.mail: string) {
-  return ask `a one-word label`<string>;
+  return ask `a one-word label`: string;
 }
 
 const mail = "my invoice is wrong";
-export const kind = ask `the kind of request in ${mail}`<string>;
+export const kind = ask `the kind of request in ${mail}`: string;
 export const tag = ask label(mail);
 ```
 
-The module body takes the two things an infer body takes. A template literal as its **first statement** is the module's instruction — prose adds a `Purpose:` line to the `<module>` scope's `CONTEXT` block; a `${.member}` hole makes it the scope's prompt template, with `.default` the built-in block ([Prompt templates](/docs/language/prompt-templates/)). And `const .x` / `let .x` [contextual bindings](/docs/language/contextual-parameters/#contextual-bindings) give that block its values:
+The module body supports context statements and contextual bindings, just like an infer function. A template literal on its own line is a [context statement](/docs/language/context-statements/): it applies to every ask below it and to every infer function declared below it, and it is read at each ask, so a value in it is seen as it is when the ask runs. Use `const .x` or `let .x` to add [contextual bindings](/docs/language/contextual-parameters/#contextual-bindings):
 
 ```tsi
 // script.tsi
-`${.default}
-Answer with one word.`
+`Support inbox for ${brand}. Answer with one word.`
+const brand = "Acme";
 const .audience = "support agents";
-export const kind = ask `the kind of request`<string>;
+export const kind = ask `the kind of request`: string;
 ```
 
-What that means:
+A few details matter when using top-level asks:
 
-- Each top-level `ask` is its own `<module>` invocation — a root frame with the invocation events, trace and timeout of any other. `.withTimeout(ms)` on the asked intent is that invocation's clock, so it can exceed `ask.timeoutMs`.
+- Each top-level `ask` has its own root invocation, events, trace and timeout. `.withTimeout(ms)` on its operand sets that invocation’s timeout and can override `ask.timeoutMs`.
 - `ask label(mail)` chains `label` under the `<module>` invocation, exactly as an infer body chains its callees; `await label(mail)` on the next line would be a detached root instead.
-- The module has no parameters: with no instruction and no contextual binding in scope, the prompt is the plain task, with no `CONTEXT` block. An instruction or a visible binding gives the scope a `CONTEXT — module <file>` block.
+- A module context statement reaches the asks below it and the asks inside every infer function declared below it: they render the module's `<context module="<file>">` block directly before their own, whoever calls them, and `ask label(mail)` from the module body renders it once, with what the call site saw and what the function's position sees. Contextual bindings do not travel that way; they reach a function only through `ask`.
+- The module has no parameters: with no visible context statement and no contextual binding in scope, the prompt is the `<task>` block alone. A visible context statement or binding gives the scope a `<context module>` block. See [The prompt](/docs/language/prompt/).
 - The lowered output contains a top-level `await`, so the project must be an ES module (`"type": "module"`), which every scaffold is.
-- Importing the module runs its asks. That is what a script wants; a library module should keep its asks inside infer functions and let the consumer decide when they run.
+- Importing the module runs its asks. For a library, keep asks inside infer functions so callers control when they run.
 
 Next: [Call intents](/docs/language/call-intents/)

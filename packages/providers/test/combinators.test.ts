@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 import { requestOf } from "./helpers/model.js";
 
 const req = requestOf();
-const succeeding = (name: string, text: string): LanguageModel => ({ name, complete: async () => ({ text }) });
+const succeeding = (name: string, text: string): LanguageModel => ({ name, infer: async () => ({ text }) });
 const failing = (name: string, error: Error): LanguageModel => ({
   name,
-  complete: async () => {
+  infer: async () => {
     throw error;
   },
 });
@@ -38,14 +38,14 @@ describe("withRetry", () => {
     let calls = 0;
     const flaky: LanguageModel = {
       name: "flaky",
-      complete: async () => {
+      infer: async () => {
         calls++;
         if (calls < 3) throw new NolaProviderError("boom", { status: 500 });
         return { text: "ok" };
       },
     };
     const p = withRetry(flaky, constant({ maxRetries: 3 }));
-    expect((await p.complete(req)).text).toBe("ok");
+    expect((await p.infer(req)).text).toBe("ok");
     expect(calls).toBe(3);
   });
 
@@ -53,12 +53,12 @@ describe("withRetry", () => {
     let calls = 0;
     const auth: LanguageModel = {
       name: "auth",
-      complete: async () => {
+      infer: async () => {
         calls++;
         throw new NolaProviderError("401", { status: 401 });
       },
     };
-    await expect(withRetry(auth, constant({ maxRetries: 3 })).complete(req)).rejects.toThrow("401");
+    await expect(withRetry(auth, constant({ maxRetries: 3 })).infer(req)).rejects.toThrow("401");
     expect(calls).toBe(1);
   });
 
@@ -66,12 +66,12 @@ describe("withRetry", () => {
     let calls = 0;
     const dead: LanguageModel = {
       name: "dead",
-      complete: async () => {
+      infer: async () => {
         calls++;
         throw new NolaProviderError("down", { status: 503 });
       },
     };
-    await expect(withRetry(dead, constant({ maxRetries: 2 })).complete(req)).rejects.toThrow("down");
+    await expect(withRetry(dead, constant({ maxRetries: 2 })).infer(req)).rejects.toThrow("down");
     expect(calls).toBe(3); // initial + 2 retries
   });
 
@@ -79,7 +79,7 @@ describe("withRetry", () => {
     let calls = 0;
     const limited: LanguageModel = {
       name: "limited",
-      complete: async () => {
+      infer: async () => {
         calls++;
         if (calls === 1) throw new NolaProviderError("429", { status: 429, retryAfterMs: 60 });
         return { text: "ok" };
@@ -87,7 +87,7 @@ describe("withRetry", () => {
     };
     const start = Date.now();
     const p = withRetry(limited, exponential({ maxRetries: 1, delayMs: 0 }));
-    expect((await p.complete(req)).text).toBe("ok");
+    expect((await p.infer(req)).text).toBe("ok");
     expect(Date.now() - start).toBeGreaterThanOrEqual(50);
   });
 
@@ -95,7 +95,7 @@ describe("withRetry", () => {
     let calls = 0;
     const hostile: LanguageModel = {
       name: "hostile",
-      complete: async () => {
+      infer: async () => {
         calls++;
         if (calls === 1) throw new NolaProviderError("429", { status: 429, retryAfterMs: 60_000 });
         return { text: "ok" };
@@ -103,7 +103,7 @@ describe("withRetry", () => {
     };
     const start = Date.now();
     const p = withRetry(hostile, exponential({ maxRetries: 1, delayMs: 0, maxDelayMs: 50 }));
-    expect((await p.complete(req)).text).toBe("ok");
+    expect((await p.infer(req)).text).toBe("ok");
     expect(Date.now() - start).toBeLessThan(1_000);
   });
 
@@ -119,13 +119,13 @@ describe("withRetry", () => {
 describe("fallback", () => {
   it("returns the first success and skips failed legs (even definitive ones)", async () => {
     const p = fallback([failing("a", new NolaProviderError("401", { status: 401 })), succeeding("b", "from-b")]);
-    expect((await p.complete(req)).text).toBe("from-b");
+    expect((await p.infer(req)).text).toBe("from-b");
     expect(p.name).toBe("fallback(a, b)");
   });
 
   it("aggregates every failure in the final error", async () => {
     const p = fallback([failing("a", new Error("one")), failing("b", new Error("two"))]);
-    const err = (await p.complete(req).catch((e: unknown) => e)) as Error;
+    const err = (await p.infer(req).catch((e: unknown) => e)) as Error;
     expect(err).toBeInstanceOf(NolaProviderError);
     expect(err.message).toMatch(/a: one/);
     expect(err.message).toMatch(/b: two/);
@@ -139,14 +139,14 @@ describe("fallback", () => {
 describe("roundRobin", () => {
   it("rotates the starting provider per call", async () => {
     const p = roundRobin([succeeding("a", "1"), succeeding("b", "2")]);
-    expect((await p.complete(req)).text).toBe("1");
-    expect((await p.complete(req)).text).toBe("2");
-    expect((await p.complete(req)).text).toBe("1");
+    expect((await p.infer(req)).text).toBe("1");
+    expect((await p.infer(req)).text).toBe("2");
+    expect((await p.infer(req)).text).toBe("1");
   });
 
   it("falls through failing legs within one rotation", async () => {
     const p = roundRobin([failing("a", new Error("down")), succeeding("b", "2")]);
-    expect((await p.complete(req)).text).toBe("2");
+    expect((await p.infer(req)).text).toBe("2");
   });
 
   it("rejects an empty list at construction", () => {

@@ -4,7 +4,7 @@
  * template registry: `nola` is the platform, labelled "nola: dev" so the row
  * reads as a mode of the project rather than a fourth vendor (the free trial, or a key on the
  * account — see `keyPath`), the four vendors write a bring-your-own config,
- * `none` is the offline default (the builtin templates replay their ledgers). typesafe.ai
+ * `none` is the offline default (the template's own config: a recorded ledger or a mock). typesafe.ai
  * serves literal unions and booleans only; it is listed for every template all
  * the same, and `providerOptions` (flow.ts) brackets that caveat into its hint.
  */
@@ -34,7 +34,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
   },
   { id: "google", label: "Gemini", hint: 'google("gemini-2.5-flash"), reads GEMINI_API_KEY', envVar: "GEMINI_API_KEY", model: 'google("gemini-2.5-flash")' },
   { id: "typesafe", label: "typesafe.ai", hint: "typesafe(), reads TYPESAFE_API_KEY", envVar: "TYPESAFE_API_KEY", model: "typesafe()" },
-  { id: "none", label: "Skip for now", hint: "the builtin templates run offline from a replay ledger; pick a model in nola.config.ts later" },
+  { id: "none", label: "Skip for now", hint: "keeps the template's own config (the recorded ones run offline); pick a model in nola.config.ts later" },
 ];
 
 export function providerById(id: string): ProviderDef | undefined {

@@ -1,27 +1,44 @@
 /**
  * NOLA PLUGIN — the reason this parser is vendored.
  * Adds (v2 surface):
- *  - `..`prompt`` extractor expressions, `${}` interpolation allowed;
- *  - `${.member}` scope access inside any template hole (NolaScopeAccess) —
- *    the prompt-template surface (spec 2026-08-17); every enclosing template
- *    literal is flagged nolaHasScopeAccess;
+ *  - `..`prompt`` extractor expressions, `${}` interpolation allowed; the `..`
+ *    is implied directly after `ask` (spec 2026-09-18) and in a call's slots
+ *    (spec 2026-09-30: a typed template that starts an argument, or a value
+ *    nested in plain object/array literals there);
  *  - the `ask` unary operator;
- *  - `infer function` declarations (statement + export position) with an
- *    optional instruction marker between name and `(` (holes allowed);
- *  - reserved-construct errors for the removed empty-marker form, bare `(..)`,
- *    generator/method infer functions, and markers with substitutions.
+ *  - `infer function` declarations (statement + export position); the marker
+ *    slot between name and `(` is RESERVED — NOLA1019 (spec
+ *    2026-09-26-body-instruction-only): the instruction is the body's first
+ *    statement;
+ *  - context statements (spec 2026-09-29): a bare template literal statement,
+ *    a chain of adjacent literals, or text/value parts — claimed in
+ *    parseExpressionStatement, where `` `a` user `` is "Missing semicolon" in
+ *    every JavaScript parser, and in parseSubscript, where `` `a` [b] `` is an
+ *    index on a string that no program means; continued only where JavaScript
+ *    would not start a new statement (name-led lines stay new statements —
+ *    the semicolon rules of the language, unchanged);
+ *  - reserved-construct errors for bare `(..)` and generator/method infer
+ *    functions.
  * Registered LAST-but-before-placeholders so it composes on top of the
  * typescript mixin (mixin order = key order in plugin-utils.ts).
  */
 import * as charCodes from "charcodes";
 import { OptionFlags } from "../../options.ts";
-import { ParseErrorEnum } from "../../parse-error.ts";
+import { Errors, ParseErrorEnum } from "../../parse-error.ts";
 import type Parser from "../../parser/index.ts";
 import { ParseBindingListFlags } from "../../parser/lval.ts";
 import type { Undone } from "../../parser/node.ts";
 import { ParseFunctionFlag, type ParseStatementFlag } from "../../parser/statement.ts";
 import type { ExpressionErrors } from "../../parser/util.ts";
-import { tokenIsKeywordOrIdentifier, tt } from "../../tokenizer/types.ts";
+import {
+  type TokenType,
+  tokenCanStartExpression,
+  tokenIsIdentifier,
+  tokenIsKeyword,
+  tokenIsKeywordOrIdentifier,
+  tokenIsTemplate,
+  tt,
+} from "../../tokenizer/types.ts";
 import type * as N from "../../types.ts";
 import type { Position } from "../../util/location.ts";
 
@@ -29,8 +46,12 @@ export const NolaErrors = ParseErrorEnum`nola`({
   NolaAskReserved: "NOLA1003: `ask` is a reserved word in .tsi files and cannot be used as an identifier.",
   NolaReservedConstruct: "NOLA1004: this Nola construct is reserved for a future Nola version.",
   NolaExpectedPromptTemplate: "NOLA1005: expected a template literal prompt after `..`.",
-  NolaMarkerOutsideInfer: "NOLA1007: an instruction marker is only legal on an `infer function`.",
-  NolaIncompleteScopeAccess: "NOLA1015: incomplete scope access — write `${.member}`.",
+  NolaMarkerOutsideInfer:
+    "NOLA1007: a marker after a plain function's name is not valid — only an `infer function` has that slot, and there it is reserved (NOLA1019).",
+  NolaMarkerReserved:
+    "NOLA1019: the marker after an infer function's name is reserved for a future Nola version — write the instruction as a context statement in the body: `…`.",
+  NolaContextValueTail:
+    "NOLA1020: a value in a context statement is a name, a call or a bracketed expression, followed by text or the end of the statement — wrap anything else in parentheses, or assign it to a local first (`await`, `ask` and `this` cannot be values).",
   NolaExpectedProviderName:
     "NOLA1009: expected a model name after `ask with` — for a dynamic model use `.withModel(...)` on the intent.",
   NolaContextualOutsideInfer: "NOLA1010: `.` context parameters are only allowed on infer function parameters.",
@@ -41,9 +62,9 @@ export const NolaErrors = ParseErrorEnum`nola`({
     "NOLA1013: contextual parameters take one dot — write `.name` (`..` is the extractor sigil).",
   NolaContextualBindingReserved:
     "NOLA1014: `var .x` is reserved — a contextual binding is `const .x` or `let .x`.",
-  NolaUnknownExtractorKind: "NOLA1016: `..x` — expected `choice`, `scale` or `prob` before the prompt template.",
   NolaAskTemplateNeedsSpace:
     "NOLA1017: the implied extractor needs whitespace before its template — write `ask `…`` (`ask`…`` reads as a tagged template).",
+  NolaExpectedExtractorType: "NOLA1018: expected a type after the extractor's `:` on the same line — write ``…`: T`.",
   // No code prefix: this is the ordinary syntax error (NOLA1001), worded the
   // way TypeScript words it — only its recovery is ours.
   NolaExpectedExpression: "expected an expression.",
@@ -65,13 +86,6 @@ export default (superClass: typeof Parser) =>
     // across nested function-expression params in default values).
     nolaInInferParams = false;
 
-    // One entry per template literal being parsed (outermost first). A
-    // `${.member}` hole marks EVERY enclosing literal, so an instruction site
-    // learns about scope access at any nesting depth (inside a .map callback's
-    // own template literal, say). Depth > 0 is what makes a leading dot in
-    // expression position a scope access instead of a syntax error.
-    nolaTemplateStack: Array<{ scopeAccess: boolean }> = [];
-
     // The parser state and position the missing-expression placeholder was
     // last minted on (see parseExprAtom). The placeholder consumes nothing, so
     // the recovery must not repeat on the SAME state at the SAME position or a
@@ -83,38 +97,97 @@ export default (superClass: typeof Parser) =>
     nolaMissingExpressionState: object | null = null;
     nolaMissingExpressionPos = -1;
 
-    parseTemplate(isTagged: boolean): N.TemplateLiteral {
-      const entry = { scopeAccess: false };
-      this.nolaTemplateStack.push(entry);
+    // The start offset of the context-statement value being parsed (spec
+    // 2026-09-29 §3.2), or null outside one. parseSubscript reads it: a
+    // template right after the value's own base ends the value instead of
+    // tagging it — `user `text`` is text after a value, `f(tag`x`)` keeps its
+    // inner tag.
+    nolaValueStart: number | null = null;
+
+    // The start offset of the innermost statement that opens with a template
+    // literal (spec 2026-09-29 §3.2), or null. parseSubscript reads it to tell
+    // that statement's LEADING text from any other template literal: a `[` or
+    // `(` right after the leading text starts the statement's first value, not
+    // an index or a call on the string.
+    nolaStatementStart: number | null = null;
+
+    // The start offset of the slot item being parsed — an argument of a call,
+    // or a property value / element of an object / array literal that is
+    // itself a slot (spec 2026-09-30) — or -1. parseExprAtom reads it: a
+    // typed template literal that STARTS such an item is an extractor with
+    // the `..` implied, exactly the positions where the sigil-less call-intent
+    // rule (2026-08-14) makes an extractor a slot. Position-keyed like
+    // nolaValueStart: a template at any other offset — under an operator or a
+    // spread, in a ternary, inside a nested function — is the string it
+    // always was, and a stale value can never match a later token.
+    nolaSlotStart = -1;
+
+    // True while the items of a slot list are parsed: a call's arguments
+    // (always), or an object / array literal whose opening token sits at
+    // nolaSlotStart (so `f({ a: … })` nests, `f(x ? { a: … } : y)` does not).
+    // Saved and restored around every list, and set to false for `new`'s
+    // arguments — not a call, never a call intent.
+    nolaInSlotList = false;
+
+    nolaWithSlotList<T>(slots: boolean, parse: () => T): T {
+      const prev = this.nolaInSlotList;
+      this.nolaInSlotList = slots;
       try {
-        const node = super.parseTemplate(isTagged);
-        if (entry.scopeAccess) (node as unknown as { nolaHasScopeAccess: boolean }).nolaHasScopeAccess = true;
-        return node;
+        return parse();
       } finally {
-        this.nolaTemplateStack.pop();
+        this.nolaInSlotList = prev;
       }
     }
 
-    // `${.member}` — scope access. Only reached inside a template hole (see
-    // parseExprAtom); `..` tokenizes as nolaDotDot, so an inner extractor in a
-    // hole never lands here. Keyword members (`.default`) are legal: the
-    // identifier is parsed liberally like any property name.
-    nolaParseScopeAccess(): N.Expression {
-      const node = this.startNode() as unknown as { property: unknown; nolaError?: boolean };
-      const startLoc = this.state.startLoc;
-      this.next(); // consume `.`
-      for (const t of this.nolaTemplateStack) t.scopeAccess = true;
-      if (tokenIsKeywordOrIdentifier(this.state.type)) {
-        node.property = this.parseIdentifier(true);
-      } else {
-        // Tolerant: `${.` mid-keystroke recovers into a placeholder the lowering
-        // still prefixes with the scope parameter (so TS answers completion after
-        // the dot). Strict: raise throws.
-        this.raise(NolaErrors.NolaIncompleteScopeAccess, startLoc);
-        node.property = null;
-        node.nolaError = true;
-      }
-      return this.finishNode(node as never, "NolaScopeAccess" as never);
+    parseCallExpressionArguments(
+      allowPlaceholder?: boolean,
+      nodeForExtra?: Undone<N.Node> | null,
+      refExpressionErrors?: ExpressionErrors | null,
+    ): (N.Expression | N.SpreadElement)[] {
+      return this.nolaWithSlotList(true, () =>
+        super.parseCallExpressionArguments(allowPlaceholder, nodeForExtra, refExpressionErrors),
+      );
+    }
+
+    parseArrayLike(close: TokenType, refExpressionErrors?: ExpressionErrors | null): N.ArrayExpression {
+      return this.nolaWithSlotList(this.state.start === this.nolaSlotStart, () =>
+        super.parseArrayLike(close, refExpressionErrors),
+      );
+    }
+
+    parseObjectLike<T extends N.ObjectPattern | N.ObjectExpression>(
+      close: TokenType,
+      isPattern: boolean,
+      refExpressionErrors?: ExpressionErrors | null,
+    ): T {
+      return this.nolaWithSlotList(!isPattern && this.state.start === this.nolaSlotStart, () =>
+        super.parseObjectLike<T>(close, isPattern, refExpressionErrors),
+      );
+    }
+
+    parseNew(node: Undone<N.NewExpression>): N.NewExpression {
+      return this.nolaWithSlotList(false, () => super.parseNew(node));
+    }
+
+    // A parenthesized group's items share the slot items' entry point but are
+    // no slots: `f((`x`: T))` keeps the ordinary syntax error, as `ask (`x`)`
+    // keeps a plain template — only a template that is an item's FIRST token
+    // is claimed.
+    parseParenAndDistinguishExpression(canStartArrow: boolean): N.Expression {
+      return this.nolaWithSlotList(false, () => super.parseParenAndDistinguishExpression(canStartArrow));
+    }
+
+    // The one entry every slot item goes through: a call argument (via
+    // parseExprListItem), an array element (the same) and an object property's
+    // value (parseObjectProperty). A spread's operand takes another path, so a
+    // spread is no slot — as in the lowerer's walk.
+    parseMaybeAssignAllowInOrVoidPattern(
+      close: TokenType,
+      refExpressionErrors: ExpressionErrors | null | undefined,
+      afterLeftParse?: Function,
+    ): N.Expression {
+      if (this.nolaInSlotList) this.nolaSlotStart = this.state.start;
+      return super.parseMaybeAssignAllowInOrVoidPattern(close, refExpressionErrors, afterLeftParse);
     }
 
     // `infer function` at statement / export position. `infer` tokenizes as the
@@ -131,7 +204,17 @@ export default (superClass: typeof Parser) =>
 
     parseStatementContent(flags: ParseStatementFlag, decorators?: N.Decorator[] | null): N.Statement {
       this.nolaMaybeConsumeInfer();
-      return super.parseStatementContent(flags, decorators);
+      // A statement that opens with a template literal may be a context
+      // statement: note where it starts so parseSubscript can tell its leading
+      // text from any other template literal (spec 2026-09-29 §3.2).
+      if (!tokenIsTemplate(this.state.type)) return super.parseStatementContent(flags, decorators);
+      const prev = this.nolaStatementStart;
+      this.nolaStatementStart = this.state.start;
+      try {
+        return super.parseStatementContent(flags, decorators);
+      } finally {
+        this.nolaStatementStart = prev;
+      }
     }
 
     // An infer function body must parse in async context so `await` is legal
@@ -233,6 +316,15 @@ export default (superClass: typeof Parser) =>
     // after the dot and reports its own "Identifier expected" through the
     // verbatim mapping, exactly as in a .ts file — a nola diagnostic here would
     // only double it. Strict mode is untouched (a build keeps the syntax error).
+    //
+    // Inside a context value (spec 2026-09-29), nested expressions included (an
+    // arrow body in `items.map(...)`), the next line can be a statement that was
+    // already below the line being typed: `` `Page` oncall. ⏎ return x; ``. A
+    // keyword there is no property name, nor is a name or keyword that is
+    // itself followed, on its own line, by another one (`let y`, `await foo`,
+    // `type X`, `async function` — TypeScript's own rule for a dot at the end of
+    // a line); a lone name (`user.` ⏎ `name`) stays a property. Outside a
+    // context value every expression keeps today's parse.
     parseMember(
       base: N.Expression | N.Super,
       startLoc: Position,
@@ -243,8 +335,8 @@ export default (superClass: typeof Parser) =>
       if (
         !computed &&
         this.optionFlags & OptionFlags.ErrorRecovery &&
-        !tokenIsKeywordOrIdentifier(this.state.type) &&
-        !this.match(tt.privateName)
+        ((!tokenIsKeywordOrIdentifier(this.state.type) && !this.match(tt.privateName)) ||
+          (this.nolaValueStart !== null && this.hasPrecedingLineBreak() && this.nolaStartsNextStatement()))
       ) {
         const node = this.startNodeAt(startLoc) as unknown as {
           object: unknown;
@@ -266,6 +358,17 @@ export default (superClass: typeof Parser) =>
         return this.finishNode(node as never, "MemberExpression" as never);
       }
       return super.parseMember(base, startLoc, state, computed, optional);
+    }
+
+    // The token after a dot, on the next line, starts a statement rather than
+    // naming a property: a keyword, or a name or keyword that is itself followed
+    // on its own line by another one (tolerant mode, inside a context value).
+    nolaStartsNextStatement(): boolean {
+      const { type } = this.state;
+      if (tokenIsKeyword(type)) return true;
+      return (
+        tokenIsKeywordOrIdentifier(type) && !this.hasFollowingLineBreak() && tokenIsKeywordOrIdentifier(this.lookahead().type)
+      );
     }
 
     // The template-and-<T> tail shared by both extractor spellings: `..`
@@ -297,15 +400,50 @@ export default (superClass: typeof Parser) =>
         // tsParseTypeArguments is provided by the typescript mixin below us,
         // invisible on the base Parser type — hence the structural cast.
         node.typeArgs = (this as unknown as { tsParseTypeArguments(): unknown }).tsParseTypeArguments();
+      } else if (this.match(tt.colon) && this.state.start === (this.state.lastTokEndLoc as Position).index) {
+        node.typeArgs = this.nolaParseColonType();
       }
       return this.finishNode(node as never, "NolaExtractExpression" as never);
     }
 
-    parseExprAtom(refExpressionErrors?: ExpressionErrors | null): N.Expression | N.Super | N.Import {
-      // `${.member}` inside a template hole: prompt-scope access.
-      if (this.match(tt.dot) && this.nolaTemplateStack.length > 0) {
-        return this.nolaParseScopeAccess();
+    // `: T` after the template — the colon spelling of `<T>` (spec
+    // 2026-09-23): one TypeScript type in type context, wrapped in the
+    // TSTypeParameterInstantiation shape the `<T>` form yields (spanning the
+    // colon to the type's end) so every consumer reads params[0] either way.
+    // The colon must be GLUED to the closing backtick, like an annotation
+    // (`` `p`: number ``): a colon after whitespace is never ours, which is
+    // what keeps a ternary's own separator (`a ? ask `p` : b`, with the space
+    // every formatter puts there) out of the type grammar without lookahead
+    // or backtracking. The type must START ON THE COLON'S LINE: TypeScript's
+    // type grammar reads across line breaks, so an unfinished `: ` above an
+    // existing statement would take that statement's first expression as a
+    // qualified type name and its call parens as a call on the extractor —
+    // silently, in a build too. NOLA1018 instead; tolerant mode eats the
+    // colon and leaves the extractor untyped so the file goes on parsing.
+    nolaParseColonType(): unknown {
+      const colonLoc = this.state.startLoc;
+      this.next(); // consume `:` — the next token tokenizes the same in and out of type context
+      if (
+        this.hasPrecedingLineBreak() ||
+        this.match(tt.eof) ||
+        this.match(tt.semi) ||
+        this.match(tt.parenR) ||
+        this.match(tt.bracketR) ||
+        this.match(tt.braceR) ||
+        this.match(tt.comma)
+      ) {
+        this.raise(NolaErrors.NolaExpectedExtractorType, colonLoc);
+        return null;
       }
+      // tsParseTypeAnnotation(eatColon = false) parses one type inside tsInType;
+      // provided by the typescript mixin below us — hence the structural cast.
+      const ann = (this as unknown as { tsParseTypeAnnotation(eatColon: boolean): { typeAnnotation: unknown } }).tsParseTypeAnnotation(false);
+      const inst = this.startNodeAt(colonLoc) as unknown as { params: unknown[] };
+      inst.params = [ann.typeAnnotation];
+      return this.finishNode(inst as never, "TSTypeParameterInstantiation" as never);
+    }
+
+    parseExprAtom(refExpressionErrors?: ExpressionErrors | null): N.Expression | N.Super | N.Import {
       // A lone `.` starting an expression is a `..` marker mid-keystroke —
       // nothing else in TS begins that way (`.5` tokenizes as a number, and a
       // member dot is consumed by parseSubscripts). Editor mode only: in a
@@ -357,22 +495,76 @@ export default (superClass: typeof Parser) =>
           (node as unknown as { nolaError: boolean }).nolaError = true;
           return this.finishNode(node as never, "NolaExtractExpression" as never);
         }
-        // `..choice` / `..scale` / `..prob` (decision types spec 2026-09-18 §5):
-        // the primitive's name between the sigil and the template. Any other
-        // identifier there is NOLA1016; tolerant mode drops it and parses the
-        // extractor as plain so the editor keeps a construct to map.
-        if (this.match(tt.name)) {
-          const word = String(this.state.value);
-          if (word === "choice" || word === "scale" || word === "prob") {
-            (node as unknown as { kind: string }).kind = word;
-          } else {
-            this.raise(NolaErrors.NolaUnknownExtractorKind, this.state.startLoc);
-          }
-          this.next(); // consume the identifier
-        }
         return this.nolaFinishExtractor(node);
       }
+      // Implied sigil in a call slot (spec 2026-09-30): a template literal that
+      // STARTS a slot item is an extractor when a type follows it.
+      if (tokenIsTemplate(this.state.type) && this.state.start === this.nolaSlotStart) {
+        return this.nolaParseSlotTemplate();
+      }
       return super.parseExprAtom(refExpressionErrors);
+    }
+
+    // A template literal at the start of a slot: parsed as the plain template
+    // it is in TypeScript, then claimed as an extractor only when a type
+    // follows — a `:` GLUED to the closing backtick (the colon spelling, with
+    // its rules: nolaParseColonType), or `<…>` that TypeScript itself would
+    // read as type arguments (nolaTryParseSlotTypeArgs). Untyped, it stays
+    // the string argument it always was — `console.log(`hi`)` is ordinary
+    // code, and an untyped slot would be NOLA2004 anyway. The node spans from
+    // the backtick, like the implied form after `ask`; the lowerer inserts the
+    // prefix in front of it and lowers both spellings identically.
+    nolaParseSlotTemplate(): N.Expression {
+      const startLoc = this.state.startLoc;
+      const quasi = this.parseTemplate(false) as unknown as {
+        quasis: Array<{ value: { cooked: string | null; raw: string } }>;
+      };
+      let typeArgs: unknown;
+      if (this.match(tt.colon) && this.state.start === (this.state.lastTokEndLoc as Position).index) {
+        // null on NOLA1018 (tolerant mode): untyped, still the extractor
+        typeArgs = this.nolaParseColonType();
+      } else if (this.match(tt.lt)) {
+        typeArgs = this.nolaTryParseSlotTypeArgs();
+        if (!typeArgs) return quasi as unknown as N.Expression;
+      } else {
+        return quasi as unknown as N.Expression;
+      }
+      const node = this.startNodeAt(startLoc) as unknown as { quasi: unknown; prompt: string; typeArgs: unknown };
+      node.quasi = quasi;
+      node.prompt = quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
+      node.typeArgs = typeArgs;
+      return this.finishNode(node as never, "NolaExtractExpression" as never);
+    }
+
+    // `<…>` after a slot template, on TypeScript's own terms: type arguments
+    // that parse and are not followed by a token that would make them part of
+    // a comparison chain (`` f(`a` < b > c) ``), a call (`` `x`<T>(1) ``) or a
+    // tagged template — the bail-outs of the typescript mixin's parseSubscript,
+    // the code that reads the same text as an instantiation expression when
+    // nothing claims it. Anything else is left to that path, so `` f(`a` < b) ``
+    // stays the comparison it is. tsTryParseAndCatch restores the state on a
+    // failed or abandoned attempt; both helpers come from the typescript mixin
+    // below us — hence the structural cast.
+    nolaTryParseSlotTypeArgs(): unknown {
+      const ts = this as unknown as {
+        tsTryParseAndCatch<T>(f: () => T | undefined): T | undefined;
+        tsParseTypeArgumentsInExpression(): unknown;
+      };
+      return ts.tsTryParseAndCatch(() => {
+        const typeArgs = ts.tsParseTypeArgumentsInExpression();
+        if (!typeArgs) return undefined;
+        const { type } = this.state;
+        if (
+          type === tt.gt ||
+          type === tt.bitShiftR ||
+          type === tt.parenL ||
+          tokenIsTemplate(type) ||
+          (type !== tt._as && type !== tt._satisfies && tokenCanStartExpression(type) && !this.hasPrecedingLineBreak())
+        ) {
+          return undefined;
+        }
+        return typeArgs;
+      });
     }
 
     // `ask <unary>` — same precedence slot as await/typeof. `ask` stays a plain
@@ -432,6 +624,213 @@ export default (superClass: typeof Parser) =>
       return super.parseMaybeUnary(refExpressionErrors, sawUnary);
     }
 
+    // Context statements (spec 2026-09-29 §3.2). super would call semicolon()
+    // and raise "Missing semicolon" at the identifier — a fatal raise, which
+    // is why a half-typed `` `a` us `` used to bail the whole file. The
+    // statement is claimed only when its expression is an unparenthesized
+    // template literal or a chain of them (a string-tagged template always
+    // throws at run time; no program means it). It goes on with what the loop
+    // below takes — text (a template, on any line) and values (see
+    // nolaStartsContextValue: a name, `new`, a literal or `{` on the same
+    // line, `[` or `(` on any line — the tokens JavaScript would not insert a
+    // semicolon before) — and ends where JavaScript ends a statement, so a
+    // name-led next line stays a new statement.
+    parseExpressionStatement(
+      node: Undone<N.ExpressionStatement>,
+      expr: N.Expression,
+      decorators: N.Decorator[] | null | undefined,
+    ): N.ExpressionStatement {
+      const parts = this.nolaTemplateChain(expr);
+      if (!parts) return super.parseExpressionStatement(node, expr, decorators);
+      this.nolaCheckChainEscapes(parts);
+      for (;;) {
+        if (tokenIsTemplate(this.state.type)) {
+          // text after anything — JS never inserts a semicolon before a template
+          parts.push(this.parseTemplate(false) as N.Expression);
+          continue;
+        }
+        const lastIsText = (parts[parts.length - 1] as N.Node).type === "TemplateLiteral";
+        if (lastIsText && this.nolaStartsContextValue()) {
+          parts.push(this.nolaParseContextValue());
+          continue;
+        }
+        // `;` (eaten), `}`, EOF, or a line break: the statement ends here.
+        if (this.isLineTerminator()) break;
+        // Same line, a token that cannot continue the statement — an operator or
+        // arrow after a value, `typeof`/`ask`/`function` after text. Record
+        // NOLA1020 and end the statement BEFORE the token, which then begins
+        // the next statement (tolerant mode goes on; strict mode has thrown).
+        this.raise(NolaErrors.NolaContextValueTail, this.state.startLoc);
+        break;
+      }
+      const ctx = node as unknown as { parts: N.Expression[] };
+      ctx.parts = parts;
+      return this.finishNode(node as never, "NolaContextStatement" as never) as unknown as N.ExpressionStatement;
+    }
+
+    // The text parts a statement's expression already holds: one unparenthesized
+    // TemplateLiteral, or a TaggedTemplateExpression chain whose innermost tag
+    // is one (`` `a` `` ⏎ `` `b` `` parses as `a` tagging `b` before we see it).
+    // A tag with TypeScript type arguments (`` `a`<T>`b` ``) is not text: that
+    // chain stays ordinary code, so no `<T>` bytes ever sit between two parts.
+    // null for every other expression — those keep their meaning.
+    nolaTemplateChain(expr: N.Expression): N.Expression[] | null {
+      const parenthesized = (n: N.Node) => Boolean((n as { extra?: { parenthesized?: boolean } }).extra?.parenthesized);
+      const chain: N.Expression[] = [];
+      let cur: N.Node = expr;
+      while (cur.type === "TaggedTemplateExpression") {
+        if (parenthesized(cur) || (cur as { typeArguments?: unknown }).typeArguments) return null;
+        chain.unshift((cur as N.TaggedTemplateExpression).quasi as N.Expression);
+        cur = (cur as N.TaggedTemplateExpression).tag;
+      }
+      if (cur.type !== "TemplateLiteral" || parenthesized(cur)) return null;
+      chain.unshift(cur as N.Expression);
+      return chain;
+    }
+
+    // Text is a template literal in every position (spec 2026-09-29 §3.1). The
+    // first part of a claimed chain was parsed as one, and Babel raised its bad
+    // escapes itself; the continuation lines (`a` ⏎ `b`) were parsed as TAGGED
+    // templates, where a bad escape is legal and its cooked text null — which
+    // would reach __nola.ctx as undefined. Raise the same error at the element.
+    // Here, once: nolaTemplateChain is also a predicate (parseSubscript).
+    nolaCheckChainEscapes(parts: N.Expression[]): void {
+      for (const text of parts.slice(1)) {
+        for (const element of (text as unknown as N.TemplateLiteral).quasis) {
+          if (element.value.cooked === null) this.raise(Errors.InvalidEscapeSequenceTemplate, element.loc.start);
+        }
+      }
+    }
+
+    // A value may start here: a name (never `ask` or `await`), `new`, a literal or
+    // `{` on the SAME line; `[` or `(` on any line — exactly the tokens JavaScript
+    // would not insert a semicolon before, so an identifier-led next line keeps
+    // being a new statement. Never `this` (spec 2026-09-29 decision 2): every item
+    // is a hoisted function with a `this` of its own — TS2683 at check time,
+    // `undefined` at run time — so a bare `this` reaches NOLA1020 like `await` and
+    // `ask`; the message says to assign it to a local first. (Parenthesized, or in
+    // a `${}` hole, it is an ordinary expression and TypeScript reports it.)
+    nolaStartsContextValue(): boolean {
+      const { type } = this.state;
+      if (type === tt.bracketL || type === tt.parenL) return true;
+      if (this.hasPrecedingLineBreak()) return false;
+      if ((type === tt.name && this.state.value === "ask") || type === tt._await) return false;
+      return (
+        tokenIsIdentifier(type) ||
+        type === tt._new ||
+        type === tt.braceL ||
+        type === tt.num ||
+        type === tt.string ||
+        type === tt.bigint ||
+        type === tt._true ||
+        type === tt._false ||
+        type === tt._null
+      );
+    }
+
+    // One value: a left-hand-side expression (atom + member/call/index tails —
+    // never an operator, an arrow or a ternary; those reach NOLA1020 above).
+    // The value's start offset arms the stop rule in parseSubscript below; the
+    // parsed value is checked afterwards, for what the stop rule cannot see.
+    nolaParseContextValue(): N.Expression {
+      const prev = this.nolaValueStart;
+      const startLoc = this.state.startLoc;
+      const start = this.state.start;
+      this.nolaValueStart = start;
+      try {
+        const value = this.parseExprSubscripts();
+        this.nolaCheckValue(value, startLoc);
+        // The bytes the value owns, parentheses included: a parenthesized
+        // expression's node spans the inner expression only, and the lowerer
+        // must not eat the `(` or the `)` when it rewrites the seams.
+        (value as unknown as { nolaValueSpan: { start: number; end: number } }).nolaValueSpan = {
+          start,
+          end: (this.state.lastTokEndLoc as Position).index,
+        };
+        return value;
+      } finally {
+        this.nolaValueStart = prev;
+      }
+    }
+
+    // What a parsed value must not be. A value never ENDS with a template
+    // literal — `` sql`select` `` is the value `sql` followed by text (the stop
+    // rule), so a template at the end of the value's right spine is text the
+    // value swallowed: after TypeScript's `f<T>` (its own branch builds the
+    // tagged template) or as the callee of an argument-less `new` (its base
+    // starts after the `new`). That is NOLA1020, at the swallowed text;
+    // parenthesized, `(f<T>)` and `(new Foo)` stop where the text starts. A
+    // function or class expression is no value either (the spec lists
+    // `function` and `class`; `async function` gets in as an identifier) unless
+    // parenthesized. Tolerant mode records it and keeps the value as parsed —
+    // bytes verbatim, TypeScript still checks the tag call — and the statement
+    // loop goes on.
+    nolaCheckValue(value: N.Expression, startLoc: Position): void {
+      const parenthesized = (n: N.Node) => Boolean((n as { extra?: { parenthesized?: boolean } }).extra?.parenthesized);
+      if (
+        (value.type === "FunctionExpression" ||
+          value.type === "ClassExpression" ||
+          value.type === "ArrowFunctionExpression") &&
+        !parenthesized(value)
+      ) {
+        this.raise(NolaErrors.NolaContextValueTail, startLoc);
+        return;
+      }
+      let cur: N.Node = value;
+      while (!parenthesized(cur)) {
+        if (cur.type === "TaggedTemplateExpression") {
+          this.raise(NolaErrors.NolaContextValueTail, (cur as N.TaggedTemplateExpression).quasi.loc.start);
+          return;
+        }
+        // an argument-less `new`: its callee ends where the expression ends
+        if (cur.type !== "NewExpression" || (cur as N.NewExpression).callee.end !== cur.end) return;
+        cur = (cur as N.NewExpression).callee;
+      }
+    }
+
+    // Two rules meet in parseSubscript (spec 2026-09-29 §3.2); nolaCheckValue
+    // covers what the first cannot see.
+    //
+    // The stop rule: while a context value is being parsed, a template right
+    // after the value's OWN base (the expression that starts where the value
+    // starts — `user`, `user.name`, `foo(x)`, `[a]`, `(x)`) ends the value
+    // rather than tagging it. A base that starts later — `tag` inside `f(tag`x`)`
+    // or `[tag`x`]` — is nested and keeps its tag. A parenthesized base carries
+    // its `(` position in extra.parenStart; its own start is the inner one. Two
+    // things get past it: TypeScript's `f<T>` branch parses the tagged template
+    // itself (this override only ever meets the `<`), and the callee of an
+    // argument-less `new` starts after the `new`, so it counts as nested; in
+    // both the value swallows the text after it, and nolaCheckValue reports it.
+    //
+    // The leading-text rule: JavaScript parses `` `text` [a] `` and `` `text` (x) ``
+    // as an index and a call ON the string, before parseExpressionStatement can
+    // see the group. Neither means anything — a string is not callable and its
+    // index is one character — and the spec gives a `[` or `(` after text to
+    // the sequence (decision 3). So when a statement's leading text (one
+    // template or a chain of them; parseStatementContent records where a
+    // template-led statement starts, in nolaStatementStart) meets one, stop and
+    // leave the group to the statement loop, which parses it as the first value
+    // with its whole tail: `` `text` [a].length `` is the value `[a].length`.
+    parseSubscript(
+      base: N.Expression | N.Super | N.Import,
+      startLoc: Position,
+      noCalls: boolean | undefined | null,
+      state: N.ParseSubscriptState,
+    ): N.Expression {
+      if (this.nolaValueStart !== null && tokenIsTemplate(this.state.type)) {
+        const baseStart = (base as { extra?: { parenStart?: number } }).extra?.parenStart ?? base.start;
+        if (baseStart === this.nolaValueStart) return this.stopParseSubscript(base as N.Expression, state);
+      }
+      if (
+        this.nolaStatementStart === base.start &&
+        (this.match(tt.bracketL) || this.match(tt.parenL)) &&
+        this.nolaTemplateChain(base as N.Expression)
+      ) {
+        return this.stopParseSubscript(base as N.Expression, state);
+      }
+      return super.parseSubscript(base, startLoc, noCalls, state);
+    }
+
     // Reserve `ask` in binding positions (const ask, params, imports…). Member
     // and property positions use parseIdentifier(liberal=true), which never
     // reaches checkReservedWord, so `o.ask` / `{ ask: 1 }` stay legal. Expression
@@ -446,8 +845,12 @@ export default (superClass: typeof Parser) =>
       super.checkReservedWord(word, startLoc, checkKeywords, isBinding);
     }
 
-    // An instruction marker (template) may sit between the function name and `(`,
-    // but ONLY on an `infer` function — on anything else it is NOLA1007.
+    // A marker (template) may sit between the function name and `(`. On a
+    // plain function it is NOLA1007; on an infer function it is RESERVED —
+    // NOLA1019 (spec 2026-09-26-body-instruction-only §3.1): the instruction
+    // is a context statement in the body now, and the slot is kept for a later
+    // design. Tolerant mode keeps the marker on the node so the lowering can
+    // drop its bytes (the header must reach TypeScript without them).
     // `infer` on generators and methods is reserved (NOLA1004).
     parseFunctionParams(node: unknown, isConstructor?: boolean): void {
       const inMethod = this.nolaInMethod;
@@ -474,22 +877,18 @@ export default (superClass: typeof Parser) =>
           end: number;
           expressions: unknown[];
           quasis: Array<{ value: { cooked: string | null; raw: string } }>;
-          nolaHasScopeAccess?: boolean;
         };
         if (!infer) {
           // The template is already consumed, so parsing is resynchronized.
           this.raise(NolaErrors.NolaMarkerOutsideInfer, markerStart);
         } else {
-          // Holes are legal (emit 11): lexical ones interpolate the instruction,
-          // `${.member}` ones make the marker a prompt template. The cooked
-          // instruction skips the holes; the lowering reads the quasi.
+          this.raise(NolaErrors.NolaMarkerReserved, markerStart);
           const instruction = tmpl.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
           n.nolaMarker = {
             start: markerStart,
             end: tmpl.end,
             instruction,
             quasi: tmpl,
-            hasScopeAccess: tmpl.nolaHasScopeAccess === true,
           };
         }
       }

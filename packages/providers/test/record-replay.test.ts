@@ -33,7 +33,7 @@ describe("record()", () => {
         additionalProperties: false,
       },
     });
-    const res = await provider.complete(req);
+    const res = await provider.infer(req);
     expect(res.text).toBe('{"ok":1}');
 
     const lines = readFileSync(path, "utf8").trim().split("\n");
@@ -41,14 +41,15 @@ describe("record()", () => {
     const entry = JSON.parse(lines[0] ?? "");
     expect(entry.fingerprint).toBe(fingerprintRequest(req)); // computed from RAW request
     expect(entry.fingerprint).toMatch(/^[0-9a-f]{64}$/); // and NOT itself redacted
-    // the ledger stores the payload as sent — a classic provider recorded its rendered prompt
-    expect(entry.request.payload.system).toContain("[redacted]");
-    expect(entry.request.payload.messages[0].content).toContain("[redacted]");
-    expect(JSON.stringify(entry.request.payload)).not.toContain("AbCd1234");
+    // the ledger stores the intent, redacted — never a rendering
+    expect(entry.request.intent.system).toContain("[redacted]");
+    expect(entry.request.intent.input.instruction).toContain("[redacted]");
+    expect(JSON.stringify(entry.request.intent)).not.toContain(FAKE_KEY);
+    expect("payload" in entry.request).toBe(false);
     expect(entry.response.text).toBe('{"ok":1}');
   });
 
-  it("mirrors a platform inner: record(platform) is a branded platform model exposing infer, no complete", async () => {
+  it("carries a platform inner's brand: record(platform) is a branded platform model", async () => {
     const path = ledgerIn();
     const platformInner = {
       [PLATFORM_MODEL]: true as const,
@@ -57,27 +58,26 @@ describe("record()", () => {
     };
     const wrapped = record(platformInner as never, path) as unknown as {
       name: string;
-      infer?: (req: { model: unknown }) => Promise<{ text: string }>;
-      complete?: unknown;
+      infer?: (req: { intent: unknown }) => Promise<{ text: string }>;
     };
     expect(isPlatformModel(wrapped)).toBe(true);
     expect(wrapped.name).toBe("record(m)");
-    expect(wrapped.complete).toBeUndefined();
-    const model = requestOf({ instruction: "managed ask", dialect: "model" }).payload;
-    const res = await wrapped.infer?.({ model });
+    expect(typeof wrapped.infer).toBe("function");
+    const model = requestOf({ instruction: "managed ask" }).intent;
+    const res = await wrapped.infer?.({ intent: model });
     expect(res?.text).toBe('"managed-recorded"');
-    // the ledger line is keyed identically to a classic recording of the same ask
+    // the ledger line is keyed by the intent — the same key any other provider's recording of the ask gets
     const entry = JSON.parse(readFileSync(path, "utf8").trim());
-    expect(entry.fingerprint).toBe(fingerprintRequest(requestOf({ instruction: "managed ask", dialect: "model" })));
-    // …and replays through the classic replay() path
-    expect((await replay(path).complete(requestOf({ instruction: "managed ask" }))).text).toBe('"managed-recorded"');
+    expect(entry.fingerprint).toBe(fingerprintRequest(requestOf({ instruction: "managed ask" })));
+    // …and replays through replay()
+    expect((await replay(path).infer(requestOf({ instruction: "managed ask" }))).text).toBe('"managed-recorded"');
   });
 
   it("appends one line per completion", async () => {
     const path = ledgerIn();
     const provider = record(mockProvider(["a", "b"]), path);
-    await provider.complete(requestOf({ instruction: "1" }));
-    await provider.complete(requestOf({ instruction: "2" }));
+    await provider.infer(requestOf({ instruction: "1" }));
+    await provider.infer(requestOf({ instruction: "2" }));
     expect(readFileSync(path, "utf8").trim().split("\n")).toHaveLength(2);
   });
 });
@@ -86,7 +86,7 @@ describe("replay()", () => {
   it("full offline round-trip: an infer-function invocation recorded then replayed keyless", async () => {
     const path = ledgerIn();
     const invoke = () => {
-      const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+      const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
       return __nola.intents.Intent(
         async (__ctx: Frame) => {
           const name = await __nola.ask(
@@ -99,7 +99,7 @@ describe("replay()", () => {
           );
           return { name, age };
         },
-        fileCtx.func({ fn: "person", instruction: "" }),
+        fileCtx.func({ fn: "person" }),
       );
     };
 
@@ -114,11 +114,11 @@ describe("replay()", () => {
   it("replays a recorded correction pair in FIFO order, not just the last line for the fingerprint", async () => {
     const path = ledgerIn();
     const invoke = () => {
-      const fileCtx = nolaRuntime.current().fileContext("x.tsi");
+      const fileCtx = nolaRuntime.current().moduleContext("x.tsi");
       return __nola.intents.Intent(
         async (__ctx: Frame) =>
           __nola.ask(__nola.intents.ExtractIntent({ instruction: "name", type: { type: "string" }, loc: "1:1" }), __ctx),
-        fileCtx.func({ fn: "person", instruction: "" }),
+        fileCtx.func({ fn: "person" }),
       );
     };
 
@@ -148,7 +148,7 @@ describe("replay()", () => {
     const path = ledgerIn();
     writeFileSync(path, "", "utf8");
     const provider = replay(path);
-    const err = await provider.complete(requestOf({ instruction: "never recorded" })).then(
+    const err = await provider.infer(requestOf({ instruction: "never recorded" })).then(
       () => {
         throw new Error("expected throw");
       },

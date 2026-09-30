@@ -1,5 +1,5 @@
 import type { InferenceScope, InferRequest, JsonSchema } from "@nola-lang/core";
-import { isDecisionModel, isInferModel, NolaProviderError } from "@nola-lang/core";
+import { isDecisionModel, NolaProviderError } from "@nola-lang/core";
 import { describe, expect, it } from "vitest";
 import { typesafe } from "../src/typesafe.js";
 import { modelOf } from "./helpers/model.js";
@@ -24,16 +24,12 @@ const answersReply = (answers: Record<string, unknown>) => ({
 type Body = { model: string; state: unknown; questions: Record<string, unknown> };
 const bodyOf = (call: FetchArgs | undefined) => JSON.parse(String(call?.init.body)) as Body;
 const req = (init: Parameters<typeof modelOf>[0], extra: Partial<InferRequest> = {}): InferRequest => ({
-  model: modelOf(init),
+  intent: modelOf(init),
   ...extra,
 });
 const bool = { type: "boolean" } as const;
 
-const provider = (options: Parameters<typeof typesafe>[0]) => {
-  const p = typesafe(options);
-  if (!isInferModel(p)) throw new Error("typesafe is an infer-dialect model");
-  return p;
-};
+const provider = (options: Parameters<typeof typesafe>[0]) => typesafe(options);
 
 const unit: JsonSchema = { type: "number", minimum: 0, maximum: 1 };
 const triage: JsonSchema = {
@@ -70,7 +66,7 @@ describe("typesafe provider — wire", () => {
     const { fn, calls } = fakeFetch(() => answersReply({ value: { type: "noul", noul: 0.9 } }));
     const p = typesafe({ apiKey: "k", fetch: fn });
     expect(p.name).toBe("typesafe");
-    expect(isInferModel(p)).toBe(true);
+    expect(typeof p.infer).toBe("function");
     expect(isDecisionModel(p)).toBe(true);
     const { text } = await provider({ apiKey: "k", fetch: fn }).infer(req({ schema: bool }));
     expect(text).toBe("true");

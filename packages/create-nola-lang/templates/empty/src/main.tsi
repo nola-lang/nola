@@ -1,0 +1,8 @@
+// This file is a Nola module: TypeScript plus `ask`. Write your program here.
+// An ask is legal at the top level — nothing to declare or call first:
+//
+//   const .text = "The demo went great and the customer signed on the spot.";
+//   const mood = ask `the mood of the text`: "happy" | "sad" | "neutral";
+//
+// Language reference: https://nola.sh/docs/language/ask/
+console.log("Hello from Nola");

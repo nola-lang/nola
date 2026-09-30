@@ -26,7 +26,7 @@ describe("terminalTrace", () => {
     const err = spyStderr();
     const t = terminalTrace({ color: false });
     expect(t.name).toBe(TERMINAL_TRACE);
-    t.onProviderRequest?.({ askId: "a1", attempt: 1, provider: "mock", payload: { messages: [] } } as never);
+    t.onProviderRequest?.({ askId: "a1", attempt: 1, provider: "mock", intent: {} } as never);
     expect(err.lines).toHaveLength(1);
     expect(err.lines[0]).toMatch(/req +#1 → mock$/);
   });
@@ -97,7 +97,7 @@ describe("terminalTrace", () => {
   it("debug adds the request and reply lines; info adds ask start/end and invocation lines", () => {
     const err = spyStderr();
     const info = terminalTrace({ level: "info", color: false });
-    info.onProviderRequest?.({ askId: "a1", attempt: 1, provider: "mock", payload: { messages: [] } } as never);
+    info.onProviderRequest?.({ askId: "a1", attempt: 1, provider: "mock", intent: {} } as never);
     info.onInvocationStart?.({
       invocationId: "i1",
       spanPath: ["i1"],
@@ -111,7 +111,7 @@ describe("terminalTrace", () => {
       askId: "a1",
       attempt: 1,
       provider: "mock",
-      payload: { messages: [] },
+      intent: {},
     } as never);
     expect(err.lines[1]).toMatch(/req +#1 → mock$/);
   });

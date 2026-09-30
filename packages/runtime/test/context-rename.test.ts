@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 describe("InferContext rename", () => {
   it("InferContext is the class", () => {
-    expect(nolaRuntime.current().fileContext("x.tsi")).toBeInstanceOf(InferContext);
+    expect(nolaRuntime.current().moduleContext("x.tsi")).toBeInstanceOf(InferContext);
   });
 
   it("the NolaContext, LlmContext, and LmContext prior names are gone (no aliases)", async () => {

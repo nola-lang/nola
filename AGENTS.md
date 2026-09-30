@@ -17,8 +17,11 @@ MVP, superseded where v2 says otherwise). Read the v2 spec before changing langu
 semantics — it defines the grammar, lowering, the class-based `Intent<T>` runtime,
 and what is deferred (§9–10).
 
-v2 surface at a glance: `infer function name(...)` (optionally
-`` name`instruction`(...) ``) declares a nola function that lowers to a plain
+v2 surface at a glance: `infer function name(...)` declares a nola function
+(any bare template literal statement in its body is a CONTEXT STATEMENT — text
+every later ask sees, read at each ask, optionally continued with values,
+`` `Page` oncall `when …` ``, spec 2026-09-29-context-statements; the marker
+slot `` name`…`(...) `` is RESERVED — NOLA1019) that lowers to a plain
 function returning a lazy, thenable `Intent<T>`; `ask` resolves intents like
 `await` resolves promises (and `await` is legal in infer bodies for ordinary
 promises); `ask with <name> <operand>` routes the ask through a named model
@@ -26,14 +29,45 @@ from `nola.config.ts` (static identifier only — NOLA1009 otherwise; lowers to
 `__nola.ask`'s third argument, emit contract 3; when the platform serves
 inference — `model: nola.infer()` — an UNCONFIGURED
 name is legal and rides the request as a free-form `profile` for the
-platform, see the routing bullet below); `` ..`prompt`<T> `` extractors
+platform, see the routing bullet below); `` ..`prompt`: T `` extractors
 support `${}` interpolation — and since the implied-sigil spec (2026-09-18)
 the `..` is IMPLIED directly after `ask` / `ask with <name>`: `` ask
-`prompt`<T> `` is the taught form (a template as the operand's FIRST token;
-parenthesized/tagged stay plain), `..` stays required for a stored intent,
-a call-intent argument or a nested literal (a typed template elsewhere is
-NOLA2014), `` ask ..`…` `` remains legal and lowers identically (loc at the
-backtick; def/fingerprints never saw the sigil); `` fn``(...) `` call intents lower to
+`prompt`: T `` is the taught form (a template as the operand's FIRST token;
+parenthesized/tagged stay plain), and since the call-slot spec
+(2026-09-30) ALSO IN A CALL'S SLOTS — a TYPED template that starts an
+argument, or a property value / element of a plain object/array literal
+written in the arguments, exactly the sigil-less detection's slot positions
+(`new`'s arguments, spreads, ternaries and parenthesized groups are not
+slots): `` createTicket(`title`: string, 2) `` is the taught call-intent
+form. The parser marks slot starts (`nolaSlotStart` / `nolaInSlotList`,
+saved and restored around `parseCallExpressionArguments`, `parseArrayLike`,
+`parseObjectLike`, `parseNew`, `parseParenAndDistinguishExpression`; the
+item entry is `parseMaybeAssignAllowInOrVoidPattern`) and `parseExprAtom`
+claims a template there only when a glued `: T` follows or `<…>` reads as
+type arguments on TypeScript's own bail-out terms (`` f(`a` < b) `` stays a
+comparison; an UNTYPED template stays a string argument, so `` log(`x`) ``
+is untouched and an untyped slot is still only the `..` form's NOLA2004).
+`..` stays required for a stored intent and every other position (a typed
+template elsewhere is NOLA2014 in the `<T>` form — its message names both
+places — and `` `p`: T `` there is a plain syntax error; a bare hinted call
+in a context statement therefore fails at the colon instead of NOLA2010),
+`` ask ..`…` `` and `` fn(..`…`: T) `` remain legal and lower identically
+(loc at the backtick; def/fingerprints never saw the sigil, so the
+function-calling ledger held). THE TYPE HAS TWO SPELLINGS: the
+colon-typed spec (2026-09-23) added `: T` GLUED to the closing backtick,
+`` ask `p`: T `` / `` ..`p`: T ``, beside the original `<T>`; both yield the
+same one-param `typeArgs` node, emit and `def`, and since 2026-09-29
+(owner's call) `: T` IS THE TAUGHT FORM — every example, template, docs
+page, the agent skill and the editor snippets write it, and `<T>` is
+documented once as the equivalent (extractors.mdx "The angle-bracket
+spelling", the cheatsheet row, syntax.md's spellings bullet); keep new
+copy on that rule (a spaced colon is never the extractor's, so a ternary's
+separator stays one; the type starts on the colon's line or it is
+NOLA1018, tolerant-recovered untyped; a bare type name followed by `.`
+continues the type, so chain intent methods after a parenthesized
+extractor, a delimited type or `<T>`; NOLA2004's message names `: T`, and
+NOLA2014's names `<T>` since only that form reaches it);
+`` fn``(...) `` call intents lower to
 `FunctionCallIntent`; since the 2026-08-14 sigil-less spec the empty marker
 is optional — a plain call with an Identifier/MemberExpression callee whose
 arguments contain a well-formed extractor (directly or nested in plain
@@ -115,7 +149,7 @@ ast, core                    # leaf types + shared utilities (errors, redact, fi
   → derive                   # deps compiler + typescript (>=5.6 <7): the checker walk (deriveType), answerRequests, DerivationService (one ts.LanguageService per process), derivationDiagnostics
   → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
   → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (since 2026-09-20 the GROUND is the nola.sh landing page's — ink `#0a0c0b` background, `#121615` panels, from the website checkout's landing.css — with the console's own amber accent, status hues and mono type mapped onto shadcn names; PANELS DRAW NO BORDERS — surfaces separate them, `--border` survives only on the resizable handle, inputs and row separators); LIVE UPDATES (2026-09-16) are patch-then-refetch: `/api/events` carries every ingest envelope, `live-sync.ts` applies each one to the cached definitions at once (`applyNotice`, live-definition.ts — a re-implementation of storage's askStart/askEnd row mapping, held to it by `test/live-definition-parity.test.ts`; change the ingest mapping in sqlite.ts and you change it there too) and then refetches only the queries that notice can have changed (`live-keys.ts`) through the self-pacing `refresh-queue.ts` (first at once, one round at a time, never a trailing debounce — that starved under a steady run of asks); notices that arrive mid-round are re-applied when it settles so an older read cannot blink a bar out; the duration chart draws a running execution at its elapsed time, pads to `MIN_SLOTS` so a new bar takes an empty slot, and holds its Y ceiling (`chart-scale.ts`)
-  → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); the runtime renders for classic providers (they receive a ClassicPrompt), only the platform model gets the InferenceModel — its `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
+  → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); every model receives the InferenceModel through `infer(req)` and renders it itself (`renderPrompt` in core is the default; prompt rendering 2026-09-28) — the platform's `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
   → node-loader, typescript-plugin  # typescript-plugin: language-core + @volar/typescript
   → nola-lang                # the dev tool users install: nola bin (build/run/check/declarations) + ./register
   → unplugin                 # bundler-plugin core (deps node-loader + nola-lang); adapters via subpath exports
@@ -173,35 +207,56 @@ copy on that rule.
 built output imports only `@nola-lang/runtime` (running `.tsi` directly in prod
 via `node --import nola-lang/register` is the documented tsx-style exception).
 Scaffolding (spec 2026-08-12-interactive-init-design.md): `create-nola-lang`
-owns the builtin templates (`templates/feature-extraction` + `templates/function-calling`
-+ `templates/typescript-interop` + `templates/empty`), the static template
-registry (`src/registry.ts` — the menu; extract-person is deliberately absent,
-typescript-interop IS it), and the
-shared interactive flow (`runFlow`; args fill prompts, non-TTY or
-dir+`--template` means zero prompts). THE TEMPLATE MENU (2026-09-18) is two
-levels because clack's `select` has no sections: `TEMPLATE_QUESTION` lists
-the builtin templates in registry order, ONE PER FEATURE (owner's framing,
-2026-09-18) — `feature-extraction` (the default, also non-interactively; was
-quick-script/basic for a few hours), `function-calling`,
+owns ONE builtin template (`templates/empty` — config + tsconfig + a stub `src/main.tsi`
+entry, the only template that ships inside the package; `templates/_providers`
+and `templates/_gitignore` sit beside it), the static template registry
+(`src/registry.ts` — the menu; extract-person is deliberately absent,
+typescript-interop IS it), and the shared interactive flow (`runFlow`; args
+fill prompts, non-TTY or dir+`--template` means zero prompts). EVERY OTHER
+TEMPLATE IS A CURATED EXAMPLE (owner's call, 2026-09-30 — the builtin
+feature-extraction / function-calling / typescript-interop moved to
+`examples/`, ledgers included, and became npm workspaces run by
+`test/e2e/examples.test.ts` like the rest): `source: "example"` in the
+registry, files from `examples/` (the dev checkout's on disk, else GitHub at
+the lockstep tag — so in production the DEFAULT scaffold needs network and
+the release tag). `scaffold()` is ONE path for both sources: collect the
+files as committed (`collectExampleFromDisk` walks `templates/` too), then
+add the scaffold's additions on top — a live provider's
+`_providers/<id>.config.ts` over `nola.config.ts` with the replay ledger
+dropped (this applies to examples as well now; a vendor choice used to leave
+an example's mock config in place), `rewriteExamplePackageJson` (name + the
+workspace `*` ranges → `^<lockstep>`; `empty`'s manifest follows the
+examples' `*` convention — no `__NAME__` / `__VERSION__` anywhere), the
+recommended `.gitignore`, the vendor key's `.env.example`, and the
+next-steps comment PREPENDED to the entry file. README notes
+(`__START_NOTE__` / `__PROVIDER_NOTE__`) are gone with the builtin
+templates: an example's README is copied as committed and written to be
+true under either config (the provider story is the config's own comment,
+`.env.example` and the outro). THE TEMPLATE MENU (2026-09-18) is two levels
+because clack's `select` has no sections: `TEMPLATE_QUESTION` lists the
+FEATURED examples (`featured: true`) and `empty` in registry order, ONE PER
+FEATURE (owner's framing 2026-09-18, list of 2026-09-30) —
+`feature-extraction` (the default, also non-interactively; was
+quick-script/basic for a few hours), `function-calling`, `agent-loop`,
 `typescript-interop` (the former `starter`, briefly ts-import and
-infer-function; renamed with no alias), `empty` — plus one `MORE_EXAMPLES` row that opens
-`EXAMPLE_QUESTION` over the curated examples (vendor bracket on a pinned
-row, a `BACK` row returns); `--template <name>` names either level
-directly (`templateMenu` / `exampleMenu` / `selectTemplate` in flow.ts).
+infer-function; renamed with no alias), `triage-ticket`, `empty` — plus one
+`MORE_EXAMPLES` row that opens `EXAMPLE_QUESTION` over the remaining curated
+examples (vendor bracket on a pinned row, a `BACK` row returns); `--template
+<name>` names either level directly (`templateMenu` / `exampleMenu` /
+`selectTemplate` in flow.ts); a failed fetch notes `FETCH_FAILURE_HINT`
+(only `empty` needs no download) and re-asks the menu.
 `feature-extraction` is the scope-bodies showcase: ONE `src/main.tsi` that is the
-program — a first-statement instruction literal, `const .message` /
+program — a context statement, `const .message` /
 `const .role` bindings, two top-level asks (the second reads the first's
 answer through `.role`) — with its own recorded ledger. `function-calling`
 is the same shape for the other feature: `src/main.tsi` imports
 `createTicket` from the plain `src/tickets.ts` (NodeNext `./tickets.js`)
-and its top-level ask is a call intent over it (no first-line instruction —
-the `import` would make the literal a non-first statement). A one-file
+and its top-level ask is a call intent over it (no context statement). A one-file
 template names its `.tsi` as `entry` in the registry, and
 `entryFile(template)` (registry.ts) answers it or `src/main.ts`; that value drives `start` in its
 package.json, the launch.json `program` (`writeVscodeSetup(dir, entry)`),
-what `code` opens, and which file carries `__NEXT_STEPS__` (`SUBSTITUTED`
-includes `main.tsi`; the VS Code variant says "a breakpoint on the `ask`
-line below"). Re-record the one-file ledgers the same way as typescript-interop's — feature-extraction over `record(mockProvider([person, "staff"]))`, function-calling over `record(mockProvider([{ arg0: title, arg1: 1 }]))` (a call intent's slots are one object keyed `arg0`, `arg1`, …) — from `src/main.tsi`. The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
+what `code` opens, and which file gets the next-steps comment (the VS Code
+variant says "a breakpoint on the `ask` line below"). Re-record the ledgers (`examples/<name>/nola.replay.jsonl` since 2026-09-30) the same way as typescript-interop's — feature-extraction over `record(mockProvider([person, "staff"]))`, function-calling over `record(mockProvider([{ arg0: title, arg1: 1 }]))` (a call intent's slots are one object keyed `arg0`, `arg1`, …) — from `src/main.tsi`. The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
 `defineCommand` entry per command, each with its OWN parseArgs option map)
 routed by the zero-dep dispatcher in create-nola-lang (`src/cli.ts` —
 generated help, `--help`/`--version`, per-command flag scoping); `nola init`
@@ -229,14 +284,15 @@ and the old wizard is back. `writeVscodeSetup(dir, entry)` (`src/ide.ts`) writes
 to the template's entry — a one-file template's `src/main.tsi`, else
 `src/main.ts` — keeping the mandatory resolveSourceMapLocations + skipFiles invariants) and `.vscode/extensions.json` (recommends
 `nola.nola-vscode`) on both the scaffold and add paths — existing files
-are skipped with a note, never merged. The builtin templates' entry file (`src/main.ts`, or a one-file template's
-`src/main.tsi`) opens with a `__NEXT_STEPS__` placeholder that
-`scaffold({ ide })` renders (`nextStepsComment` in scaffold.ts): the VS Code
-variant — F5, a breakpoint ("on the `ask` line below" for a one-file template, in
-`src/person.tsi` for typescript-interop, "in your .tsi file" for `empty`), the
-recommended extension — ONLY when the editor was chosen, since the `.vscode` files are
-what make it true; otherwise an editor-neutral `npm start` + editor-setup
-docs link. Examples from `examples/` are copied verbatim and carry none. The
+are skipped with a note, never merged. Every scaffold's entry file (`src/main.ts`, or a one-file template's
+`src/main.tsi`) OPENS WITH the next-steps comment `scaffold({ ide })`
+PREPENDS (`nextStepsComment` in scaffold.ts; no placeholder — since
+2026-09-30 templates are copied as committed, so an example stays runnable
+in-repo): the VS Code variant — F5, a breakpoint ("on the `ask` line below"
+for a one-file template, in `src/person.tsi` for typescript-interop, "in your
+.tsi file" otherwise), the recommended extension — ONLY when the editor was
+chosen, since the `.vscode` files are what make it true; otherwise an
+editor-neutral `npm start` + editor-setup docs link. The
 install-and-open step opens `code <dir> <dir>/<entry>` (`vscodeArgs`,
 launch.ts: the folder becomes the workspace, the entry file the active
 editor) so
@@ -258,7 +314,7 @@ is asked BEFORE the editor/agents setup. `--provider <id>` answers it;
 `ProviderId` (was `trial: boolean`). A vendor choice writes
 `templates/_providers/<id>.config.ts` over the template's `nola.config.ts`
 (`scaffold({ provider })`, `providerConfigUrl`), skips the offline templates'
-replay ledger, renders vendor README notes naming the env var (`OPENAI_API_KEY` /
+replay ledger, writes `.env.example` with the env var's slot (`OPENAI_API_KEY` /
 `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`), and the outro says "set <ENV> in
 .env first" — no key prompt, no network. The add path passes the provider to
 `addNola({ provider })`: a vendor config is written when the project has
@@ -294,8 +350,8 @@ browser must never open after later questions; the KEY is still minted after
 every question by `acquireKey`, which then finds the stored session, so a
 cancelled flow consumes nothing (`SIGN_IN_QUESTION` survives only for `nola
 key`'s confirm). Then
-`scaffold({ provider: "nola" })` (skips `nola.replay.jsonl`, renders
-`__START_NOTE__` / `__PROVIDER_NOTE__` in the offline templates' README) and
+`scaffold({ provider: "nola" })` (skips `nola.replay.jsonl`, writes
+`_providers/nola.config.ts` over the template's config) and
 `applyTrial` (`src/trial.ts`: `.env` append-never-overwrite via
 `writeEnvKey`, the `.gitignore` guard `.env` + `.env.*` via
 `ensureEnvIgnored`, and `templates/_providers/nola.config.ts` — the
@@ -359,8 +415,9 @@ be pointed at it while testing; unset = never. Declining the install, the add
 path and non-interactive runs never install, so they never relink (the e2e's
 `linkDeps` covers that case by hand); a
 later `npm install` in the scaffold restores the registry copies. The curated examples are
-scaffold-ready: start/build/check scripts, mock-only configs (the OpenAI smoke
-e2e swaps in its own config override in a tmp copy). The recommended
+scaffold-ready: start/build/check scripts, offline configs — the mock, or a
+recorded ledger (the OpenAI smoke e2e swaps in its own config override in a
+tmp copy). The recommended
 `.gitignore` is ONE file, `templates/_gitignore` (underscored — npm pack
 strips nested `.gitignore`s): `scaffold` writes it for EVERY template, builtin
 or example (examples carry none in-repo, the root ignore file covers them; one
@@ -368,9 +425,11 @@ an example does carry wins — `withRecommendedGitignore`). No template keeps
 its own copy; `scaffold.test.ts` holds every menu entry to it. The published manifest
 keeps ZERO runtime deps — `@clack/prompts` is a devDep inlined by
 `scripts/bundle.mjs` (root `npm run build` runs it; the dist is an esbuild ESM
-bundle). The `nola.replay.jsonl` ledgers of feature-extraction, function-calling and
-typescript-interop make the first run keyless; they are fingerprint-keyed, so
-prompt-composition changes fail `test/e2e/scaffold.test.ts` until ALL THREE
+bundle). The `nola.replay.jsonl` ledgers of `examples/feature-extraction`,
+`examples/function-calling` and `examples/typescript-interop` make the first
+run keyless (in-repo under `test/e2e/examples.test.ts` too); they are
+fingerprint-keyed, so prompt-composition changes fail
+`test/e2e/scaffold.test.ts` and the examples e2e until ALL THREE
 ledgers are re-recorded (record over
 `mockProvider`, see the plan `docs/superpowers/plans/2026-08-10-scaffolding-phase2.md`).
 Publish partition: 12 public, guarded by `test/publish-manifests.test.ts`.
@@ -404,9 +463,15 @@ numbers in `comparisons/inbox-triage/README.md`, which the slides quote.
 This is upstream Babel source, pinned. Treat it as read-only **except**:
 
 - `src/plugins/nola/**` — our plugin, edit freely. It hooks `readToken_dot`,
-  `parseExprAtom`, `parseMaybeUnary`, `checkReservedWord`, `parseStatementContent`,
-  `parseExportDeclaration`, `shouldParseExportDeclaration`, `parseFunction`,
-  `parseFunctionParams`, `parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`, `parseMember` (tolerant-only: a dangling `x.` recovers verbatim so TypeScript completes and diagnoses it itself).
+  `parseExprAtom`, `parseMaybeUnary`, `checkReservedWord`, `parseStatementContent`
+  (also records where a template-led statement starts, `nolaStatementStart`),
+  `parseExpressionStatement` (the context statement: text and value parts,
+  NOLA1020), `parseSubscript` (the value stop rule — a template right after a
+  value's own base ends the value instead of tagging it — and the leading-text
+  rule: a `[` or `(` right after a statement's leading text is its first value,
+  not an index or a call on the string), `parseExportDeclaration`,
+  `shouldParseExportDeclaration`, `parseFunction`,
+  `parseFunctionParams`, `parseMethod`, `parseFunctionBodyAndFinish`, `isClassMethod`, `parseMember` (tolerant-only: a dangling `x.` recovers verbatim so TypeScript completes and diagnoses it itself; inside a context value it also holds when the next line opens with a keyword, or with a name followed by another, so that line stays its own statement). `parseFunctionParams` still parses the marker slot: NOLA1007 on a plain function, NOLA1019 reserved on an infer function — tolerant mode keeps `nolaMarker` so the lowerer drops the bytes under `broken`.
   (The `infer function` keyword is claimed only when the token after `infer` is
   `function` — that is what keeps `infer` legal as an identifier and in TS
   conditional types. `parseFunction` adds the Async production flag for infer
@@ -440,19 +505,19 @@ plugin expects, adapt the *plugin*, never the test expectations.
   from the ask boundary down (receipts, traces, events, `AskContext`, errors)
   file+loc travel as one frozen `Site` value object (`@nola-lang/core` —
   `toString()` → `"file:line:col"`, strict `Site.parse`). Intent inits still
-  carry `loc` alone (the file is per-file in `__nola_file_ctx`, met at ask time
+  carry `loc` alone (the file is per-file in `__nola_module_ctx`, met at ask time
   via `frame.sourceFile()`).
 - **Two paths, never mixed.** `LowerState.file` is the absolute on-disk path and feeds
   diagnostics and source maps; `LowerState.displayFile` is posix and project-root-relative
   and is the **only** one that may reach emitted code (`file:` fields,
-  `__nola.context.file(...)`). Emitting the absolute path bakes the build machine's layout
+  `__nola.context.module(...)`). Emitting the absolute path bakes the build machine's layout
   into `dist/` and makes builds non-reproducible across checkouts. Callers pass
   `{ sourceRoot }` to `compileNola`; the root is `findProjectRoot()` (nearest
   `nola.config.ts` dir, else the start dir — always absolute, since `displayPathFor`
   prefix-matches it). Nothing at run time resolves `displayFile`: it is a memo key for
-  `fileContext` and a label in errors, logs, and receipts.
+  `moduleContext` and a label in errors, logs, and receipts.
 - **Lowering is byte-identical outside replaced spans.** Only the runtime import and
-  the `__nola_file_ctx` accessor are *appended at EOF* (ESM hoists the import;
+  the `__nola_module_ctx` accessor are *appended at EOF* (ESM hoists the import;
   `function` declarations hoist with their value) so original line/column positions
   never shift. The appendix OPENS WITH `;` on its own line (2026-09-19): in
   tolerant mode a dangling `console.` at the end of the file is kept verbatim,
@@ -461,8 +526,8 @@ plugin expects, adapt the *plugin*, never the test expectations.
   identifier after the keyword on the same line; `{` is not one) — the runtime
   import vanished and every `__nola` in the file was TS2304 at the ask sites. The
   `;` is the bundlers' idiom between concatenated modules; a test in
-  `tolerant-compile.test.ts` holds it. **No module-level context state is emitted** — `__nola_file_ctx()`
-  delegates to `__nola.context.file(path)`, a runtime helper memoized by path. The
+  `tolerant-compile.test.ts` holds it. **No module-level context state is emitted** — `__nola_module_ctx()`
+  delegates to `__nola.context.module(path, emit, init?)`, a runtime helper memoized by path (the init is a thunk read once, on creation). The
   accessor must stay a `function` declaration: as a `const`/`let` it is in its TDZ,
   and as a `var` it is `undefined`, when an infer function is called during its own
   module's evaluation (`const eager = go();`). Within an `ask` over an extractor,
@@ -589,8 +654,9 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `__nola.intents.ExtractIntent(...)`, `__nola.intents.FunctionCallIntent(...)`
   (no mapping layer; the `Intent` key is kept for emit-surface stability); non-class
   helpers stay lower-case — `__nola.ask`, `__nola.fmt`, `__nola.useRuntime` at the
-  top, context accessors under `__nola.context` (since emit 8: `__nola.context.file`,
-  was top-level `fileContext`). The classes live in
+  top, context accessors under `__nola.context` (since emit 19:
+  `__nola.context.module`; emit 8–18 had `__nola.context.file`, before that
+  top-level `fileContext`). The classes live in
   `packages/runtime/src/intents/`, ONE SUBFOLDER PER INTENT, each holding the
   intent next to the context node that backs it: `extract/` (`ExtractIntent`
   + `ExtractContext`), `function-call/` (`FunctionCallIntent` +
@@ -600,13 +666,14 @@ plugin expects, adapt the *plugin*, never the test expectations.
   the folder root keeps the intent-less bases (`intent.ts`,
   `executable-intent.ts`) and the single barrel `index.ts`.
   `packages/runtime/src/infer-context/` holds ONLY nodes with no intent
-  behind them — `InferContext` (base), `SystemInferContext`,
-  `FileInferContext`. Rule of thumb: a node that composes an `intent(...)`
+  behind them — `InferContext` (base) and `SystemInferContext` (since emit
+  19 the module node IS the file root; there is no file node). Rule of thumb: a node that composes an `intent(...)`
   or opens a frame lives with its intent; a pure lineage node lives in
   `infer-context/`.
 - **Context is a frozen static tree plus one dynamic `Frame` per invocation.**
   `InferContext` (immutable construction lineage: `data`, `parent`, owning
-  `runtime`; system → file → function) is written by lowering and never
+  `runtime`; system → module → function — since emit 19 the module node is
+  the file root and the parent of the file's function scopes) is written by lowering and never
   copied. `Frame` (`packages/runtime/src/runtime/frame.ts`) is the
   per-invocation activation record: it points at its static node and owns
   everything dynamic — `history`, the ask-span tree (receipts derive from it:
@@ -630,29 +697,30 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `LlmContext`/`LmContext`; `RuntimeContext` merged into `Frame` — no aliases
   remain.) `onInvocationEnd` fires once per root frame;
   `NolaResolutionError.trace` carries the failing invocation's trace.
+- **Prompt wording lives in ONE place**, `packages/core/src/render-prompt.ts`
+  (`renderPrompt`); the golden fixtures are `packages/core/test/prompt-fixtures.ts`
+  + `render-prompt.test.ts`, and the docs page `docs-site/language/prompt.mdx`
+  is held to the renderer by `test/docs-site-prompt.test.ts`.
 - **Fingerprints, cache, record/replay.** Every ask that reaches the terminal is
   stamped with `fingerprintRequest` (`packages/core/src/fingerprint.ts` — in core so
   `@nola-lang/providers`' record/replay can consume it without a runtime dep) —
-  sha256 over the canonicalized `{ prompt, params }` (plus `profile` ONLY
-  when a managed-mode profile is present — profile-free asks keep their v5
-  hashes, so ledgers never re-keyed) where `prompt` is the
-  CLASSIC RENDERING of the ask as first composed — a model payload is
-  rendered through `renderClassic` with its `correction` stripped, a
-  `ClassicPrompt` payload keeps only its first user turn — so a model-dialect
-  provider (nola) and a chat provider key the same ask identically and one
-  ledger serves both (the fingerprint identifies the ask as first composed,
-  never the retry). `FINGERPRINT_VERSION` is a compatibility surface — bump
-  it when the serialization changes shape (it is 5; the deliberate cost of
-  hashing the rendering is that a Nola release rephrasing the classic prompt
-  re-keys every ledger — accepted so the model never has to leave the
-  runtime through a chat provider). The fingerprint
+  sha256 over the canonicalized `{ intent, params }` (plus `profile` ONLY
+  when a managed-mode profile is present) where `intent` is the ask AS DATA
+  as first composed — the `InferenceModel` with its `correction` stripped —
+  never a rendering, so every provider keys the same ask identically, one
+  ledger serves all, and a Nola release that rephrases the default prompt
+  keeps every ledger (prompt-rendering spec 2026-09-28; the fingerprint
+  identifies the ask as first composed, never the retry).
+  `FINGERPRINT_VERSION` is a compatibility surface — bump it when the
+  serialization changes shape (it is 6). The fingerprint
   CACHE is deliberately unwired right now (`cache.test.ts` is skipped; see
   TODO(cache) in `inference.ts`) — the `cache: { store? }` config section
   validates but is not served. `record(inner, path)` / `replay(path)` stay
   live: fingerprinted JSONL ledgers keyed by request fingerprint and storing
-  the payload as sent (the rendering for a chat provider, the model for
-  nola) — `record` inherits the inner provider's dialect brand; replay is
-  dialect-agnostic and strict (unknown
+  the INTENT (`request.intent`, redacted — never a rendering) — `record`
+  carries the inner's platform and decision brands and, like every
+  combinator, rejects a `complete`-only inner at construction (NOLA3003
+  naming the migration); replay is strict (unknown
   fingerprint = NOLA3008 definitive error, never a silent live call); entries
   with the SAME key — an ask's first attempt and its correction turn hash
   identically, since the fingerprint strips the correction — replay in
@@ -672,23 +740,18 @@ plugin expects, adapt the *plugin*, never the test expectations.
   directly (`new JsonInference(task)` in ExtractIntent/FunctionCallIntent).
   `InferenceTask` = `{frame, site, options, context}` — `context` is the
   ask-site node composed before the frame chain; there is no separate prompt
-  field, only the model. What crosses to `LanguageModel.complete` is
-  `ProviderRequest = { payload, params?, signal?, trace? }` where `payload`
-  is `ClassicPrompt | InferenceModel`, picked by the provider's DIALECT —
-  the METHOD NAME (decision types spec 2026-09-18 §6.2, relaxing config
-  v2's "the platform model is the only infer-dialect model"): a model with
-  `infer(req)` receives `InferRequest { model }` (the canonical
-  `InferenceModel`), a model with `complete(req)` receives `ProviderRequest
-  { payload: renderClassic(model) }`; `LanguageModel` is the union
-  `ChatModel | InferModel`, `isInferModel` is the predicate, a model
-  carrying both methods is NOLA3003. `PLATFORM_MODEL` keeps only the
-  platform's own rules (root-only, profiles, no combinators, the `"nola"`
-  alias, `project` on the request). Combinators BRIDGE dialects: the outer
-  is infer-dialect iff any inner is, and `callModel` (providers
-  `dialect.ts`) renders for chat inners. There is deliberately NO public
-  `dialect` option; `mockProvider`'s callback is typed on the rendering
-  (`MockRequest`), and `classicPayload(req)` (providers) is the typed
-  accessor that fails definitively on a model. DECISION ASKS (an output
+  field, only the model. What crosses to `LanguageModel.infer` is
+  `InferRequest = { intent, params?, profile?, project?, signal?, trace? }`
+  — the canonical `InferenceModel` (prompt-rendering spec 2026-09-28 §3.4):
+  there is ONE dialect; every model renders the intent itself,
+  `renderPrompt` (core, re-exported by `@nola-lang/providers`) is the
+  default text rendering, and a text provider returns what it sent as
+  `InferResult.sent`, which becomes the receipt's `effectivePrompt`. A
+  `complete`-only model is NOLA3003 naming the migration. `PLATFORM_MODEL`
+  keeps only the platform's own rules (root-only, profiles, no combinators,
+  the `"nola"` alias, `project` on the request). Combinators forward
+  `infer`. `mockProvider`'s callback receives the request plus a lazy
+  `prompt` (the default rendering). DECISION ASKS (an output
   schema with an `x-nola-decision` node — `Choice` / `Scale` / `Prob`, emit
   18) need a model carrying the `DECISION_MODEL` brand (core
   `decision-model.ts`; `isDecisionModel`, `findDecisionQuestions`):
@@ -698,26 +761,20 @@ plugin expects, adapt the *plugin*, never the test expectations.
   what it holds), forwarded by `record` / `withRetry`, carried by
   `fallback` / `roundRobin` when any inner has it — and those two SKIP
   unbranded inners on a decision request (`isDecisionRequest`).
-  SUGAR (emit unchanged): `` ..choice`q`<C> `` / `` ..scale`q`<L> `` /
-  `` ..prob`q` `` / `` ..prob`q`<C> `` — the parser records `kind` on
-  `NolaExtractExpression` (any other identifier after `..` is NOLA1016,
-  tolerant-recovered as plain), the lowerer wraps the written argument
-  (`<Choice<C>>`; the copied C is the anchor, the derivation request's
-  `loweredPad` widens its lowered range to the wrapper so the checker sees a
-  Choice; `def` hashes the wrapped text, so sugar and long-hand share one
-  definition; `collectDecisionTypeUses` counts the kind so the appendix
-  imports the wrapper); bare `..prob` is `__nola.types.prob()` with no
-  request; a kind-less `..choice` / `..scale` is NOLA2015 at the extractor.
-  The sugar needs the explicit sigil — after `ask`, `` choice`…` `` reads as
-  a tagged template.
+  NO SUGAR (2026-09-23, owner: less to maintain): the `` ..choice`q`<C> `` /
+  `` ..scale`q`<L> `` / `` ..prob`q` `` spellings of the spec's §5 are
+  RETIRED, with NOLA1016, the `kind` on `NolaExtractExpression` and the
+  lowerer's wrapper / `loweredPad` plumbing — an identifier after `..` is
+  NOLA1005 like any non-template, and the intrinsic types are written
+  long-hand: `` ask `q`<Choice<C>> ``, `` ask `q`<Prob> ``.
   `onProviderRequest` carries the
-  `payload` as sent. `trace` carries `{askId,
-  invocationId, spanPath}` for providers (like `nola`) that want it. The
-  receipt's `originalPrompt`/`effectivePrompt` pair still holds the composed
-  conversation (role-labeled transcript, via `describeModel`/`renderClassic`):
-  `originalPrompt` as first composed, `effectivePrompt` as last sent — they
-  diverge exactly when a correction retry ran (and under future middleware
-  rewrites).
+  `intent`; `onProviderResponse` carries the provider's `sent` echo. `trace`
+  carries `{askId, invocationId, spanPath}` for providers (like `nola`) that
+  want it. The receipt's `originalPrompt`/`effectivePrompt` pair holds
+  transcripts (`renderTranscript`): `originalPrompt` is the default
+  rendering as first composed, `effectivePrompt` the provider's echo of the
+  last attempt (else the default rendering) — they diverge when a correction
+  retry ran or the provider renders differently.
 - **Prompt composition is the `ModelBuilder`.** One composer
   (`ask/model-builder.ts`, implementing the node-facing `InferenceComposer`
   seam in `ask/composer.ts`) builds the `InferenceModel` in two passes: pass 1
@@ -725,22 +782,25 @@ plugin expects, adapt the *plugin*, never the test expectations.
   then `frame.compose` describing the asking frame and recursing to its
   caller via `composer.outer()`); `build()` reverses into the outer→inner
   scope chain (innermost is `model.scope`, callers via `parent`), collecting
-  scope/input/output into pure JSON — no wording yet. Pass 2 renders any
-  prompt templates outer→inner from a scope built OVER
-  the finished model — `.default` is that node's classic block, `.next` /
-  `.format` the classic remainder — into per-node `text` overrides
-  (`scope.text`, `model.input.text`); the built-in wording never reaches the
-  model at all unless a template reads `.default`/`.next`. That wording lives
-  in `renderClassic` (`@nola-lang/core/render-classic.ts`), a pure function
-  `InferenceModel → ClassicPrompt` that the RUNTIME calls once per attempt
-  for every provider without the model-dialect brand (providers receive the
-  result as `req.payload`; none renders itself) and that reproduces the old
-  composed text byte-identically. `describeModel` (`ask/inference.ts`)
-  renders a model through `renderClassic` into the role-labeled transcript
-  the receipt's `originalPrompt`/`effectivePrompt` and `NolaResolutionError`
-  still carry; the ask fingerprint is taken over that same rendering as
-  first composed — see Fingerprints below. History does NOT reach the model
-  yet (TODO(history) markers in tests).
+  scope/input/output into pure JSON — no wording yet, and no second pass
+  (prompt templates retired 2026-09-28). THE RENDERING (prompt-rendering spec 2026-09-28)
+  lives in `renderPrompt` (`@nola-lang/core/render-prompt.ts`), a pure
+  function `InferenceModel → RenderedPrompt { system, messages }` that
+  PROVIDERS call (the runtime never renders for a provider): the user turn
+  is the developer's words inside four utility tags — `<context
+  function="f">` / `<context module="path">` blocks outermost first, each
+  holding the instruction verbatim then one `<input name="x">` per
+  contextual param or binding (a string verbatim, anything else pretty
+  JSON, absent/empty self-closing; plain params omitted), then `<task>`
+  (`<task call="fn">` with the hint for a call intent), then on the retry
+  the rejected reply and a `<correction>` block; no schema and no format
+  lines anywhere (the schema rides structured output); the system turn is
+  `DEFAULT_SYSTEM` (four sentences) unless `system.message` REPLACES it.
+  `describeModel` (`ask/inference.ts`) is
+  `renderTranscript(renderPrompt(intent))` — the receipt's
+  `originalPrompt`; the fingerprint is taken over the intent, never a
+  rendering — see Fingerprints below. History does NOT reach the model yet
+  (TODO(history) markers in tests).
 - **Timeout + provider params ride `IntentOptions`.** `timeout` (ms; 0 disables;
   default `ask.timeoutMs` in config, `DEFAULT_ASK_TIMEOUT_MS` 60s) arms an
   AbortController on the ROOT frame — every provider call in the invocation
@@ -803,7 +863,18 @@ plugin expects, adapt the *plugin*, never the test expectations.
   latched config at send time, sender-side redaction preserving
   `fingerprint`/`def`) and fire-and-forget POSTs it to `/v1/ingest` (1.5 s
   timeout, warn once when unreachable, once-per-process notice off-loopback;
-  keyless on loopback). A listed tracer is never gated — `nola.infer()` does
+  keyless on loopback). DELIVERY RELIES ON THE PROCESS DRAINING ITS EVENT
+  LOOP: nothing flushes at exit, so `nola run` (`cmdRun`) returns only at
+  `beforeExit`, never right after the entry's import — the dispatcher's
+  `process.exit` there cut a run's last `askEnd`/`invocationEnd` off and the
+  console showed the final ask and its `<module>` frame as running forever
+  (agent-loop, 2026-09-30; `test/e2e/run-drains.test.ts`). A CRASHED entry
+  (top-level rejection) gets a bounded drain too — node would exit at once
+  and take the failed ask's `askEnd` with it — `CRASH_DRAIN_GRACE_MS` (2 s,
+  an unref'd timer racing `beforeExit`), then the error surfaces as before;
+  a program that calls `process.exit()` itself, or dies on an error thrown
+  after its module evaluated, still loses whatever is in flight — the tracer
+  has no synchronous flush. A listed tracer is never gated — `nola.infer()` does
   NOT imply one (the capability-probed platform tracer is gone).
   `NOLA_TRACING_URL` = "append `nola.tracer(url)`": it yields, with one
   notice, to a listed `nola:tracer`; a resolved config (stamped `RESOLVED`)
@@ -830,13 +901,63 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `version` is `packages/runtime/src/version.ts` (the client lives in the
   runtime — `src/platform-model.ts`), rewritten by `release.mjs`.
 - **Intent inits carry no `file`.** Since emit 3 the display path is emitted once
-  per file, in `__nola_file_ctx`. The ask boundary derives it at ask time from
+  per file, in `__nola_module_ctx`. The ask boundary derives it at ask time from
   the frame (`frame.sourceFile()`: the static `InferContext` chain first — the
-  `FileInferContext` node answers — then the caller frame chain, for scope-less
+  `ModuleContext` node answers — then the caller frame chain, for scope-less
   extract/call asks); a lineage with no file root anywhere reports `<unknown>`. Since emit 4
   the lowered EOF insert opens with
   `__nola.useRuntime(<NOLA_EMIT>)` (was `__nola.assertEmit(3)` through emit 3; the
-  contract is 18 today — emit 18 is DECISION TYPES (spec 2026-09-18, plans
+  contract is 21 today — emit 21 is CONTEXT STATEMENTS (spec 2026-09-29):
+  every bare template literal statement in a scope body is a context item,
+  lowered IN PLACE as `` void __nola_ctx_N; function __nola_ctx_N() { return __nola.ctx`…`; } ``
+  (one file-wide counter; the `void` read is the statement's STEP LOCATION —
+  a declaration alone has none, so a breakpoint on the line resolved into the
+  thunk and paused mid-ask while the runtime rendered the item, with F10 then
+  touring the other items; with the read it pauses in source order and F10
+  walks on to the next line, 2026-09-29; the tag receives the live values — `fmt` renders a
+  function as its name and an intent as its `describe()`), each ask passes
+  what it sees in ONE options object `__nola.ask(X, scope, { model?, locals?,
+  context? })` (alias and bindings were positional), `func({ fn, args?,
+  locals?, moduleContext? })` carries the TOP-LEVEL module items above the
+  declaration by name (no `instruction` field), and the module init's
+  `context: [...]` lists the top-level items in canonical order; the module
+  block renders once per chain with the union of the views
+  (`ModuleContext.orderedUnion`, a block-scoped item after the top-level item
+  preceding it in its own list); the wrapper opener sits at `{` again;
+  NOLA1020 (a bad token after text or a value on the same line, or a value
+  that ends with a template — `nolaCheckValue`), NOLA2017 (a context
+  statement outside a scope body, an unbraced `if`/loop/label body
+  included); the parser claims the shape in `parseExpressionStatement` and
+  stops a value's own base before a template (`nolaValueStart`), continuing
+  onto a new line only for a backtick, `[` or `(` — JavaScript's ASI rules,
+  unchanged. Emit 20 was INSTRUCTION INTERPOLATION (spec
+  2026-09-28): `${expr}` is legal in every instruction literal and the
+  `${.member}` template is retired — no `template` on any init, no
+  `__nola.tpl`; a holed body instruction stays in place as `const
+  __nola_fn_instr = …` read at the call, a holed module instruction as
+  `function __nola_module_instr() { return …; }` carried as the init's
+  `instruction` thunk and read at each ask; `${.member}` no longer parses
+  (the ordinary NOLA1001, no migration code) and NOLA1015/2009/2016/3014 are
+  retired. Emit 19 is MODULE SCOPE UNIFICATION (spec
+  2026-09-26): one `ModuleContext` per file replaces `FileInferContext` —
+  `__nola.context.module(path, 19, init?)` behind the single hoisted
+  `__nola_module_ctx()` accessor of every file that uses the runtime, infer
+  functions hang under it (`__nola_module_ctx().func({…})`), and the init
+  (instruction / locals) is a thunk the runtime reads once on
+  creation (the retired `__nola.context.file` has NO shim, by the owner's
+  call: a stale build whose module body reaches its accessor before the EOF
+  `useRuntime` fails with a TypeError, not NOLA3001), the module instruction
+  is lowered whenever the module body asks or the file declares an infer
+  function, and it is carried LEXICALLY into asks
+  inside the file's infer functions — `Frame.compose` adds the definition
+  module (`ModuleContext.composeLexical`, no bindings, `lexical: true` on
+  `ScopeDescription` and the wire `InferenceScope`) one level outside the
+  function's scope unless a caller frame is rooted in or defined in that
+  module (`Frame.lexicalModule`), and `renderScopeBlock` heads it by
+  relation (`scopeRelation`: `, entered from the context above` for a
+  non-outermost lexical module, `, defined in the module above` for the
+  function directly inside it; bindings stay dynamic-only; files without a
+  module instruction render byte-identically); emit 18 is DECISION TYPES (spec 2026-09-18, plans
   stage1–4 same day): the intrinsic `Choice<{…}>` / `Scale<[…]>` / `Prob`
   answer types (`packages/runtime/src/types/decision.ts`; criteria ride
   optional `__nola_*` phantom members so the derive walk — `derive/src/
@@ -861,18 +982,20 @@ plugin expects, adapt the *plugin*, never the test expectations.
   blocks and namespace bodies reset it; NOLA2001 is now "inside a plain
   function"), lowering to `await __nola.ask(X, __nola_module_ctx())` — the
   second argument is a `Frame` OR the module scope node
-  (`__nola_file_ctx().module({})`, a hoisted appendix accessor emitted only
-  when the module body asks; `ModuleContext` lives in `intents/invocation/`,
-  memoized per file node, composes NOTHING while it has no instruction/locals
-  so a top-level ask renders as the bare TASK) and the runtime opens a
+  (`__nola_module_ctx()`, the file's one hoisted accessor since emit 19;
+  `ModuleContext` lives in `intents/invocation/`,
+  memoized per PATH by the runtime — since emit 19 it IS the file node —
+  composes NOTHING while it has no instruction/locals so a top-level ask
+  renders as the bare TASK) and the runtime opens a
   `<module>` root frame per ask in `ask()` itself through the shared
   `runInvocation` lifecycle helper (`intents/invocation/lifecycle.ts`, also
   what `InvocationIntent.infer` runs), with the asked intent's own
   `.withTimeout` as that root's clock — whether module asks share one frame
   is a runtime decision keyed by path, never the emitted text's. `ask fn()`
   at the top chains `fn` under `<module>`; `await fn()` stays a detached
-  root. The file accessor carries the contract — `__nola.context.file(path,
-  17)` — because a module-body ask runs BEFORE the EOF `useRuntime`
+  root. The accessor carries the contract — `__nola.context.file(path, 17)`
+  then, `__nola.context.module(path, 19, init?)` since emit 19 — because a
+  module-body ask runs BEFORE the EOF `useRuntime`
   statement. Stage 4 (same emit): `const .x` / `let .x` CONTEXTUAL BINDINGS
   in both bodies — the parser marks the id `nolaContextual` (`var .x` keeps
   NOLA1014, a pattern NOLA1011, `..x` NOLA1013); the lowerer keeps a
@@ -893,25 +1016,23 @@ plugin expects, adapt the *plugin*, never the test expectations.
   `renderScopeBlock` lists locals after the params, keeps them out of the
   signature, and heads a module scope `CONTEXT — module <file>`);
   `ModuleContext` describes itself only when it has something to say (an
-  instruction, a template, or a visible local). Stage 5 (same emit): the
-  BODY INSTRUCTION — a bare template literal as a scope body's FIRST
-  statement (`bodyInstruction` in lowerer.ts; a string there is a JS
-  directive and untouched). In an infer body it is the marker's second
-  spelling and takes the marker's copy-to-closer path (anchors included;
-  marker + body literal = NOLA2013 `DuplicateInstruction`). In the module
-  body it is lowered AFTER the walk (`lowerModuleInstruction`, once
-  `moduleAsks` is known; the statement is skipped during the walk so its
-  `${.x}` holes are not NOLA2009): prose leaves the file and lands as the
-  init's `instruction` string; a literal with holes stays IN PLACE as the
-  hoisted `function __nola_module_tpl(...)` — `(__nola_s: FunctionPromptScope)
-  { return __nola.tpl\`…\`; }` + `template: __nola_module_tpl` for a
-  `${.member}` template, `() { return \`…fmt…\`; }` + `instruction:
-  __nola_module_tpl()` (read at the first ask) for lexical holes; a Nola
-  construct in a hole is NOLA2010. A prose-only literal in a module that
-  never asks is left as is (byte-identical output). The runtime side is
-  `ModuleScopeInit { instruction?, template?, locals? }`; the module scope's
-  template renders through the same pass-2 machinery as a function marker
-  (`FunctionPromptScope`, `.default` = the module's built-in block); emit 16 is JSDoc constraints (spec 2026-09-15): a
+  instruction, a template, or a visible local). Stage 5 (same emit)
+  introduced the body instruction as the first statement; since emit 21
+  (spec 2026-09-29) it is one of the CONTEXT STATEMENTS: every bare template
+  literal statement in a scope body, lowered in place by
+  `lowerContextStatement` (lowerer.ts) — the `BodyRecord` block-scope stack
+  tracks items beside bindings (`scopes: Array<{ locals, items }>`), an ask
+  passes `visibleItems()` as `context`, a function snapshots `moduleItems`
+  (the module's top-level items met so far) as its `moduleContext`, and a
+  file with no ask, no infer function and no multi-part statement keeps its
+  lone text statements byte-identical (`scopeUsers`, a pre-scan — a
+  statement of two or more parts is never valid JavaScript alone, so one
+  anywhere makes every context statement in the file an item; the same
+  pre-scan collects the unbraced `if`/loop/label bodies that are NOLA2017).
+  The runtime side is `ModuleScopeInit { context?: readonly ContextItem[],
+  locals? }`, `FunctionScopeInit { fn, args?, locals?, moduleContext? }`,
+  `IntentOptions.visible: VisibleContext { locals?, context? }` (was
+  `locals`), `ContextItem = () => string`; emit 16 is JSDoc constraints (spec 2026-09-15): a
   carrier gains `.constrain({ … })`, one `constrained` node kind carrying the
   JSON Schema validation vocabulary (`packages/runtime/src/types/constraints.ts`
   — the keys ARE the keywords; strings minLength/maxLength/pattern/format,
@@ -943,9 +1064,9 @@ plugin expects, adapt the *plugin*, never the test expectations.
   line/col excluded; AskDefinition spec 2026-09-01; NEVER part of the ask
   fingerprint); emit 12 renamed the call-intent factory key to
   `__nola.intents.FunctionCallIntent` (was `FunctionCallingIntent`) with the
-  class; since emit 11 the func/extract/call inits accept an
-  optional `template` closure and `__nola.tpl` renders it (prompt templates,
-  spec 2026-08-17); since emit 10 the appendix imports `@nola-lang/runtime`,
+  class; emit 11 added the `template` closure and `__nola.tpl`
+  (prompt templates, spec 2026-08-17 — RETIRED in emit 20, instruction
+  interpolation 2026-09-28); since emit 10 the appendix imports `@nola-lang/runtime`,
   the real runtime package, not the retired `nola-lang/runtime` brand subpath) —
   it attaches the module to the `NolaRuntime` instance and
   fails at load on a build/runtime skew.
@@ -957,14 +1078,14 @@ plugin expects, adapt the *plugin*, never the test expectations.
   backtick text everywhere: extractors, call intents, the infer-function
   scope; `prompt` stays reserved for the composed provider-facing text). Named
   same-file types lower to hoist-safe `function __nola_type_<Name>()` accessors
-  in the EOF appendix (same TDZ rule as `__nola_file_ctx`; they carry an explicit
+  in the EOF appendix (same TDZ rule as `__nola_module_ctx`; they carry an explicit
   `import("@nola-lang/runtime").InferType<unknown>` return annotation because a
   self-recursive accessor has no inferable type — TS7023). Named references emit
   `__nola.types.ref("<Name>", __nola_type_<Name>)` uniformly; recursion is legal:
   `toJsonSchema()` inlines non-cyclic refs (canonically identical to the old
   inline JSON, so fingerprints for old shapes survived the carrier switch) and
   serializes cycles as root `$defs` + `$ref` (validator resolves them;
-  `FINGERPRINT_VERSION` is 5). Everything the emitted text references must be exported from
+  `FINGERPRINT_VERSION` is 6). Everything the emitted text references must be exported from
   `@nola-lang/runtime` — `__nola` and, since emit 5, the
   `InferType` type (since emit 6 also `UnsupportedType`, since emit 15 also
   `TypeValueOf`). Since emit 9 the
@@ -1251,7 +1372,7 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   fell back to the file ON DISK under the other, and the one shared script
   flipped between the two texts on every host call. The program then lagged
   the editor by one autosave: a `.` after `console` was answered with the whole
-  global scope (`__nola`, `__nola_file_ctx`, …), TS2304 and derivation errors
+  global scope (`__nola`, `__nola_module_ctx`, …), TS2304 and derivation errors
   flashed under `<T>` for the 1–2 s until autosave. The LSP e2e opens a file
   under `/EXAMPLES/…/SRC/` and expects console members; the derivation pass
   additionally refuses a program whose text is not the virtual code's
@@ -1285,8 +1406,12 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   `nola check` attribute wrapper positions honestly
   (map-line-anchors.test.ts). Loader layer: the debug map is the compiler
   map with every wrapper-line segment dropped (`layoutMap`, transform.ts;
-  wrapper lines = generated lines that begin inside replaced text, via
-  meta.spans) — in the transform-mode fallback `stripWrapperSegments` does
+  wrapper lines = generated lines that begin inside replaced text AND carry
+  no verbatim source text of their own, via meta.spans — a context statement
+  lowered in place at column 0 begins inside its opener insert but keeps its
+  segments, so a breakpoint on the file's first line binds through the map
+  and the pause inside the item displays the `.tsi`, not the generated
+  script; 2026-09-29) — in the transform-mode fallback `stripWrapperSegments` does
   the same on the stripper's map before the remapping merge, and still
   drops line-start CARRY segments (esbuild used to open each output line by
   re-emitting the previous token run, which attributed the closer line to
@@ -1297,12 +1422,21 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   inline map AND raw by URL + line on the compiled script, whose URL is the
   .tsi path itself. esbuild collapsed removed declarations (a 6-line
   interface shifted the module up), so the raw copy of a breakpoint on
-  `const .message` landed in the appendix inside `__nola_file_ctx`, which
+  `const .message` landed in the appendix inside `__nola_module_ctx`, which
   every ask calls: F10 over a top-level ask paused there in unmapped code and
   degraded into a continue (reproduced with raw CDP, both breakpoints set
   the way js-debug does). Hence Node's strip mode in the loader (layout
   preserved), and hence lowering must never insert a mid-file newline —
-  `typeValueDecl` sits on the type declaration's line; the infer wrapper's
+  `typeValueDecl` sits on the type declaration's line — NOR REMOVE ONE:
+  text that leaves the file (since emit 21 only the `infer ` keyword —
+  context statements lower in place and leave nothing) goes through
+  `removeKeepingLines` — and a reserved
+  marker in tolerant mode through the same terminator-keeping overwrite
+  under `broken` — which
+  drops the bytes and keeps every line terminator (2026-09-22: a
+  three-line module instruction removed whole put the ask two lines up,
+  and the raw breakpoint copy on the ask line bound to the `console.log`
+  after it — "the breakpoint is skipped"); the infer wrapper's
   opener/closer still add one line each (raw line N inside a body binds one
   statement early — pre-existing, benign under smart-step, the remaining
   candidate if stepping inside bodies ever misbehaves). transform.test.ts
@@ -1366,36 +1500,41 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   a self-contained VSIX (local dist/server.cjs, workspace-or-builtin tsdk,
   tsserver plugin staged under node_modules — vsce dependency mode is the only
   route that packs node_modules files).
-- **Prompt templates (spec 2026-08-17-prompt-templates-design.md).** Inside
-  ANY instruction literal (marker, extractor prompt, call hint) a hole that
-  starts with a single dot — `${.member}` — is a `NolaScopeAccess` (parser:
-  `nolaTemplateStack` in `parseTemplate`; every enclosing literal gets
-  `nolaHasScopeAccess`); other holes stay lexical. A flagged literal is a
-  TEMPLATE: the compiler emits `instruction: "<raw>", template: (__nola_s)
-  => __nola.tpl\`…\`` — extractor in place (`__nola_s` inserted before each
-  scope dot), marker/call hint copied into the wrapper closer / args head
-  with ANCHORS (`templateCopy`, `SpanRecorder.appendLeft` anchors) so the
-  editor completes after `${.`; a lexical-only marker/hint becomes a
-  `__nola.fmt` template literal. Runtime: the
-  `ModelBuilder`'s pass 2 (see Prompt composition above) renders each
-  template into an override on the already-built model — `scope.text` for a
-  function template, `model.input.text` for an extractor — building
-  `FunctionPromptScope` / `ExtractPromptScope` over the finished node and
-  calling `renderTemplate` (`ask/prompt-render.ts`). For a function template,
-  READING `.next` renders the remainder (callee scopes + TASK) into the
-  template's own output and sets `scope.coversRemainder`, which then stops
-  `renderClassicText` from walking further INWARD — it will not append the
-  callee scopes/TASK again (`@nola-lang/core/render-classic.ts`); leaving
-  `.next` unread leaves `coversRemainder` unset, so the renderer continues
-  rendering the remainder after the scope's own text, same as today. For an
-  extractor template, an unread `.format` is appended after the template's
-  own text instead (safe by default), so the response-discipline lines are
-  never dropped by omission. `.default` is the built-in block;
-  empty/throwing template = NOLA3014. `instruction` stays a string everywhere
-  (history, describe, errors). Codes: NOLA1015 (tolerant `${.` placeholder —
-  lowers to `__nola_s.` so TS still completes), NOLA2009 (scope access
-  outside a Nola literal), NOLA2010 (Nola construct in a copied hole). Emit
-  11.
+- **Instruction interpolation (spec 2026-09-28-instruction-interpolation-design.md).**
+  Two spellings put a value in front of the model: `.name` (a contextual
+  parameter or binding) is DATA — an `<input name>` block the system turn
+  marks as data; `${expr}` inside ANY instruction literal (body or module
+  instruction, extractor prompt, call hint) is the developer's words,
+  formatted by `__nola.fmt` (a string verbatim, anything else JSON,
+  `undefined` spelled out) and spliced where it stands. Read times (since
+  emit 21): every context statement at EACH ask that sees it — module and
+  body alike (`readItems` over the visible thunks; a value must be
+  initialized by then) — an extractor's / hint's at the ask expression. The
+  `${.member}` prompt template is RETIRED with NO
+  migration code (owner's call): a `.` at expression start inside a hole is
+  the ordinary NOLA1001, nothing recovers it; gone with it: the
+  `NolaScopeAccess` node, `nolaHasScopeAccess`, `__nola.tpl`, every
+  `template` init field, the model builder's pass 2, `FunctionPromptScope`
+  / `ExtractPromptScope`, the wire's `text` / `coversRemainder` overrides,
+  `renderUserText`'s `from` parameter, NOLA1015 / 2009 / 2016 / 3014. A Nola
+  construct (`ask`, `..`) in a context statement's value or hole, or in a
+  call hint's hole, is NOLA2010 (`holeSite` `"context"` / `"copy"` in the
+  lowerer; written bare right after a statement's text it is NOLA1020 at
+  parse time; an extractor prompt's holes are ordinary expressions). Two
+  value rules follow from an item being a hoisted function read outside the
+  async body: `this` is no value (`nolaStartsContextValue` leaves it out, so
+  a bare `this` after text is NOLA1020; parenthesized or in a hole it is the
+  checker's TS2683), and a HINTED call intent (`` fn`hint`(…) ``, the empty
+  marker too) is a value only parenthesized or in a hole — bare, the stop
+  rule ends the value at the marker's backtick: an extractor argument is then
+  the NOLA2010 (its message says so), plain arguments raise no Nola error.
+  Editor: a hole's expression is verbatim-mapped (an extractor's literal
+  stays in place with `__nola.fmt(` inserts, a context statement's holes
+  stay as written for the `__nola.ctx` tag to format), so completion/hover/TS
+  errors work inside `${…}`;
+  anchors survive only for call hints (`templateCopy`, fmt-only — the one
+  literal whose bytes cannot stay). No ledger re-keyed: the removed wire
+  fields were absent from every ask without a template.
 - **`__nola`-prefixed identifiers are reserved** in `.tsi`; `ask` is a reserved word
   there (but legal as a member/property name). `infer` is contextual — only a
   keyword directly before `function` at statement/export position.
@@ -1499,7 +1638,7 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   (`globalThis[Symbol.for("nola.runtime")]`) holds a `NolaRuntime` instance — claimed at
   runtime-module import (duplicate incompatible copies fail there, NOLA3002). It owns the
   resolved config, model resolution, hook dispatch (+ warn-once ledger), and the
-  `fileContext` memo; `nolaRuntime.reset()` discards the instance wholesale. Config **latches on the
+  `moduleContext` memo; `nolaRuntime.reset()` discards the instance wholesale. Config **latches on the
   first ask**: `nolaRuntime.configure()` may be called freely before it, throws `NolaConfigError`
   after it (a failed unconfigured ask does not latch). Routing precedence, highest first:
   `forceModel` → a middleware `ctx.model` reassignment → the ask-site pin

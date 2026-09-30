@@ -65,13 +65,13 @@ function contextualState(model: InferenceModel): Record<string, unknown> | undef
   return any ? state : undefined;
 }
 
-const askText = (model: InferenceModel): string => model.input.text ?? model.input.instruction;
+const askText = (model: InferenceModel): string => model.input.instruction;
 
-/** What the model says about the ask, outer→inner: system, each scope's text, then (optionally) the ask text. */
+/** What the model says about the ask, outer→inner: system, each scope's instruction, then (optionally) the ask text. */
 function contextText(model: InferenceModel, includeAskText: boolean): string {
   const parts = [
     model.system ?? "",
-    ...scopesOuterFirst(model.scope).map((s) => s.text ?? s.instruction),
+    ...scopesOuterFirst(model.scope).map((s) => s.instruction),
     includeAskText ? askText(model) : "",
   ];
   return parts.filter((p) => p.trim() !== "").reduce((acc, p) => joinBlocks(acc, p), "");

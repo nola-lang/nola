@@ -1,11 +1,11 @@
 ---
 title: Record and replay
-description: record(provider, path) writes a fingerprint-keyed JSONL ledger; replay(path) serves it strictly offline. What re-keys an entry, and the NOLA_RECORD pattern.
+description: Record model responses in a JSONL ledger and replay them offline for repeatable tests. Learn which changes require a new recording.
 sidebar:
   order: 70
 ---
 
-`record` and `replay` turn a live provider into a deterministic one: record once, replay offline forever. They are what make the starter's first run keyless.
+Use `record` to save provider responses, then `replay` to run the same requests offline. This gives tests repeatable answers and lets the built-in templates run without an API key.
 
 ```ts
 // nola.config.ts
@@ -28,31 +28,34 @@ nola run src/main.ts                 # offline: answers come from the ledger
 
 ## The ledger
 
-`record(inner, path)` wraps a real provider and appends every exchange to a JSONL file — one JSON object per line, keyed by the **fingerprint** of the exact request and carrying the provider's response text. It is human-readable, diff-friendly, and meant to be committed for deterministic tests. A ledger that cannot be read, or a line that is not valid JSON or lacks its fingerprint/response, fails at load with [`NOLA3007`](/docs/reference/error-codes/#nola3007).
+`record(inner, path)` wraps a provider and appends each exchange to a JSONL file. Each line contains a request fingerprint, the ask as data and the provider's response text. Review the file before committing it for tests.
+
+When `replay` loads a ledger, an unreadable file, invalid JSON or an entry missing its fingerprint or response produces [`NOLA3007`](/docs/reference/error-codes/#nola3007).
 
 ## Replay is strict
 
-`replay(path)` serves answers back from the ledger. A request with no matching entry fails with [`NOLA3008`](/docs/reference/error-codes/#nola3008) — never a silent network call. That is the point: a test cannot accidentally go live, and a stale ledger announces itself.
+`replay(path)` returns recorded answers. If a request has no matching entry, it raises [`NOLA3008`](/docs/reference/error-codes/#nola3008). It never falls back to a network request.
 
-Entries recorded under the same key — an ask's first attempt and its correction turn share one fingerprint, since the key ignores the correction itself — replay in the order they were recorded, so a session that needed a correction reproduces the correction turn instead of jumping straight to the corrected answer.
+An ask's first attempt and its correction turn share a fingerprint because the key excludes the correction itself. Responses with the same key replay in their recorded order. A run that needed a correction will therefore reproduce that correction before returning the accepted answer.
 
 ## What re-keys an entry
 
-The fingerprint is taken over the rendered prompt as first composed — the same rendering whether a chat provider, the platform-served model, or `replay` computes it, so one ledger serves any model. Any of these changes produce a new key and a replay miss:
+The fingerprint uses the ask as data, as first composed — never a provider's rendering — so a ledger can be used across models and survives an upgrade that changes Nola's default wording. The following changes produce a new key:
 
-- the instruction text and the contextual values the ask saw;
-- a prompt template's rendered text;
-- the extractor's type / schema;
+- the instruction text or contextual values;
+- the extractor's type or schema;
 - provider params (`temperature`, `maxOutputTokens`, `providerOptions`);
-- your `system.message`;
-- a Nola upgrade that rephrases the built-in prompt wording — re-record after upgrading if replay starts missing.
+- an inference profile sent to the platform;
+- `system.message`.
 
-The provider *name* is deliberately **not** part of the key: a ledger recorded behind `openai` replays behind `anthropic` as long as the request is the same.
+The provider name is not part of the fingerprint. Switching from `openai` to `anthropic` does not require a new recording if the request stays the same.
 
-Edit a `.tsi` file, add an ask, or change a type, and you re-record: run once with `NOLA_RECORD=1`, commit the new ledger.
+After a change causes a replay miss, run with `NOLA_RECORD=1` to record the new requests, review the ledger and commit it.
 
 ## The scaffold's keyless first run
 
-`npm create nola` ships `nola.replay.jsonl` alongside the template's `.tsi` file (`src/main.tsi` for `feature-extraction` and `function-calling`, `src/person.tsi` for `typescript-interop`) and a config whose `default` is `replay("./nola.replay.jsonl")` — so `npm start` works with no API key. The moment you change the example, the ledger no longer matches and replay fails loudly; switch the config to a live provider (the comment in the file shows how) or record a fresh ledger.
+The `feature-extraction`, `function-calling` and `typescript-interop` templates include a `nola.replay.jsonl` ledger. If you skip provider setup, their config uses `replay("./nola.replay.jsonl")`, so `npm start` needs no API key.
+
+The ledger matches the supplied example: `src/main.tsi` for `feature-extraction` and `function-calling`, or `src/person.tsi` for `typescript-interop`. Changes to its requests can cause replay misses. Follow the config's comment to switch to a live provider, or record a new ledger.
 
 Next: [The nola CLI](/docs/tooling/cli/)

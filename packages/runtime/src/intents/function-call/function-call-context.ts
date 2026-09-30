@@ -1,5 +1,4 @@
 import type { InferenceComposer } from "../../ask/composer.js";
-import type { ExtractPromptScope, PromptTemplate } from "../../ask/prompt-render.js";
 import { type AskIdentity, InferContext } from "../../infer-context/infer-context.js";
 import type { NolaRuntime } from "../../runtime/index.js";
 import type { TypeCarrier } from "../../types/infer-type.js";
@@ -8,9 +7,8 @@ export type FunctionCallIntentParams = {
   fn: unknown;
   name: string;
   args: unknown[];
+  /** the authored hint, holes already formatted */
   instruction?: string;
-  /** lowered `${.member}` hint — replaces the TASK block of the slot-filling ask */
-  template?: PromptTemplate<ExtractPromptScope>;
   loc?: string;
   /** compiler-stamped source identity (AskDefinition spec §2); line/col excluded */
   def?: string;
@@ -48,16 +46,11 @@ export class FunctionCallContext extends InferContext<FunctionCallIntentParams> 
   }
 
   override compose(composer: InferenceComposer): void {
-    const { slotType, name, instruction, template } = this.data;
+    const { slotType, name, instruction } = this.data;
     if (!slotType) return;
     composer
       .intent("call")
-      .input({
-        instruction: this.request,
-        callee: name,
-        ...(instruction ? { hint: instruction } : {}),
-        ...(template ? { template } : {}),
-      })
+      .input({ instruction: this.request, callee: name, ...(instruction ? { hint: instruction } : {}) })
       .output(slotType);
   }
 

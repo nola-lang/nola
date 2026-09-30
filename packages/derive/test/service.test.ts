@@ -196,7 +196,7 @@ describe("DerivationService", () => {
     }
   });
 
-  it("the ..choice / ..scale sugar derives the wrapped type at its padded lowered range", () => {
+  it("inline Choice / Scale type arguments derive to the decision carriers", () => {
     const repo = fileURLToPath(new URL("../../..", import.meta.url)).replace(/\\/g, "/").replace(/\/$/, "");
     const tsconfig = JSON.stringify({
       compilerOptions: {
@@ -212,8 +212,8 @@ describe("DerivationService", () => {
       include: ["src"],
     });
     const src = [
-      'const d = ..choice`Which team?`<{ billing: "Payments"; sales: null }>;',
-      'const s = ..scale`How bad?`<["low", "high"]>;',
+      'const d = ..`Which team?`<Choice<{ billing: "Payments"; sales: null }>>;',
+      'const s = ..`How bad?`<Scale<["low", "high"]>>;',
       "",
     ].join("\n");
     const root = project({ "tsconfig.json": tsconfig, "src/main.tsi": src });

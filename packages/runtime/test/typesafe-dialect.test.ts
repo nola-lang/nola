@@ -36,10 +36,12 @@ const frame = () =>
   openTestFrame({
     data: {
       fn: "triage",
-      instruction: "You triage tickets.",
       args: [{ name: "ticket", contextual: true, value: "charged twice" }],
     },
   });
+
+/** What the ask site sees: the function body's context statement. */
+const visible = { context: [() => "You triage tickets."] };
 
 describe("typesafe() through the runtime", () => {
   it("receives the model, sends the frame's contextual values as state, and the answers validate", async () => {
@@ -49,7 +51,13 @@ describe("typesafe() through the runtime", () => {
       model: { default: typesafe({ apiKey: "k", fetch: fn }) },
       telemetry: [{ onAskEnd: (e) => receipts.push(e) }],
     });
-    const result = await askViaInference({ frame: frame(), prompt: "triage the ticket", schema: triage, loc: "1:1" });
+    const result = await askViaInference({
+      frame: frame(),
+      prompt: "triage the ticket",
+      schema: triage,
+      loc: "1:1",
+      visible,
+    });
     expect(result).toEqual({
       department: { choice: "billing", probabilities: { billing: 0.9, sales: 0.1 }, confidence: 0.9 },
       mood: { score: 0.7, probabilities: [0.3, 0.7], levels: ["Calm", "Angry"], confidence: 0.4 },
@@ -72,10 +80,10 @@ describe("typesafe() through the runtime", () => {
       model: { default: typesafe({ apiKey: "k", fetch: fakeFetch({ refund: { type: "noul", noul: 0.9 } }).fn }) },
       telemetry: [record],
     });
-    await askViaInference({ frame: frame(), prompt: "p", schema: plain, loc: "1:1" });
+    await askViaInference({ frame: frame(), prompt: "p", schema: plain, loc: "1:1", visible });
     nolaRuntime.reset();
     nolaRuntime.configure({ model: { default: mockProvider([{ refund: true }]) }, telemetry: [record] });
-    await askViaInference({ frame: frame(), prompt: "p", schema: plain, loc: "1:1" });
+    await askViaInference({ frame: frame(), prompt: "p", schema: plain, loc: "1:1", visible });
     expect(seen).toHaveLength(2);
     expect(seen[0]).toBe(seen[1]);
     expect(seen[0]).not.toBe("");
