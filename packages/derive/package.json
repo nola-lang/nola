@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/derive",
-  "version": "0.1.5",
+  "version": "0.1.15",
   "description": "Checker-backed schema derivation for Nola: the TypeScript walk and the per-process language service",
   "keywords": [
     "nola"
@@ -32,9 +32,9 @@
     "!dist/**/*.map"
   ],
   "dependencies": {
-    "@nola-lang/ast": "0.1.5",
-    "@nola-lang/compiler": "0.1.5",
-    "@nola-lang/core": "0.1.5",
+    "@nola-lang/ast": "0.1.15",
+    "@nola-lang/compiler": "0.1.15",
+    "@nola-lang/core": "0.1.15",
     "typescript": ">=5.6.0 <7"
   },
   "engines": {

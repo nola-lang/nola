@@ -1,6 +1,6 @@
 {
   "name": "@nola-lang/browser",
-  "version": "0.1.5",
+  "version": "0.1.15",
   "description": "Browser hosts for Nola: a layout-preserving type strip with the loader's debug map, blob modules and the runtime import rewrite — TypeScript injected, never imported",
   "keywords": [
     "nola"
@@ -34,9 +34,9 @@
   "dependencies": {
     "@ampproject/remapping": "^2.3.0",
     "@jridgewell/sourcemap-codec": "^1.5.0",
-    "@nola-lang/ast": "0.1.5",
-    "@nola-lang/compiler": "0.1.5",
-    "@nola-lang/core": "0.1.5"
+    "@nola-lang/ast": "0.1.15",
+    "@nola-lang/compiler": "0.1.15",
+    "@nola-lang/core": "0.1.15"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
