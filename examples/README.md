@@ -5,20 +5,20 @@ Each example is a standalone npm workspace. Most keep the library shape —
 run via `npx nola run src/main.ts`) — with a `nola.config.ts` on the
 deterministic mock provider, so the example runs without an API key (switch
 to a real provider by editing the config — the comment inside shows how).
-Four are the one-file script shape instead (`ask` at the top level, a
+Five are the one-file script shape instead (`ask` at the top level, a
 `const .x` context binding, a context statement — `src/main.tsi` is the
 program, run via `npx nola run src/main.tsi`): `feature-extraction`,
-`function-calling`, `agent-loop`, and `triage-ticket`, whose config IS the
-vendor it demonstrates.
+`function-calling`, `tool-use`, `agent-loop`, and `triage-ticket`, whose
+config IS the vendor it demonstrates.
 
 The examples are also the scaffolder's templates. `npm create nola` (and
 `nola init`) copies one of them — the first menu is `feature-extraction` (the
-default), `function-calling`, `agent-loop`, `typescript-interop`,
+default), `function-calling`, `tool-use`, `agent-loop`, `typescript-interop`,
 `triage-ticket`, then the CLI's own `empty`; every other example sits behind
 "More examples…" — from this directory in a checkout and from GitHub at the
 matching release tag otherwise, adding the project name, the recommended
 `.gitignore`, the chosen provider's config and a next-steps comment on top.
-`feature-extraction`, `function-calling` and `typescript-interop` replay a
+`feature-extraction`, `function-calling`, `tool-use` and `typescript-interop` replay a
 committed `nola.replay.jsonl` ledger instead of the mock, which is what makes
 a scaffold's first run keyless; the ledger is keyed by the exact request, so
 a change to their prompts or types (or to Nola's prompt composition) means
@@ -38,6 +38,7 @@ LLM-programming task (see its README for what it demonstrates).
 |---|---|
 | [feature-extraction](feature-extraction/) | Typed extraction as one `.tsi` file that is the program: a context statement, `const .message` / `const .role` bindings, two top-level asks, the second reading the first's answer — the default scaffold, on a replay ledger |
 | [function-calling](function-calling/) | A top-level call intent as one `.tsi` file: the model fills `createTicket`'s arguments and the plain-TypeScript function next door runs with them — on a replay ledger |
+| [tool-use](tool-use/) | A tool-use ask as one `.tsi` file: `searchFiles` and `readFile` from the plain-TypeScript file next door offered in brackets after the task, called by the model as it needs before it answers — replayed turn by turn from a ledger |
 | [typescript-interop](typescript-interop/) | An `infer function` in `person.tsi`, imported and awaited from plain `main.ts` — the library/app shape, on a replay ledger |
 | [extract-person](extract-person/) | Typed extraction of an object — the hello world |
 | [extract-resume](extract-resume/) | Nested arrays of objects, JSDoc schema descriptions |
@@ -53,8 +54,6 @@ LLM-programming task (see its README for what it demonstrates).
 | [file-ticket](file-ticket/) | Call intents: the model fills a function's arguments, sigil-less and hint forms |
 | [agent-loop](agent-loop/) | An agent loop as one `.tsi` file: a top-level `while` whose `ask` is typed `Problem \| null`, a context statement inside the loop body (block-scoped like a `const`, seen once per ask, never piled up across passes), and one before the loop — `` `Problems recorded so far:` problems.map((p) => p.brief) `` continued by a second text line — re-read on every pass |
 | [triage-ticket](triage-ticket/) | Ticket triage on typesafe.ai's Jev through `typesafe()`: literal unions and booleans as typed questions, as one `.tsi` file with a top-level `ask` — the one example whose committed config names a live vendor (`TYPESAFE_API_KEY`), so `npm create nola` skips the provider question for it and lists it on the first template menu |
-
-`_playground/` is an internal debugging sandbox, not a maintained example.
 
 The end-to-end test for the examples is `test/e2e/examples.test.ts`; that the
 `.tsi` types flow into plain TS under `nola check` is asserted separately by

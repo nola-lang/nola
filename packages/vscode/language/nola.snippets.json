@@ -34,6 +34,11 @@
     "description": "Call a function with LM-filled arguments",
     "body": ["${1:callee}`${2}`(", "\t`${3:instruction}`: ${4:Type},", ")"]
   },
+  "Tool use": {
+    "prefix": "tooli",
+    "description": "Offer functions as tools the model may call before it answers",
+    "body": ["ask `${1:instruction}` [${2:tool}]: ${3:Type}"]
+  },
   "Extractor": {
     "prefix": "extract",
     "description": "A bare extractor intent — resolve it later with ask",

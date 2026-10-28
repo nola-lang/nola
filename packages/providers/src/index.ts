@@ -17,7 +17,7 @@ export {
 } from "./combinators.js";
 export { isDecisionRequest } from "./decision-request.js";
 export { type GoogleOptions, google } from "./google.js";
-export { type MockOptions, type MockRequest, mockProvider } from "./mock.js";
+export { type MockOptions, type MockRequest, type MockToolCalls, mockProvider, toolCalls } from "./mock.js";
 export { type OpenAiOptions, openai } from "./openai.js";
 export { record, replay } from "./record-replay.js";
 export { type TypesafeOptions, typesafe } from "./typesafe.js";

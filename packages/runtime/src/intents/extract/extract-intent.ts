@@ -5,6 +5,7 @@ import { type Frame, type NolaRuntime, nolaRuntime } from "../../runtime/index.j
 import type { TypeCarrier } from "../../types/infer-type.js";
 import { ExecutableIntent } from "../executable-intent.js";
 import type { Intent, IntentOptions } from "../intent.js";
+import { inlineText } from "../parts.js";
 import { ExtractContext, type ExtractIntentParams } from "./extract-context.js";
 
 export { wireSchema } from "../../ask/wire-schema.js";
@@ -24,9 +25,9 @@ export class ExtractIntent<T = unknown> extends ExecutableIntent<T, ExtractConte
     return this.inferContext.outputType();
   }
 
-  /** The derived wire contract — call intents combine slot specs into one ask. */
+  /** The derived wire contract — call intents combine slot specs into one ask; a sequence's values degrade to words (spec 2026-10-12 §3.6). */
   get spec(): { instruction: string; schema: JsonSchema } {
-    return { instruction: this.inferContext.data.instruction, schema: wireSchema(this.inferContext.data.type) };
+    return { instruction: inlineText(this.inferContext.parts), schema: wireSchema(this.inferContext.data.type) };
   }
 
   protected async execute(frame: Frame): Promise<T> {
@@ -43,8 +44,8 @@ export class ExtractIntent<T = unknown> extends ExecutableIntent<T, ExtractConte
     const value = raw; // already revived: the carrier validator checks and revives in one pass
 
     frame.history.push({
-      prompt: context.data.instruction,
-      value
+      prompt: context.instructionText,
+      value,
     });
 
     return value as T;

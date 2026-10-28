@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@nola-lang/ast";
+import { Codes, type Diagnostic } from "@nola-lang/ast";
 import { compileNola, type DerivationRequest } from "@nola-lang/compiler";
 import type { CodeMapping, IScriptSnapshot, VirtualCode } from "@volar/language-core";
 import type { EditorCompilerConfig } from "./compiler-config.js";
@@ -23,6 +23,19 @@ function snapshotOf(text: string): IScriptSnapshot {
  */
 function withoutSemanticTokens(mappings: CodeMapping[]): CodeMapping[] {
   return mappings.map((m) => (m.data.semantic ? { ...m, data: { ...m.data, semantic: false } } : m));
+}
+
+/** A compiler throw as a diagnostic at the file's start: a Nola bug the user can report, not a crash they have to restart from. */
+function internalFailure(file: string, err: unknown): Diagnostic {
+  const reason = err instanceof Error ? err.message : String(err);
+  return {
+    code: Codes.CompilerInternalError,
+    message: `the Nola compiler failed on this file: ${reason}. This is a Nola bug — please report it with the file's contents; the editor keeps serving the last successful compile.`,
+    file,
+    start: 0,
+    end: 0,
+    loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+  };
 }
 
 /**
@@ -102,14 +115,26 @@ export class NolaVirtualCode implements VirtualCode {
 
   private compute(snapshot: IScriptSnapshot): VirtualCode {
     const source = snapshot.getText(0, snapshot.getLength());
-    // Config is re-read per compile (mtime-cached), so a nola.config.ts edit
-    // takes effect on the next recompile of each file.
-    const { underivableContextType } = this.compilerConfig(this.fileName);
-    const result = compileNola(source, this.fileName, {
-      sourceRoot: this.sourceRoot,
-      tolerant: true,
-      underivableContextType,
-    });
+    let result: ReturnType<typeof compileNola>;
+    try {
+      // Config is re-read per compile (mtime-cached), so a nola.config.ts edit
+      // takes effect on the next recompile of each file.
+      const { underivableContextType } = this.compilerConfig(this.fileName);
+      result = compileNola(source, this.fileName, {
+        sourceRoot: this.sourceRoot,
+        tolerant: true,
+        underivableContextType,
+      });
+    } catch (err) {
+      // A compiler failure is a Nola bug, never the user's. Thrown out of here
+      // it ended the language server PROCESS, which VS Code restarted in a
+      // loop (2026-10-13: an empty call argument crashed the lowerer). Report
+      // it on the root document and serve last-good, as for an unparsable
+      // snapshot; a build still fails loudly through its own path.
+      this.diagnostics = [internalFailure(this.fileName, err)];
+      this.derivations = [];
+      return this.lastGoodOrSource(source);
+    }
     this.diagnostics = result.diagnostics;
     this.derivations = result.meta.mode === "lowered" ? result.meta.derivations : [];
     if (result.meta.mode === "lowered") {
@@ -130,6 +155,11 @@ export class NolaVirtualCode implements VirtualCode {
     }
     // Bailed (irrecoverable parse): serve last-good so the editor never goes
     // dark; diagnostics above already describe the current breakage.
+    return this.lastGoodOrSource(source);
+  }
+
+  /** Last-good embedded code marked stale — or, before any, the raw source under a diagnostics-only mapping. */
+  private lastGoodOrSource(source: string): VirtualCode {
     this.stale = true;
     if (this.lastGood) {
       this.lastGood.stale ??= {

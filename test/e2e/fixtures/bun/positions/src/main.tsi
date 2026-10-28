@@ -1,0 +1,8 @@
+// The ask is lowered in place on its own line, so the throw below stays on line 5.
+const capital = ask `the capital of France`: string;
+
+export function boom(): never {
+  throw new Error(`boom after ${capital}`);
+}
+
+boom();

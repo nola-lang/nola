@@ -16,4 +16,14 @@ describe("assertNodeModuleHooks", () => {
   it("refuses Deno the same way", () => {
     expect(() => assertNodeModuleHooks({ node: "22.0.0", deno: "2.0.0" })).toThrow(Codes.LoaderHooksUnsupported);
   });
+
+  it("under Bun the message names the Bun route first — the preload and `bun src/main.tsi`", () => {
+    expect(() => assertNodeModuleHooks({ node: "24.3.0", bun: "1.3.14" })).toThrow(
+      /@nola-lang\/bun\/preload.*bun src\/main\.tsi.*bun run start.*node --import nola-lang\/register/s,
+    );
+  });
+
+  it("under Deno the message says Deno cannot load .tsi at all", () => {
+    expect(() => assertNodeModuleHooks({ node: "24.3.0", deno: "2.5.0" })).toThrow(/NOLA3015.*Deno.*node --import nola-lang\/register/s);
+  });
 });

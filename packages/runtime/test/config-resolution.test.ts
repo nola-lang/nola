@@ -131,6 +131,12 @@ describe("resolveNolaConfig", () => {
     expect(resolveNolaConfig({ model: provider(), telemetry: [] }).telemetry).toEqual([]);
   });
 
+  it("an observer with only the tool-call methods is an observer", () => {
+    const tools = { name: "tools", onToolCallStart() {}, onToolCallEnd() {} };
+    expect(resolveNolaConfig({ model: provider(), telemetry: [tools] }).telemetry).toEqual([tools]);
+    expect(resolveNolaConfig({ model: provider(), telemetry: { name: "start", onToolCallStart() {} } }).telemetry).toHaveLength(1);
+  });
+
   it("rejects a non-object telemetry and bad entries; the console global is not an observer", () => {
     expect(() => resolveNolaConfig({ model: provider(), telemetry: 7 as never })).toThrow(
       /`telemetry` must be \{ level \} \(the terminal\), a tracer URL, an observer, or an array of them/,
@@ -188,6 +194,15 @@ describe("project (reshape addendum 2026-09-01)", () => {
 
   it("defaults to the nearest package.json name (the repo root here)", () => {
     expect(resolveNolaConfig({ model: provider() }).project).toBe("nola-monorepo");
+  });
+
+  it("has no project default where Node's file system is unavailable (a browser): undefined, no throw", () => {
+    const spy = vi.spyOn(process, "getBuiltinModule").mockReturnValue(undefined as never);
+    try {
+      expect(resolveNolaConfig({ model: provider() }).project).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("rejects a non-string or empty project", () => {

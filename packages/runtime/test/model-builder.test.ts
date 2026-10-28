@@ -2,6 +2,7 @@ import { renderPrompt } from "@nola-lang/core";
 import { buildInferenceModel, ExtractContext, Frame, nolaRuntime, inferTypes as t } from "@nola-lang/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { FunctionCallContext } from "../src/intents/function-call/function-call-context.js";
+import { ToolUseContext } from "../src/intents/tool-use/tool-use-context.js";
 import { openTestFrame } from "./helpers/frame.js";
 
 afterEach(() => nolaRuntime.reset());
@@ -81,6 +82,42 @@ describe("ModelBuilder", () => {
       });
     const model = build(Frame.open(fn));
     expect(model.scope?.args[0]).toEqual({ name: "cb", contextual: true });
+  });
+
+  // The ask sequence (spec 2026-10-12 §3.8) adds `input.parts` PRESENT-ONLY: a
+  // one-text ask of every kind composes the model it composed before, byte for
+  // byte — FINGERPRINT_VERSION stays 6 and every recorded ledger holds.
+  it("a one-text ask of each kind composes the same model as before the sequence (emit 24 identity)", () => {
+    const frame = openTestFrame();
+    expect(build(frame, extract("the person"))).toEqual({
+      intent: "extract",
+      input: { instruction: "the person" },
+      scope: { fn: "go", file: "x.tsi", instruction: "", args: [] },
+      output: { syntax: "json", schema: { type: "string" } },
+    });
+    const call = new FunctionCallContext({ fn: () => 1, name: "f", args: [], instruction: "be quick", loc: "1:1" }, runtime()).forSlots(
+      t.object({ arg0: t.string().describe("x") }),
+    );
+    expect(build(frame, call)).toEqual({
+      intent: "call",
+      input: { instruction: 'Generate the arguments for calling the function "f". be quick', callee: "f", hint: "be quick" },
+      scope: { fn: "go", file: "x.tsi", instruction: "", args: [] },
+      output: {
+        syntax: "json",
+        schema: { type: "object", properties: { arg0: { type: "string", description: "x" } }, required: ["arg0"], additionalProperties: false },
+      },
+    });
+    const tools = new ToolUseContext(
+      { instruction: "find", tools: [{ name: "search", call: () => [], args: t.object({ dir: t.string() }) }], type: t.array(t.string()), loc: "1:1" },
+      runtime(),
+    );
+    expect(build(frame, tools)).toEqual({
+      intent: "tool-use",
+      tools: [{ name: "search", parameters: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"], additionalProperties: false } }],
+      input: { instruction: "find" },
+      scope: { fn: "go", file: "x.tsi", instruction: "", args: [] },
+      output: { syntax: "json", schema: { type: "array", items: { type: "string" } } },
+    });
   });
 
   it("the built model is frozen — a hook or provider cannot mutate the canonical ask", () => {

@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import type { ProviderParams } from "./index.js";
 import type { InferenceModel } from "./inference-model.js";
+import { sha256Hex } from "./sha256.js";
 
 /**
  * Version baked into every ask fingerprint. Bump when the canonical
@@ -27,9 +27,9 @@ export function canonicalize(value: unknown): string {
   return JSON.stringify(sortValue(value));
 }
 
-export function sha256Hex(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
-}
+// sha256.ts: node:crypto where Node offers it, plain JS elsewhere — one digest on every host, so
+// a ledger or a def hash never depends on which one ran.
+export { sha256Hex };
 
 /** The intent as first composed: the correction turn is not identity. */
 function firstComposed(intent: InferenceModel): Omit<InferenceModel, "correction"> {

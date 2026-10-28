@@ -7,8 +7,8 @@ import { inferTypes, type TypeCarrier } from "../../types/infer-type.js";
 import { ExecutableIntent } from "../executable-intent.js";
 import { ExtractIntent } from "../extract/extract-intent.js";
 import { Intent, type IntentOptions } from "../intent.js";
+import { referenceText } from "../parts.js";
 import { FunctionCallContext, type FunctionCallIntentParams } from "./function-call-context.js";
-
 
 interface Slot {
   path: string;
@@ -43,20 +43,22 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
 
   /**
    * `foo(user r): only if needed` — the callee, each argument, the hint after
-   * a colon when there is one. Every argument is formatted by `fmt`, the one
+   * a colon when there is one; for the sequence form, the reference text
+   * (spec 2026-10-12 §3.6). Every argument is formatted by `fmt`, the one
    * value formatter: a slot as its prompt (nested in an object or array too), a
    * function as its name, a string verbatim — so no intent internals, and no
    * install path, ever reach the text (it is scope instruction and fingerprint
    * input).
    */
   override describe(): string {
-    const { name, instruction, args } = this.init;
-    return `${name}(${args.map((a) => fmt(a)).join(", ")})${instruction ? `: ${instruction}` : ""}`;
+    const { name, hint, args, parts } = this.inferContext.call;
+    if (parts) return referenceText(parts);
+    return `${name}(${args.map((a) => fmt(a)).join(", ")})${hint ? `: ${hint}` : ""}`;
   }
 
   private fail(message: string, infer: InferContext, raw = ""): NolaResolutionError {
     return new NolaResolutionError(message, {
-      prompt: this.init.instruction ?? "",
+      prompt: this.inferContext.call.hint ?? "",
       raw,
       site: new Site(infer.sourceFile(), this.init.loc ?? "?"),
     });
@@ -92,15 +94,15 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
   }
 
   protected async execute(frame: Frame): Promise<T> {
-    const fn = this.init.fn;
+    const { fn, name, args } = this.inferContext.call;
     if (typeof fn !== "function") {
-      throw this.fail(`call intent target "${this.init.name}" is not a function`, frame.infer);
+      throw this.fail(`call intent target "${name}" is not a function`, frame.infer);
     }
     const slots: Slot[] = [];
-    this.init.args.forEach((arg, i) => {
+    args.forEach((arg, i) => {
       this.collectSlots(arg, `arg${i}`, slots, frame.infer);
     });
-    let finalArgs = this.init.args;
+    let finalArgs: readonly unknown[] = args;
     if (slots.length > 0) {
       // One object carrier, one property per slot, each described by its
       // instruction. Cyclic slot types serialize as $defs through the carrier
@@ -118,14 +120,14 @@ export class FunctionCallIntent<T = unknown> extends ExecutableIntent<T, Functio
         options: this.options,
         context: this.inferContext.forSlots(inferTypes.object(props)),
       }).infer()) as Record<string, unknown>;
-      finalArgs = this.init.args.map((arg, i) => this.substitute(arg, `arg${i}`, values));
+      finalArgs = args.map((arg, i) => this.substitute(arg, `arg${i}`, values));
     }
     const invoke = () => (fn as (...a: unknown[]) => unknown)(...finalArgs);
     let result: unknown = this.debugTask ? this.debugTask.run(invoke) : invoke();
     if (result !== null && typeof (result as PromiseLike<unknown>)?.then === "function") {
       result = await result;
     }
-    frame.history.push({ prompt: `called ${this.init.name}`, value: result });
+    frame.history.push({ prompt: `called ${name}`, value: result });
     return result as T;
   }
 

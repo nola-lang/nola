@@ -1,4 +1,4 @@
-import type { AskKind, InferenceModel, InferenceScope, JsonSchema } from "@nola-lang/core";
+import type { AskKind, InferenceModel, InferenceScope, JsonSchema, ToolDescription } from "@nola-lang/core";
 import type { InferContext, VisibleContext } from "../infer-context/infer-context.js";
 import type { Frame } from "../runtime/frame.js";
 import { asCarrier, type InferType } from "../types/infer-type.js";
@@ -11,6 +11,8 @@ interface BuilderState {
   intent?: AskKind;
   input?: IntentInput;
   outputType?: JsonSchema | InferType<unknown>;
+  /** tool-use only */
+  tools?: readonly ToolDescription[];
   /** index = frame depth (0 = the asking frame); undefined = a frame whose node described nothing */
   levels: Array<ScopeDescription | undefined>;
 }
@@ -23,6 +25,10 @@ class IntentSink implements IntentComposer {
   }
   output(type?: JsonSchema | InferType<unknown>): this {
     this.state.outputType = type;
+    return this;
+  }
+  tools(list: readonly ToolDescription[]): this {
+    this.state.tools = list;
     return this;
   }
 }
@@ -99,10 +105,14 @@ export class ModelBuilder extends LevelComposer {
     const innermost = scopes[scopes.length - 1];
     const model: InferenceModel = {
       intent: state.intent,
+      // present-only (tool-use spec §3.7): every other ask's model is byte-identical to before, so fingerprints hold
+      ...(state.tools !== undefined ? { tools: state.tools.map((t) => ({ ...t })) } : {}),
       input: {
         instruction: state.input.instruction,
         ...(state.input.callee !== undefined ? { callee: state.input.callee } : {}),
         ...(state.input.hint !== undefined ? { hint: state.input.hint } : {}),
+        // present-only (spec 2026-10-12 §3.8): a one-text ask's model is byte-identical to before
+        ...(state.input.parts !== undefined ? { parts: state.input.parts.map((p) => ({ ...p })) } : {}),
       },
       ...(innermost ? { scope: innermost } : {}),
       ...(state.system !== undefined && state.system !== "" ? { system: state.system } : {}),

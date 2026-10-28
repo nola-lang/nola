@@ -19,6 +19,24 @@ export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
   withTimeout(timeout: number): Intent<T>;
   detached(): Intent<T>;
 }
+export interface ToolUseAskable<T = unknown> extends Askable<T> {
+  withRetry(retries: number): ToolUseAskable<T>;
+  withModel(model: string): ToolUseAskable<T>;
+  withParams(params: Record<string, unknown>): ToolUseAskable<T>;
+  withTimeout(timeout: number): ToolUseAskable<T>;
+  withMaxTurns(turns: number): ToolUseAskable<T>;
+}
+export interface ToolEntry { name: string; call: (...args: never[]) => unknown; args: unknown; }
+export type ToolGroupVerdict =
+  | { readonly __nolaToolGroup: true; readonly kind: "tuple"; readonly items: readonly InferType<unknown>[] }
+  | { readonly __nolaToolGroup: true; readonly kind: "array"; readonly item: InferType<unknown> }
+  | { readonly __nolaToolGroup: true; readonly kind: "members"; readonly members: Readonly<Record<string, InferType<unknown>>> };
+export type ToolVerdict = InferType<unknown> | ToolGroupVerdict;
+export interface ToolSource {
+  readonly value: unknown; readonly verdict: ToolVerdict; readonly spread: boolean; readonly written?: string; readonly receiver?: unknown;
+}
+/** An instruction part (the ask sequence, spec 2026-10-12, emit 24): a text, or one of the \`__nola.var\` values. */
+export type InstructionPart = string | { readonly __nolaPart: "obj" | "tools" | "func" };
 export interface InferContext {
   scope(data: Record<string, unknown>): InferContext;
 }
@@ -84,10 +102,18 @@ export type Prob<C extends ProbCriteria = never> = number & { readonly __nola_pr
 export declare const __nola: {
   intents: {
     Intent<T>(executor: (ctx: Frame) => Promise<T>, scope: InvocationContext): Intent<T>;
-    ExtractIntent<T = unknown>(init: { instruction: string; type: unknown; loc: string; def?: string }): Askable<T>;
-    FunctionCallIntent<T = unknown>(init: {
-      fn: unknown; name: string; instruction: string; loc: string; def?: string; args: unknown[];
-    }): Askable<T>;
+    ExtractIntent<T = unknown>(init: { instruction: string | InstructionPart[]; type: unknown; loc: string; def?: string }): Askable<T>;
+    FunctionCallIntent<T = unknown>(
+      init:
+        | { fn: unknown; name: string; instruction: string; loc: string; def?: string; args: unknown[] }
+        | { instruction: InstructionPart[]; loc: string; def?: string },
+    ): Askable<T>;
+    ToolUseIntent<T = unknown>(init: { instruction: string | InstructionPart[]; tools?: Array<ToolEntry | ToolSource>; type: unknown; loc: string; def?: string }): ToolUseAskable<T>;
+  };
+  var: {
+    obj(init: { value: unknown; name: string; type?: InferType<unknown> | undefined }): InstructionPart;
+    tools(...sources: ToolSource[]): InstructionPart;
+    func(init: { fn: unknown; name: string; args: unknown[] }): InstructionPart;
   };
   types: {
     string(): TypeCarrier<string>;
@@ -112,10 +138,17 @@ export declare const __nola: {
   context: {
     module(file: string, emit?: number, init?: () => ModuleScopeInit): ModuleContext;
   };
-  ask<T>(value: Askable<T>, scope: Frame | ModuleContext, site?: { model?: string; locals?: Record<string, unknown>; context?: Array<() => string> }): Promise<T>;
+  ask<T>(value: Askable<T> | ToolUseAskable<T>, scope: Frame | ModuleContext, site?: { model?: string; locals?: Record<string, unknown>; context?: Array<() => string> }): Promise<T>;
   fmt(value: unknown): string;
   ctx(strings: TemplateStringsArray, ...values: unknown[]): string;
   useRuntime(v: number): void;
+  tool(value: unknown, verdict: ToolVerdict, written?: string, receiver?: unknown): ToolSource;
+  toolSpread(value: unknown, verdict: ToolVerdict): ToolSource;
+  tools: {
+    tuple(items: readonly InferType<unknown>[]): ToolGroupVerdict;
+    array(item: InferType<unknown>): ToolGroupVerdict;
+    members(members: Readonly<Record<string, InferType<unknown>>>): ToolGroupVerdict;
+  };
 };
 `;
 

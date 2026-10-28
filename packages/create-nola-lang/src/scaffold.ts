@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectExampleFromDisk, devExamplesDir, rewriteExamplePackageJson } from "./examples.js";
 import { fetchExampleFromGitHub } from "./github.js";
+import type { Runtime } from "./package-manager.js";
 import { type ProviderId, providerById } from "./providers.js";
 import { entryFile, type TemplateDef, templateByName, templateNames } from "./registry.js";
 
@@ -32,6 +33,12 @@ export interface ScaffoldOptions {
    * files the flow writes make true); without one it stays editor-neutral.
    */
   ide?: "vscode" | "none";
+  /**
+   * The runtime the project runs on; default "node". "bun" adds bunfig.toml with the
+   * @nola-lang/bun preload, a `bun <entry>` start script, the devDependency and
+   * engines.bun — build/check stay the Node CLI (spec 2026-10-14-bun-support).
+   */
+  runtime?: Runtime;
 }
 
 /** This package's own templates: `empty` (the one builtin), `_providers/` and `_gitignore`. */
@@ -61,6 +68,27 @@ export function envExample(envVar: string): string {
   return `# Copy to .env and fill in — \`nola run\` applies .env before evaluating nola.config.ts.\n${envVar}=\n`;
 }
 
+/** The Bun project's bunfig.toml: the preload for `bun src/main.tsi` and for `bun test`. */
+export const BUNFIG_TOML = 'preload = ["@nola-lang/bun/preload"]\n\n[test]\npreload = ["@nola-lang/bun/preload"]\n';
+
+/** The Bun floor @nola-lang/bun needs (process.getBuiltinModule). */
+export const BUN_ENGINE = ">=1.3.0";
+
+/** A Bun project's manifest additions on top of the template's: the start script, the devDependency, engines.bun. */
+export function applyBunRuntime(content: string, opts: { entry: string; version: string }): string {
+  const pkg = JSON.parse(content) as Record<string, unknown>;
+  const scripts = (pkg.scripts as Record<string, string> | undefined) ?? {};
+  scripts.start = `bun ${opts.entry}`;
+  pkg.scripts = scripts;
+  const dev = (pkg.devDependencies as Record<string, string> | undefined) ?? {};
+  dev["@nola-lang/bun"] = `^${opts.version}`;
+  pkg.devDependencies = dev;
+  const engines = (pkg.engines as Record<string, string> | undefined) ?? {};
+  engines.bun = BUN_ENGINE;
+  pkg.engines = engines;
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
 /** The ONE recommended .gitignore — every scaffold gets it; no template keeps a copy of its own (_gitignore ships underscored: npm pack strips nested .gitignore files). */
 const GITIGNORE_URL = new URL("../templates/_gitignore", import.meta.url);
 
@@ -82,7 +110,7 @@ export async function withRecommendedGitignore(files: Map<string, string>): Prom
  * the editor step's .vscode files, which are what make F5 and the extension
  * prompt real.
  */
-export function nextStepsComment(ide: "vscode" | "none", template: string): string {
+export function nextStepsComment(ide: "vscode" | "none", template: string, runtime: Runtime = "node"): string {
   if (ide === "vscode") {
     // `empty`'s stub has no ask yet — the breakpoint goes on the one the user writes.
     const breakpointIn =
@@ -93,9 +121,14 @@ export function nextStepsComment(ide: "vscode" | "none", template: string): stri
           : template === "typescript-interop"
             ? "in src/person.tsi"
             : "in your .tsi file";
+    // A Bun project still debugs under Node's loader: the .vscode files are valid whenever Node is present.
+    const runLine =
+      runtime === "bun"
+        ? "//   1. Run this file: bun start (F5 runs it too, under Node's loader — .vscode/launch.json is already set up)."
+        : "//   1. Press F5 to run this file (.vscode/launch.json is already set up).";
     return [
       "// Next steps in VS Code:",
-      "//   1. Press F5 to run this file (.vscode/launch.json is already set up).",
+      runLine,
       `//   2. Set a breakpoint ${breakpointIn} and press F5 again to step through the ask.`,
       '//   3. Install the recommended "Nola" extension when VS Code offers it — IntelliSense,',
       "//      go to definition and diagnostics inside .tsi files.",
@@ -103,7 +136,7 @@ export function nextStepsComment(ide: "vscode" | "none", template: string): stri
   }
   return [
     "// Next steps:",
-    "//   1. Run this file: npm start",
+    `//   1. Run this file: ${runtime === "bun" ? "bun start" : "npm start"}`,
     "//   2. Set up your editor (VS Code extension, debugging): https://nola.sh/docs/start/editor-setup/",
   ].join("\n");
 }
@@ -157,6 +190,8 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
   await prepareTarget(absRoot, opts.force ?? false);
   const name = opts.name ?? basename(absRoot);
   const provider = opts.provider ?? "none";
+  const runtime = opts.runtime ?? "node";
+  const entry = entryFile(template);
 
   // A live provider's config replaces the template's own; the ledger it replayed goes with it.
   if (provider !== "none") {
@@ -165,13 +200,18 @@ export async function scaffold(targetDir: string, opts: ScaffoldOptions = {}): P
   }
   const manifest = files.get("package.json");
   if (manifest) files.set("package.json", rewriteExamplePackageJson(manifest, { name, version }));
+  // A Bun project (spec 2026-10-14-bun-support): the preload, a `bun <entry>` start script, the devDependency, engines.bun.
+  if (runtime === "bun") {
+    files.set("bunfig.toml", BUNFIG_TOML);
+    const current = files.get("package.json");
+    if (current !== undefined) files.set("package.json", applyBunRuntime(current, { entry, version }));
+  }
   await withRecommendedGitignore(files);
   const envVar = vendorEnvVar(template, provider);
   if (envVar !== undefined && !files.has(".env.example")) files.set(".env.example", envExample(envVar));
   // The entry file greets the user with the next steps — it is what VS Code opens.
-  const entry = entryFile(template);
   const program = files.get(entry);
-  if (program !== undefined) files.set(entry, `${nextStepsComment(opts.ide ?? "none", template)}\n\n${program}`);
+  if (program !== undefined) files.set(entry, `${nextStepsComment(opts.ide ?? "none", template, runtime)}\n\n${program}`);
 
   for (const [relPath, content] of files) {
     const target = join(absRoot, relPath);

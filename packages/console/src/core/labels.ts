@@ -15,7 +15,8 @@ export function invocationLabel(fn: string | undefined): string {
 
 /**
  * The ask as the author wrote it: ``..`instruction`<T>`` for an extract,
- * ``callee`hint`(..)`` for a call. Display text only — never identity.
+ * ``callee`hint`(..)`` for a call, ``..`instruction` [a, b]<T>`` for a
+ * tool-use ask. Display text only — never identity.
  */
 export function askLabel(ask: {
   kind: AskKind;
@@ -23,11 +24,13 @@ export function askLabel(ask: {
   callee?: string;
   hint?: string;
   typeText?: string;
+  tools?: readonly string[];
 }): string {
   if (ask.kind === "call") {
     const hint = ask.hint ? `\`${excerpt(ask.hint)}\`` : "";
     return `${ask.callee ?? "?"}${hint}(..)`;
   }
   const type = ask.typeText ? `<${ask.typeText}>` : "";
-  return `..\`${excerpt(ask.instruction ?? "")}\`${type}`;
+  const tools = ask.kind === "tool-use" ? ` [${(ask.tools ?? []).join(", ")}]` : "";
+  return `..\`${excerpt(ask.instruction ?? "")}\`${tools}${type}`;
 }

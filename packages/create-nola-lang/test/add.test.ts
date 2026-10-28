@@ -90,4 +90,20 @@ describe("addNola", () => {
     await writeFile(join(dir, "package.json"), "{ nope");
     await expect(addNola(dir)).rejects.toThrow(/could not parse/);
   });
+
+  it("runtime bun adds @nola-lang/bun to devDependencies beside the four deps", async () => {
+    const dir = await bareProject({ name: "bun-api", private: true });
+    const result = await addNola(dir, { version: "0.1.0-alpha.0", runtime: "bun" });
+    const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+    expect(pkg.devDependencies["@nola-lang/bun"]).toBe("^0.1.0-alpha.0");
+    expect(pkg.devDependencies["nola-lang"]).toBe("^0.1.0-alpha.0");
+    expect(result.added).toContain("@nola-lang/bun@^0.1.0-alpha.0");
+  });
+
+  it("runtime node (the default) adds no Bun package", async () => {
+    const dir = await bareProject({ name: "node-api", private: true });
+    await addNola(dir, { version: "0.1.0-alpha.0" });
+    const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+    expect(pkg.devDependencies["@nola-lang/bun"]).toBeUndefined();
+  });
 });

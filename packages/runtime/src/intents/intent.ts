@@ -23,6 +23,8 @@ export interface IntentOptions {
   timeout?: number;
   /** wire-tuning knobs; resolved per-field along the frame chain, nearest frame wins */
   params?: ProviderParams;
+  /** tool-use intents: the provider turns the loop may take (`.withMaxTurns`); default config `ask.maxTurns` */
+  maxTurns?: number;
   /** resolve without inheriting the caller frame's context (InvocationIntent only) */
   detached?: boolean;
   /**

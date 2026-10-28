@@ -26,7 +26,17 @@ describe("the fixture markers never appear inside a rendered fence", () => {
 describe("docs-site/language/prompt.mdx is the rendered prompt", () => {
   const fences = fencesByFixture(readFileSync(PAGE, "utf8"));
   it("shows one fenced rendering per documented fixture", () => {
-    expect([...fences.keys()].sort()).toEqual(["bare", "call", "contextItems", "function", "moduleWithBinding", "nested"]);
+    expect([...fences.keys()].sort()).toEqual([
+      "bare",
+      "call",
+      "contextItems",
+      "function",
+      "moduleWithBinding",
+      "nested",
+      "sequence",
+      "sequenceTools",
+      "toolUse",
+    ]);
   });
   for (const [name, text] of fences) {
     it(`the "${name}" fence equals renderPrompt(fixtures.${name}).messages[0]`, () => {

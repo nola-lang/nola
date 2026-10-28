@@ -1,4 +1,4 @@
-import { type DerivationRequest, displayPathFor } from "@nola-lang/compiler";
+import { type DerivationRequest, displayPathFor, toolNameCollisions } from "@nola-lang/compiler";
 import type ts from "typescript";
 import { answerRequests } from "./answer.js";
 
@@ -66,11 +66,15 @@ export function derivationDiagnostics(
     ...req,
     lowered: { start: req.lowered.start + leading, end: req.lowered.end + leading },
   }));
-  const answers = answerRequests(program, sf, shifted, {
-    importerFile: fileName,
-    importerDisplayFile: displayPathFor(fileName, options.sourceRoot),
-    sourceRoot: options.sourceRoot,
-  });
+  // the per-ask tool name collisions (spec 2026-10-09 §3.4) are checked here as in finalizeDerivations, so the editor shows them too
+  const answers = toolNameCollisions(
+    shifted,
+    answerRequests(program, sf, shifted, {
+      importerFile: fileName,
+      importerDisplayFile: displayPathFor(fileName, options.sourceRoot),
+      sourceRoot: options.sourceRoot,
+    }),
+  );
   const out: EditorDerivationDiagnostic[] = [];
   answers.forEach((a, i) => {
     const req = derivations[i];
@@ -79,8 +83,10 @@ export function derivationDiagnostics(
     // criteria) surface at a context site under every policy, as in finalizeDerivations
     const authoring = a.code === "NOLA2007" || a.code === "NOLA2012" || a.code === "NOLA2015";
     if (req.kind === "context" && req.policy !== "error" && !authoring) return;
+    // a bare value's type is a courtesy to the model (spec 2026-10-12 §3.5): underivable is silent, an authoring error still shows
+    if (req.kind === "value" && !authoring) return;
     out.push({
-      code: a.code ?? (req.kind === "extract" ? "NOLA2002" : "NOLA2008"),
+      code: a.code ?? (req.kind === "context" ? "NOLA2008" : "NOLA2002"),
       message: a.reason,
       generatedStart: req.lowered.start,
       generatedEnd: req.lowered.end,

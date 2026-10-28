@@ -23,6 +23,29 @@ const FIXTURES: Record<string, string> = {
     "",
   ].join("\n"),
   "module-level-intent.ts": ["export const nameIntent = ..`user name`<string>;", ""].join("\n"),
+  "tool-use.ts": [
+    "declare function searchFiles(dir: string, pattern?: string): Promise<string[]>;",
+    "declare const fs: { readFile(path: string): Promise<string> };",
+    "export infer function find(.query: string) {",
+    "  const files = ask `find the visa files` [searchFiles, fs.readFile]: string[];",
+    "  const n: number = files.length;",
+    "  return n;",
+    "}",
+    "declare const fileTools: { searchFiles(dir: string): Promise<string[]>; readFile(path: string): Promise<string> };",
+    "declare const extra: Array<(x: string) => string>;",
+    "declare const maybe: { readFile(path: string): Promise<string> } | undefined;",
+    "export const grouped = ask `find them` [fileTools, ...extra, fileTools.readFile];",
+    "export const chained = ask `find them` [maybe?.readFile, extra[0]];",
+    "export const top = ask `find them` [searchFiles];",
+    "",
+  ].join("\n"),
+  // the ask sequence (spec 2026-10-12 §3.4): texts and values in one instruction array, the class by the parts
+  "ask-sequence-extract.ts":
+    "declare const admin: { name: string };\ndeclare const cfg: { defaults: number };\nconst r = ask `use` admin `and` cfg.defaults `go`: string;\nconst s: string = r;\n",
+  "ask-sequence-call.ts":
+    "declare function createUser(id: string, n: number): Promise<{ id: string }>;\nconst u = ask `register` createUser(`user id`: string, 42);\nconst v: { id: string } = u;\n",
+  "ask-sequence-tools.ts":
+    "declare function searchFiles(dir: string): string[];\ndeclare function readDir(dir: string): string[];\ndeclare const userData: { name: string };\nconst files = ask `find` [searchFiles] `or` [readDir] `with` userData `done`: string[];\n",
   "decision-inline.ts": [
     "export infer function f(.t: string) {",
     '  const d = ask `q`<Choice<{ a: "A"; b: null }>>;',

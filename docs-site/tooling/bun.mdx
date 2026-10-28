@@ -1,0 +1,121 @@
+---
+title: Bun
+description: Run .tsi from source under Bun with the @nola-lang/bun preload, bundle or compile in one step with Bun.build, and load .tsi modules in bun test.
+sidebar:
+  order: 25
+---
+
+Nola runs on Bun two ways. Built output needs nothing: `nola build` writes plain JavaScript that `bun` runs as it is. For `.tsi` from source — `bun src/main.tsi`, `bun --watch`, `bun test`, one-step builds — add the Bun plugin. Bun ≥ 1.3 is required.
+
+## Install
+
+```sh
+bun add -d @nola-lang/bun
+```
+
+```json
+{
+  "scripts": {
+    "start": "bun src/main.tsi",
+    "build": "nola build",
+    "check": "nola check"
+  },
+  "dependencies": {
+    "@nola-lang/providers": "^0.1.5",
+    "@nola-lang/runtime": "^0.1.5"
+  },
+  "devDependencies": {
+    "@nola-lang/bun": "^0.1.5",
+    "nola-lang": "^0.1.5",
+    "typescript": "^5.6.0"
+  },
+  "engines": { "node": ">=22.18", "bun": ">=1.3.0" }
+}
+```
+
+`bun create nola` scaffolds this layout; `--runtime node` keeps the Node layout instead, and `--runtime bun` asks for it under any package manager.
+
+## Run from source
+
+```toml
+# bunfig.toml
+preload = ["@nola-lang/bun/preload"]
+
+[test]
+preload = ["@nola-lang/bun/preload"]
+```
+
+The preload registers the plugin and applies the nearest `nola.config.ts` — Bun imports it directly and loads `.env` itself, so no loader and no bundling step is involved.
+
+```sh
+bun src/main.tsi
+bun --watch src/main.tsi
+```
+
+Every `.tsi` the program imports lowers on load; `./models.tsi` imports of plain TypeScript modules resolve to their [views](/docs/language/types-as-values/) as under the Node loader. `bun --watch` restarts the process on a change and is the supported watch mode (`bun --hot` keeps the process: a changed `.tsi` re-lowers, but a change to a plain `.ts` a `.tsi` derives types from can serve a stale derivation until a restart).
+
+## bun test
+
+With the `[test]` preload above, test files import `.tsi` modules:
+
+```ts
+import { expect, test } from "bun:test";
+import { describePerson } from "./src/describe.tsi";
+
+test("describes", async () => {
+  expect(await describePerson("Ada")).toBe("a poet");
+});
+```
+
+Bun's test runner discovers its own file extensions, so a `.tsi` cannot itself be a test file.
+
+## Build in one step
+
+`Bun.build` takes the plugin; the `bun build` command line does not take plugins, so use a build script:
+
+```ts
+// not-checked — build.ts (the `Bun` global needs bun-types)
+import { nola } from "@nola-lang/bun";
+
+await Bun.build({
+  entrypoints: ["src/main.tsi"],
+  plugins: [nola()],
+  target: "bun",
+  outdir: "dist",
+  // or a single executable instead of outdir:
+  // compile: { outfile: "my-app" },
+});
+```
+
+```sh
+bun build.ts
+```
+
+For application builds the plugin wires `nola.config.ts` into the bundle, as `nola build` and the bundler plugins do; `build: { target: "lib" }` in the config, or `nola({ config: false })`, leaves configuration to the consuming application. Options: `target` (`"app" | "lib"`) and `config` (a path override, or `false`).
+
+A `Bun.build` for `target: "browser"` fails with [`NOLA4001`](/docs/reference/error-codes/#nola4001): Nola execution is server-side only.
+
+## Built output without the plugin
+
+`nola build` output runs under Bun unchanged, so a Node build step and a Bun runtime also work:
+
+```sh
+npx nola-lang build --out dist
+bun dist/src/main.tsi.js
+bun build --compile dist/src/main.tsi.js --outfile my-app
+```
+
+See [Deploying](/docs/guides/deploying/) for what the build emits.
+
+## What stays on Node
+
+The `nola` command line — `nola check`, `nola build`, `nola declarations`, `nola console` — runs on Node; `bun run check` launches it there by the bin's shebang. `nola run` is the Node loader: started under Bun it fails with [`NOLA3015`](/docs/reference/error-codes/#nola3015), which names the preload above. Debugging `.tsi` in VS Code (F5) runs under the Node loader too.
+
+## Limits
+
+- Bun plugins carry no source map, so a stack trace through `.tsi` code shows lowered positions: at module level and inside plain functions the line is right; inside an `infer function` body the reported line is one too high (the lowered wrapper opens on a line of its own above the body); a column inside an `ask` may drift.
+- A Bun older than 1.3 is refused with [`NOLA3023`](/docs/reference/error-codes/#nola3023).
+- `nola.config.ts` cannot import `.tsi` modules ([`NOLA3012`](/docs/reference/error-codes/#nola3012)); a `.tsi` import that names neither a Nola file nor a TypeScript module is [`NOLA2007`](/docs/reference/error-codes/#nola2007).
+- Deno has no module hooks and no plugin API; run on Node there.
+
+Next: [VS Code](/docs/tooling/vscode/)

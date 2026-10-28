@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { scaffold } from "../src/index.js";
 import { entryFile, templateNames } from "../src/registry.js";
-import { nextStepsComment, withRecommendedGitignore } from "../src/scaffold.js";
+import { BUNFIG_TOML, nextStepsComment, withRecommendedGitignore } from "../src/scaffold.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "nola-scaffold-"));
 
@@ -222,5 +222,39 @@ describe("scaffold", () => {
     await scaffold(root, { force: true });
     expect(existsSync(join(root, "existing.txt"))).toBe(false);
     expect(existsSync(join(root, "package.json"))).toBe(true);
+  });
+
+  it("runtime bun: bunfig.toml, a `bun <entry>` start script, @nola-lang/bun and engines.bun — on every menu entry, nothing else changed", async () => {
+    for (const name of templateNames()) {
+      const root = join(await tmp(), name);
+      const { files } = await scaffold(root, { template: name, runtime: "bun" });
+      expect(files, name).toContain("bunfig.toml");
+      expect(await readFile(join(root, "bunfig.toml"), "utf8")).toBe(BUNFIG_TOML);
+      const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+      expect(pkg.scripts.start, name).toBe(`bun ${entryFile(name)}`);
+      expect(pkg.scripts.build, name).toBe("nola build");
+      expect(pkg.scripts.check, name).toBe("nola check");
+      expect(pkg.devDependencies["@nola-lang/bun"], name).toMatch(/^\^\d/);
+      expect(pkg.devDependencies["nola-lang"], name).toMatch(/^\^\d/);
+      expect(pkg.engines.bun, name).toBe(">=1.3.0");
+    }
+  });
+
+  it("runtime node (the default) writes no bunfig.toml and keeps nola run", async () => {
+    const root = join(await tmp(), "node-app");
+    const { files } = await scaffold(root);
+    expect(files).not.toContain("bunfig.toml");
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("nola run src/main.tsi");
+    expect(pkg.devDependencies["@nola-lang/bun"]).toBeUndefined();
+  });
+
+  it("the next-steps comment of a Bun project says bun start; with VS Code it adds that F5 runs under Node's loader", () => {
+    expect(nextStepsComment("none", "feature-extraction", "bun")).toContain("Run this file: bun start");
+    const vscode = nextStepsComment("vscode", "feature-extraction", "bun");
+    expect(vscode).toContain("bun start");
+    expect(vscode).toContain("F5");
+    expect(vscode).toContain("Node's loader");
+    expect(nextStepsComment("none", "feature-extraction")).toContain("npm start");
   });
 });

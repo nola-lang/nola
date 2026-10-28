@@ -1,6 +1,8 @@
 import { ask, ctx, fmt } from "./ask/index.js";
 import { intents } from "./intents/index.js";
 import type { ModuleScopeInit } from "./intents/invocation/module-context.js";
+import { instructionParts } from "./intents/parts.js";
+import { toolSource, toolSpreadSource, toolVerdicts } from "./intents/tool-use/tool-group.js";
 import { nolaRuntime, useRuntime } from "./runtime/index.js";
 import { inferTypes } from "./types/infer-type.js";
 
@@ -30,4 +32,12 @@ export const __nola = {
   ctx,
   fmt,
   useRuntime,
+  /** emit 23 (spec 2026-10-09): one tool list entry — a function or a bare group — deferred until the ask materializes the list */
+  tool: toolSource,
+  /** emit 23: a spread entry — a group flattened into the list */
+  toolSpread: toolSpreadSource,
+  /** emit 23: the group verdicts the appendix accessors return */
+  tools: toolVerdicts,
+  /** emit 24 (spec 2026-10-12): the value parts of an ask sequence — `obj`, `tools`, `func` */
+  var: instructionParts,
 };

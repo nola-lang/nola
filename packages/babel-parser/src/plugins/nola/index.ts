@@ -42,6 +42,24 @@ import {
 import type * as N from "../../types.ts";
 import type { Position } from "../../util/location.ts";
 
+// The contextual keywords that open a declaration when a name, keyword,
+// bracket, string or `*` follows them — the next statement, never a value of
+// an ask sequence that continues onto a new line (nolaNextLineOpensDeclaration).
+const NOLA_DECLARATION_OPENERS = new Set([
+  "let",
+  "type",
+  "interface",
+  "enum",
+  "declare",
+  "namespace",
+  "module",
+  "abstract",
+  "async",
+  "using",
+  "global",
+  "accessor",
+]);
+
 export const NolaErrors = ParseErrorEnum`nola`({
   NolaAskReserved: "NOLA1003: `ask` is a reserved word in .tsi files and cannot be used as an identifier.",
   NolaReservedConstruct: "NOLA1004: this Nola construct is reserved for a future Nola version.",
@@ -65,9 +83,20 @@ export const NolaErrors = ParseErrorEnum`nola`({
   NolaAskTemplateNeedsSpace:
     "NOLA1017: the implied extractor needs whitespace before its template — write `ask `…`` (`ask`…`` reads as a tagged template).",
   NolaExpectedExtractorType: "NOLA1018: expected a type after the extractor's `:` on the same line — write ``…`: T`.",
-  // No code prefix: this is the ordinary syntax error (NOLA1001), worded the
-  // way TypeScript words it — only its recovery is ours.
+  NolaToolListEntry:
+    "NOLA1021: a tool list holds functions — a name, a member, an expression that is one function, or a group (a module or an object of functions, an array of them), bare or spread; a literal cannot be one, and the list is not empty.",
+  NolaToolListEntryReserved:
+    "NOLA1022: a call or a tagged template in a tool list is reserved for a future Nola version — name the function (`getUser`); its arguments come from its signature.",
+  NolaTypedExtractorInConditional:
+    "NOLA1023: a colon-typed extractor directly in a ternary's consequent (a colon on the extractor's line is its type, spaced or not) — parenthesize it: `cond ? (ask `p`: T) : y`.",
+  // The ask sequence (spec 2026-10-12 §3.2) reuses NOLA1020 with its own wording.
+  NolaAskSequenceTail:
+    "NOLA1020: a value in an ask sequence is a name, a call, a bracketed list or a parenthesized expression written after text — wrap anything else in parentheses, or assign it to a local first (`await`, `ask` and `this` cannot be values).",
+  NolaAskTextAfterType: "NOLA1020: text after the type — the type ends an ask sequence; move the text before `: T`.",
+  // No code prefix: these are the ordinary syntax error (NOLA1001), worded the
+  // way TypeScript words it — only their recovery is ours.
   NolaExpectedExpression: "expected an expression.",
+  NolaExpectedToolListClose: "expected `]` to close the tool list.",
 });
 
 export default (superClass: typeof Parser) =>
@@ -268,6 +297,7 @@ export default (superClass: typeof Parser) =>
         quasi: unknown;
         prompt: string;
         typeArgs: unknown;
+        parts: unknown[];
         nolaError: boolean;
       };
       const startLoc = this.state.startLoc;
@@ -276,6 +306,7 @@ export default (superClass: typeof Parser) =>
       node.quasi = null;
       node.prompt = "";
       node.typeArgs = null;
+      node.parts = [];
       node.nolaError = true;
       return this.finishNode(node as never, "NolaExtractExpression" as never);
     }
@@ -291,6 +322,12 @@ export default (superClass: typeof Parser) =>
     nolaMissingExpression(): N.Expression {
       const at = (this.state.lastTokEndLoc ?? this.state.startLoc) as Position;
       this.raise(NolaErrors.NolaExpectedExpression, at);
+      return this.nolaPlaceholder(at);
+    }
+
+    // The zero-width placeholder itself, for a recovery that has already
+    // raised its own diagnostic (a ternary whose alternate the type swallowed).
+    nolaPlaceholder(at: Position): N.Expression {
       const node = this.startNodeAt(at) as unknown as {
         quasi: unknown;
         prompt: string;
@@ -371,10 +408,18 @@ export default (superClass: typeof Parser) =>
       );
     }
 
-    // The template-and-<T> tail shared by both extractor spellings: `..`
-    // (node started at the sigil) and the implied form directly after `ask`
-    // (node started at the backtick, see parseMaybeUnary).
-    nolaFinishExtractor(node: { quasi: unknown; prompt: string; typeArgs: unknown }): N.Expression {
+    // The sequence shared by both extractor spellings (spec 2026-10-12 §3.2):
+    // `..` (node started at the sigil) and the implied form directly after
+    // `ask` (node started at the backtick, see parseMaybeUnary). The first
+    // text, then texts and values alternating — a template is text (JS never
+    // inserts a semicolon before one), a `[` after text is a list, anything
+    // nolaStartsContextValue admits after text is a value with its own tail
+    // (the stop rule in parseSubscript ends it before a template). The loop
+    // ends at any other token: `)`, `,`, an operator, a name on the next line
+    // — the enclosing grammar decides what that token means. Then the type:
+    // `: T` glued to the last token of any part; `<T>` only after a text or a
+    // list, since `user<T>` is a TypeScript instantiation expression.
+    nolaFinishExtractor(node: { quasi: unknown; prompt: string; typeArgs: unknown; parts: unknown[] }): N.Expression {
       // Babel's tokenizer never emits a bare backQuote: a `` ` `` becomes a
       // templateTail (no substitution) or templateNonTail (before `${`).
       if (!this.match(tt.templateTail) && !this.match(tt.templateNonTail)) {
@@ -382,6 +427,7 @@ export default (superClass: typeof Parser) =>
         node.quasi = null;
         node.prompt = "";
         node.typeArgs = null;
+        node.parts = [];
         (node as unknown as { nolaError: boolean }).nolaError = true;
         return this.finishNode(node as never, "NolaExtractExpression" as never);
       }
@@ -394,27 +440,226 @@ export default (superClass: typeof Parser) =>
       node.quasi = quasi;
       node.prompt = quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
       node.typeArgs = null;
-      if (this.match(tt.lt)) {
-        // After an extractor, `<` ALWAYS starts type args (documented rule).
-        // Parenthesize — `(..`p`) < x` — to force a comparison instead.
+      const parts: N.Expression[] = [quasi as unknown as N.Expression];
+      for (;;) {
+        if (tokenIsTemplate(this.state.type)) {
+          parts.push(this.parseTemplate(false) as N.Expression);
+          continue;
+        }
+        if ((parts[parts.length - 1] as N.Node).type !== "TemplateLiteral") break;
+        // The tool list (spec 2026-10-08): `[` after text is the list of
+        // functions the model may call before it answers — never in a call
+        // slot, where a bracket keeps its JavaScript meaning.
+        if (this.match(tt.bracketL)) {
+          parts.push(this.nolaParseToolList());
+          continue;
+        }
+        if (this.nolaStartsSequenceValue()) {
+          parts.push(this.nolaParseContextValue(NolaErrors.NolaAskSequenceTail));
+          continue;
+        }
+        // `this`, `await`, `ask`, a function or class keyword, a unary
+        // keyword: none can continue an expression after text, so the author
+        // meant a value (the context-statement rule). Name the fix here
+        // instead of leaving a "Missing semicolon"; tolerant mode then takes
+        // the expression as the value it was meant to be, bytes verbatim, so
+        // the file keeps parsing with one diagnostic.
+        if (
+          !this.hasPrecedingLineBreak() &&
+          (this.match(tt._this) ||
+            this.match(tt._await) ||
+            this.match(tt._function) ||
+            this.match(tt._class) ||
+            this.match(tt._typeof) ||
+            this.match(tt._void) ||
+            this.match(tt._delete) ||
+            (this.match(tt.name) && this.state.value === "ask"))
+        ) {
+          this.raise(NolaErrors.NolaAskSequenceTail, this.state.startLoc);
+          parts.push(this.nolaParseRecoveredValue());
+          continue;
+        }
+        break;
+      }
+      node.parts = parts;
+      const last = parts[parts.length - 1] as N.Node;
+      const endsInTextOrList = last.type === "TemplateLiteral" || last.type === "NolaToolList";
+      if (this.match(tt.lt) && endsInTextOrList) {
+        // After a text or a list, `<` ALWAYS starts type args (documented
+        // rule). Parenthesize — `(..`p`) < x` — to force a comparison instead.
         // tsParseTypeArguments is provided by the typescript mixin below us,
         // invisible on the base Parser type — hence the structural cast.
         node.typeArgs = (this as unknown as { tsParseTypeArguments(): unknown }).tsParseTypeArguments();
-      } else if (this.match(tt.colon) && this.state.start === (this.state.lastTokEndLoc as Position).index) {
+      } else if (this.match(tt.colon)) {
+        // on the last part's line or a later one: a line break alone never
+        // ends an ask sequence (2026-10-15)
         node.typeArgs = this.nolaParseColonType();
+        if (node.typeArgs) (node as unknown as { colonType: boolean }).colonType = true;
+      }
+      if (node.typeArgs && tokenIsTemplate(this.state.type)) {
+        this.raise(NolaErrors.NolaAskTextAfterType, this.state.startLoc);
       }
       return this.finishNode(node as never, "NolaExtractExpression" as never);
+    }
+
+    // Tolerant recovery of a refused value in an ask sequence: the expression
+    // as written, under the stop rule so a template after it stays text.
+    nolaParseRecoveredValue(): N.Expression {
+      const prev = this.nolaValueStart;
+      this.nolaValueStart = this.state.start;
+      try {
+        return this.parseMaybeUnary(null, true);
+      } finally {
+        this.nolaValueStart = prev;
+      }
+    }
+
+    // The entries of a tool list: expressions — one function or a group, bare
+    // or spread (spec 2026-10-09). A call or a tagged template is the reserved
+    // "described tool" shape (NOLA1022 — the brackets already fix the meaning,
+    // so it can be added later without ambiguity); a literal shape is
+    // NOLA1021. Tolerant mode drops the entry and reads on. An unclosed list —
+    // the state on every keystroke between `[` and `]` — ends at the last
+    // entry before EOF or a token that closes or separates the enclosing
+    // construct, with the ordinary "expected ]" (NOLA1001), so the file keeps
+    // parsing instead of bailing to last-good output; a missing comma is
+    // reported and the next entry still read. An empty `[]` is NOLA1021 on the
+    // bracket; an unclosed empty list is only the missing closer.
+    nolaParseToolList(): N.Expression {
+      const list = this.startNode() as unknown as { entries: N.Expression[] };
+      const tools: N.Expression[] = [];
+      const openLoc = this.state.startLoc;
+      this.next(); // consume `[`
+      let sawEntry = false;
+      let needComma = false;
+      let closed = false;
+      for (;;) {
+        if (this.eat(tt.bracketR)) {
+          closed = true;
+          break;
+        }
+        if (this.match(tt.eof) || this.match(tt.semi) || this.match(tt.parenR) || this.match(tt.braceR)) {
+          this.raise(NolaErrors.NolaExpectedToolListClose, this.state.startLoc);
+          break;
+        }
+        if (needComma) {
+          if (!this.eat(tt.comma)) this.raise(Errors.UnexpectedToken, this.state.startLoc, { expected: "," });
+          needComma = false;
+          continue; // the closer may follow the comma (trailing comma, or an unclosed list)
+        }
+        const entryLoc = this.state.startLoc;
+        // A general expression, so a wrong shape is consumed whole and reported
+        // once; never a slot list — a template here is the string it is.
+        const entry = this.nolaWithSlotList(false, () => this.parseExprListItem(tt.bracketR, false));
+        sawEntry = true;
+        needComma = true;
+        if (!entry) continue; // Babel reported the stray comma
+        switch (this.nolaToolEntryKind(entry as N.Expression)) {
+          case "value":
+          case "spread":
+            tools.push(entry as N.Expression);
+            break;
+          case "reserved":
+            this.raise(NolaErrors.NolaToolListEntryReserved, entryLoc);
+            break;
+          default: {
+            // a spread of a literal is reported on the literal, where the fix goes
+            const arg =
+              entry.type === "SpreadElement" ? (entry as unknown as { argument: { loc: { start: Position } } }).argument : undefined;
+            this.raise(NolaErrors.NolaToolListEntry, arg ? arg.loc.start : entryLoc);
+          }
+        }
+      }
+      if (closed && !sawEntry) this.raise(NolaErrors.NolaToolListEntry, openLoc);
+      list.entries = tools;
+      return this.finishNode(list as never, "NolaToolList" as never);
+    }
+
+    // Entries are values (spec 2026-10-09 §3.2): the parser keeps only what no
+    // type could rescue — a literal shape (NOLA1021) — and the reserved call /
+    // tagged-template entry (NOLA1022). A spread is judged by its argument.
+    nolaToolEntryKind(entry: N.Expression): "literal" | "reserved" | "spread" | "value" {
+      switch (entry.type) {
+        case "SpreadElement": {
+          const arg = (entry as unknown as { argument: N.Expression }).argument;
+          return this.nolaToolEntryKind(arg) === "literal" ? "literal" : "spread";
+        }
+        case "CallExpression":
+        case "TaggedTemplateExpression":
+          return "reserved";
+        case "StringLiteral":
+        case "NumericLiteral":
+        case "BigIntLiteral":
+        case "BooleanLiteral":
+        case "NullLiteral":
+        case "RegExpLiteral":
+        case "TemplateLiteral":
+        case "ObjectExpression":
+        case "ArrayExpression":
+        case "ArrowFunctionExpression":
+        case "FunctionExpression":
+        case "ClassExpression":
+        case "NewExpression":
+        case "ThisExpression":
+          return "literal";
+        default:
+          return "value";
+      }
+    }
+
+    // Babel's parseConditional, with one check between the consequent and the
+    // ternary's colon (spec 2026-10-08 §1.5): a colon-typed extractor standing
+    // bare as the consequent — `c ? ask `p`: T : y`, the `..` form too — is
+    // NOLA1023 at its colon. Two adjacent colons with different meanings are
+    // hard on a reader, and since a same-line colon is the type spaced or
+    // not (amendment 2026-10-12) the ternary's own colon is the one the type
+    // swallows in `c ? ask `p` : y`: raising BEFORE expect(colon) gives that
+    // case this message instead of Babel's "expected :", and tolerant mode
+    // stands a placeholder in for the alternate instead of bailing on it.
+    // Parenthesized (the ask or its operand), `<T>`-typed and call-intent
+    // consequents pass.
+    parseConditional(expr: N.Expression, startLoc: Position, _refExpressionErrors?: ExpressionErrors | null): N.Expression {
+      if (!this.eat(tt.question)) return expr;
+      const node = this.startNodeAt(startLoc) as unknown as { test: unknown; consequent: unknown; alternate: unknown };
+      node.test = expr;
+      const consequent = this.parseMaybeAssignAllowIn();
+      node.consequent = consequent;
+      const typedBare = this.nolaCheckTypedConsequent(consequent);
+      if (typedBare && !this.match(tt.colon)) {
+        node.alternate = this.nolaPlaceholder(this.state.lastTokEndLoc as Position);
+        return this.finishNode(node as never, "ConditionalExpression" as never);
+      }
+      this.expect(tt.colon);
+      node.alternate = this.parseMaybeAssign();
+      return this.finishNode(node as never, "ConditionalExpression" as never);
+    }
+
+    /** Whether the consequent is a bare colon-typed extractor (NOLA1023 raised). */
+    nolaCheckTypedConsequent(consequent: N.Expression): boolean {
+      type Marked = { type: string; extra?: { parenthesized?: boolean }; argument?: Marked; colonType?: boolean; typeArgs?: { loc: { start: Position } } | null };
+      const outer = consequent as unknown as Marked;
+      if (outer.extra?.parenthesized) return false;
+      const target = outer.type === "NolaAskExpression" && outer.argument ? outer.argument : outer;
+      if (target.type !== "NolaExtractExpression" || !target.colonType || target.extra?.parenthesized || !target.typeArgs) return false;
+      this.raise(NolaErrors.NolaTypedExtractorInConditional, target.typeArgs.loc.start);
+      return true;
     }
 
     // `: T` after the template — the colon spelling of `<T>` (spec
     // 2026-09-23): one TypeScript type in type context, wrapped in the
     // TSTypeParameterInstantiation shape the `<T>` form yields (spanning the
     // colon to the type's end) so every consumer reads params[0] either way.
-    // The colon must be GLUED to the closing backtick, like an annotation
-    // (`` `p`: number ``): a colon after whitespace is never ours, which is
-    // what keeps a ternary's own separator (`a ? ask `p` : b`, with the space
-    // every formatter puts there) out of the type grammar without lookahead
-    // or backtracking. The type must START ON THE COLON'S LINE: TypeScript's
+    // The colon is ours whenever it stands on the closing backtick's (or the
+    // list's `]`'s, or the last value's) line, glued or spaced (amendment
+    // 2026-10-12; glued-only before): an UNTYPED extractor is never a valid
+    // program (NOLA2004), so the only other reading a same-line colon could
+    // have — a ternary's separator over an untyped ask, `a ? ask `p` : b` —
+    // was never one either, and claiming it costs no lookahead or
+    // backtracking; the consequent case is NOLA1023 either way (parseConditional).
+    // Since 2026-10-15 the colon may stand on a LATER line as well — a line
+    // break alone never ends an ask sequence, so a type on its own line is the
+    // type, and a multi-line ternary consequent is NOLA1023 like the one-line
+    // form. The type must START ON THE COLON'S LINE: TypeScript's
     // type grammar reads across line breaks, so an unfinished `: ` above an
     // existing statement would take that statement's first expression as a
     // qualified type name and its call parens as a call on the extractor —
@@ -483,6 +728,7 @@ export default (superClass: typeof Parser) =>
           quasi: unknown;
           prompt: string;
           typeArgs: unknown;
+          parts: unknown[];
         };
         this.next(); // consume `..`
         // Bare `(..)` / `..,` derive-all call form — reserved for a future version.
@@ -492,6 +738,7 @@ export default (superClass: typeof Parser) =>
           node.quasi = null;
           node.prompt = "";
           node.typeArgs = null;
+          node.parts = [];
           (node as unknown as { nolaError: boolean }).nolaError = true;
           return this.finishNode(node as never, "NolaExtractExpression" as never);
         }
@@ -507,9 +754,9 @@ export default (superClass: typeof Parser) =>
 
     // A template literal at the start of a slot: parsed as the plain template
     // it is in TypeScript, then claimed as an extractor only when a type
-    // follows — a `:` GLUED to the closing backtick (the colon spelling, with
-    // its rules: nolaParseColonType), or `<…>` that TypeScript itself would
-    // read as type arguments (nolaTryParseSlotTypeArgs). Untyped, it stays
+    // follows — a `:` on the closing backtick's line (the colon spelling,
+    // with its rules: nolaParseColonType), or `<…>` that TypeScript itself
+    // would read as type arguments (nolaTryParseSlotTypeArgs). Untyped, it stays
     // the string argument it always was — `console.log(`hi`)` is ordinary
     // code, and an untyped slot would be NOLA2004 anyway. The node spans from
     // the backtick, like the implied form after `ask`; the lowerer inserts the
@@ -520,8 +767,9 @@ export default (superClass: typeof Parser) =>
         quasis: Array<{ value: { cooked: string | null; raw: string } }>;
       };
       let typeArgs: unknown;
-      if (this.match(tt.colon) && this.state.start === (this.state.lastTokEndLoc as Position).index) {
-        // null on NOLA1018 (tolerant mode): untyped, still the extractor
+      if (this.match(tt.colon)) {
+        // on the template's line or a later one; null on NOLA1018 (tolerant
+        // mode): untyped, still the extractor
         typeArgs = this.nolaParseColonType();
       } else if (this.match(tt.lt)) {
         typeArgs = this.nolaTryParseSlotTypeArgs();
@@ -529,10 +777,18 @@ export default (superClass: typeof Parser) =>
       } else {
         return quasi as unknown as N.Expression;
       }
-      const node = this.startNodeAt(startLoc) as unknown as { quasi: unknown; prompt: string; typeArgs: unknown };
+      const node = this.startNodeAt(startLoc) as unknown as {
+        quasi: unknown;
+        prompt: string;
+        typeArgs: unknown;
+        parts: unknown[];
+        colonType?: boolean;
+      };
       node.quasi = quasi;
+      node.parts = [quasi];
       node.prompt = quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join("");
       node.typeArgs = typeArgs;
+      if (typeArgs && this.input.charCodeAt((typeArgs as { start: number }).start) === charCodes.colon) node.colonType = true;
       return this.finishNode(node as never, "NolaExtractExpression" as never);
     }
 
@@ -614,7 +870,7 @@ export default (superClass: typeof Parser) =>
           if ((this.state.lastTokEndLoc as Position | null)?.index === startLoc.index) {
             this.raise(NolaErrors.NolaAskTemplateNeedsSpace, startLoc);
           }
-          const extract = this.startNode() as unknown as { quasi: unknown; prompt: string; typeArgs: unknown };
+          const extract = this.startNode() as unknown as { quasi: unknown; prompt: string; typeArgs: unknown; parts: unknown[] };
           node.argument = this.parseSubscripts(this.nolaFinishExtractor(extract), startLoc);
         } else {
           node.argument = this.parseMaybeUnary(null, true);
@@ -728,18 +984,68 @@ export default (superClass: typeof Parser) =>
       );
     }
 
+    // A value of an ASK SEQUENCE may start here (spec 2026-10-12, line rule
+    // amended 2026-10-15): the same tokens as a context value, on ANY line — a
+    // line break alone never ends a sequence; it ends where the grammar cannot
+    // continue (a second value in a row, `;`, a closer, an operator, a type) or
+    // where the next line opens a statement. `ask`/`await` stay out; `this`,
+    // `function`, `class` and the unary keywords are refused on the same line
+    // (NOLA1020 below) and end the sequence on a new one.
+    nolaStartsSequenceValue(): boolean {
+      const { type } = this.state;
+      if (type === tt.bracketL || type === tt.parenL) return true;
+      if ((type === tt.name && this.state.value === "ask") || type === tt._await) return false;
+      if (this.nolaNextLineOpensDeclaration()) return false;
+      return (
+        tokenIsIdentifier(type) ||
+        type === tt._new ||
+        type === tt.braceL ||
+        type === tt.num ||
+        type === tt.string ||
+        type === tt.bigint ||
+        type === tt._true ||
+        type === tt._false ||
+        type === tt._null
+      );
+    }
+
+    // On a new line, a contextual keyword that opens a declaration — `type X`,
+    // `interface I`, `let x`, `enum E`, `declare …`, `namespace N`, `module M`,
+    // `abstract class`, `async function` / `async (`, `using x`, `global {` —
+    // is the next statement, never a value. TypeScript's own test: the keyword
+    // and then a name, a keyword, a bracket, a string or a `*`. Followed by
+    // anything else (`:`, `.`, `(`, `;`, the line's end) it is the value it
+    // looks like: `type: string` on its own line is the sequence's type.
+    nolaNextLineOpensDeclaration(): boolean {
+      if (!this.hasPrecedingLineBreak()) return false;
+      const { type, value } = this.state;
+      if (!tokenIsIdentifier(type) || !NOLA_DECLARATION_OPENERS.has(value as string)) return false;
+      if (value === "let") return true;
+      const next = this.lookahead();
+      if (
+        next.type === tt.braceL ||
+        next.type === tt.bracketL ||
+        next.type === tt.string ||
+        next.type === tt.star ||
+        (value === "async" && next.type === tt.parenL)
+      ) {
+        return true;
+      }
+      return tokenIsKeywordOrIdentifier(next.type);
+    }
+
     // One value: a left-hand-side expression (atom + member/call/index tails —
     // never an operator, an arrow or a ternary; those reach NOLA1020 above).
     // The value's start offset arms the stop rule in parseSubscript below; the
     // parsed value is checked afterwards, for what the stop rule cannot see.
-    nolaParseContextValue(): N.Expression {
+    nolaParseContextValue(error: typeof NolaErrors.NolaContextValueTail = NolaErrors.NolaContextValueTail): N.Expression {
       const prev = this.nolaValueStart;
       const startLoc = this.state.startLoc;
       const start = this.state.start;
       this.nolaValueStart = start;
       try {
         const value = this.parseExprSubscripts();
-        this.nolaCheckValue(value, startLoc);
+        this.nolaCheckValue(value, startLoc, error);
         // The bytes the value owns, parentheses included: a parenthesized
         // expression's node spans the inner expression only, and the lowerer
         // must not eat the `(` or the `)` when it rewrites the seams.
@@ -765,7 +1071,11 @@ export default (superClass: typeof Parser) =>
     // parenthesized. Tolerant mode records it and keeps the value as parsed —
     // bytes verbatim, TypeScript still checks the tag call — and the statement
     // loop goes on.
-    nolaCheckValue(value: N.Expression, startLoc: Position): void {
+    nolaCheckValue(
+      value: N.Expression,
+      startLoc: Position,
+      error: typeof NolaErrors.NolaContextValueTail = NolaErrors.NolaContextValueTail,
+    ): void {
       const parenthesized = (n: N.Node) => Boolean((n as { extra?: { parenthesized?: boolean } }).extra?.parenthesized);
       if (
         (value.type === "FunctionExpression" ||
@@ -773,13 +1083,13 @@ export default (superClass: typeof Parser) =>
           value.type === "ArrowFunctionExpression") &&
         !parenthesized(value)
       ) {
-        this.raise(NolaErrors.NolaContextValueTail, startLoc);
+        this.raise(error, startLoc);
         return;
       }
       let cur: N.Node = value;
       while (!parenthesized(cur)) {
         if (cur.type === "TaggedTemplateExpression") {
-          this.raise(NolaErrors.NolaContextValueTail, (cur as N.TaggedTemplateExpression).quasi.loc.start);
+          this.raise(error, (cur as N.TaggedTemplateExpression).quasi.loc.start);
           return;
         }
         // an argument-less `new`: its callee ends where the expression ends

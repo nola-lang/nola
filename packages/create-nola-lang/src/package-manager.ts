@@ -22,3 +22,15 @@ export interface PackageManagerCommands {
 export function packageManagerCommands(pm: PackageManager): PackageManagerCommands {
   return { install: `${pm} install`, start: `${pm} start`, run: `${pm} run` };
 }
+
+/** The runtime a scaffold targets: Node (the loader, `nola run`) or Bun (`@nola-lang/bun`'s preload, `bun src/main.tsi`). */
+export type Runtime = "node" | "bun";
+
+export function isRuntime(value: string): value is Runtime {
+  return value === "node" || value === "bun";
+}
+
+/** `bun create nola` produces a Bun project unless `--runtime node` says otherwise; every other manager scaffolds for Node. */
+export function defaultRuntime(pm: PackageManager): Runtime {
+  return pm === "bun" ? "bun" : "node";
+}

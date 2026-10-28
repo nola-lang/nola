@@ -15,6 +15,7 @@ type StartEvent = {
   callee?: string;
   hint?: string;
   typeText?: string;
+  tools?: readonly string[];
 };
 type EndEvent = {
   askId?: string;
@@ -33,7 +34,8 @@ type EndEvent = {
 type Envelope = { kind?: unknown; at?: unknown; pid?: unknown; runId?: unknown; event?: unknown };
 
 const siteText = (site?: Site): string | undefined => (site?.file && site.loc ? `${site.file}:${site.loc}` : undefined);
-const askKind = (raw: string | undefined): AskKind | undefined => (raw === undefined ? undefined : raw === "call" ? "call" : "extract");
+const askKind = (raw: string | undefined): AskKind | undefined =>
+  raw === undefined ? undefined : raw === "call" || raw === "tool-use" ? raw : "extract";
 const traceIdOf = (spanPath: readonly string[] | undefined, runId: unknown): string => spanPath?.[0] ?? `run:${String(runId)}`;
 
 /** Drop undefined members so a patched row equals the row a refetch returns. */
@@ -97,6 +99,7 @@ export function applyNotice(detail: DefinitionDetail, query: DefinitionAsksQuery
       callee: e.callee,
       hint: e.hint,
       typeText: e.typeText,
+      tools: e.tools ? [...e.tools] : undefined,
       provider: e.provider,
       status: "running",
       startedAt: at,

@@ -21,8 +21,8 @@ export infer function file(.request: string) {
   //    intent whose arguments are all plain
   const b = ask createTicket``("fallback title", 3);
 
-  // 3. hint marker — the ONLY carrier of instruction text for the call
-  const c = ask createTicket`file the ticket the customer asked for`(
+  // 3. words before the call — a text, then the call: the words are the task
+  const c = ask `file the ticket the customer asked for` createTicket(
     `a short ticket title`: string,
     `priority 1-5, 1 is most urgent`: number,
   );
@@ -31,11 +31,13 @@ export infer function file(.request: string) {
 }
 ```
 
-Use the plain call form when an argument contains an extractor. Add a hint marker when the call needs its own instruction.
+Use the plain call form when an argument contains an extractor. Put words before the call when it needs its own instruction. The hint marker, `` createTicket`file the ticket the customer asked for`(…) ``, is the same ask written on the callee; both spellings lower identically. The call's result is the ask's value, so no `: T` follows the call, and an ask makes one call ([`NOLA2020`](/docs/reference/error-codes/#nola2020)).
+
+A call intent runs the function exactly once and yields what it returned. When the model should decide whether and how often to call your functions on its way to an answer, offer them as tools instead: `` ask `the answer` [fn, g]: T `` — see [Tool use](/docs/language/tool-use/). Parentheses run a function, brackets offer functions.
 
 In a call's argument list the extractor's `..` is implied, as it is directly after `ask`: a typed template literal that starts an argument is an extractor, and so is one that starts a property value or an element of an object or array literal written there. `` ..`a short ticket title`: string `` in the same position stays legal and means the same. An untyped template is a plain string argument, so `` log(`done`) `` is an ordinary call. See [Two spellings, one construct](/docs/language/extractors/#two-spellings-one-construct).
 
-In the prompt the call is the task block, `<task call="fn">` with the hint inside; the arguments to fill are described by the schema. See [The prompt](/docs/language/prompt/).
+In the prompt the call is the task block, `<task call="fn">` with the words inside; the arguments to fill are described by the schema. See [The prompt](/docs/language/prompt/).
 
 For a call with no extractor arguments, the empty marker wraps the call as an intent. It produces a receipt and a history entry, but makes no provider request: the function runs with the arguments you supplied.
 
@@ -58,7 +60,7 @@ export infer function place(.request: string) {
 
 ## What stays a plain call
 
-Automatic detection does not look through ternaries, logical expressions, spread elements or template substitutions; a typed template in those positions needs its `..` (`` f(cond ? ..`x`: T : fallback) ``), and the call it sits in stays a plain call receiving that extractor as a value. In `` outer(inner(`x`: T)) ``, only `inner` becomes a call intent; `outer` receives that intent as a value. Calls such as `getFn()(…)` and immediately invoked function expressions also stay ordinary calls. Use an explicit marker to make these calls into intents.
+Automatic detection does not look through ternaries, logical expressions, spread elements or template substitutions; a typed template in those positions needs its `..` (`` f(cond ? (..`x`: T) : fallback) ``, parenthesized in a conditional's consequent), and the call it sits in stays a plain call receiving that extractor as a value. In `` outer(inner(`x`: T)) ``, only `inner` becomes a call intent; `outer` receives that intent as a value. Calls such as `getFn()(…)` and immediately invoked function expressions also stay ordinary calls. Use an explicit marker to make these calls into intents.
 
 `new Foo(…)`, `super(…)`, `import(…)` and optional calls (`fn?.(…)`, `a?.b(…)`) cannot be call intents, even with a marker. `new Foo(…)` has no implied `..` either: an extractor written there needs the dots.
 

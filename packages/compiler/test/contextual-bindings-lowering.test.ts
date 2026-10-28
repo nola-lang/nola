@@ -31,7 +31,7 @@ describe("contextual bindings lowering (scope-bodies spec §2.2 / §5.2)", () =>
     expect(diagnostics).toEqual([]);
     expect(code).toContain('const tone = "brief";');
     expect(code).toContain("}), __nola_module_ctx(), { locals: { tone } });");
-    expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 21, () => ({ locals: [{ name: "tone" }] })); }');
+    expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 24, () => ({ locals: [{ name: "tone" }] })); }');
     expect(typecheckLowered({ "x.ts": code })).toEqual([]);
   });
 

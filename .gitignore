@@ -13,7 +13,7 @@ coverage/
 next-env.d.ts
 # session worktrees
 .claude/worktrees/
-# public-mirror sync clone (scripts/sync-public.mjs)
+# public-mirror sync clone (scripts/sync.mjs)
 .public-sync/
 .nola
 .superpowers

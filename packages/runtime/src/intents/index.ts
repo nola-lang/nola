@@ -13,6 +13,29 @@ export {
   InvocationContext,
 } from "./invocation/invocation-context.js";
 export { ModuleContext, type ModuleScopeInit } from "./invocation/module-context.js";
+export {
+  type FuncPart,
+  type InstructionPart,
+  inlineText,
+  instructionParts,
+  normalizeParts,
+  type ObjPart,
+  referenceText,
+  type ToolsPart,
+  wireParts,
+} from "./parts.js";
+export {
+  isGroupVerdict,
+  materializeTools,
+  type ToolGroupVerdict,
+  type ToolSource,
+  type ToolVerdict,
+  toolSource,
+  toolSpreadSource,
+  toolVerdicts,
+} from "./tool-use/tool-group.js";
+export { type ToolEntry, ToolUseContext, type ToolUseIntentParams as ToolUseIntentInit } from "./tool-use/tool-use-context.js";
+export { ToolUseIntent } from "./tool-use/tool-use-intent.js";
 
 /**
  * Runtime intent detection — checks the `__nolaBrand` instance property, not
@@ -25,7 +48,7 @@ export function isIntent(v: unknown): v is Askable {
 export { ExecutableIntent } from "./executable-intent.js";
 export { InvocationIntent } from "./invocation/invocation-intent.js";
 
-import type { Askable, Intent as PublicIntent } from "@nola-lang/core";
+import type { Askable, Intent as PublicIntent, ToolUseAskable } from "@nola-lang/core";
 import { nolaRuntime } from "../runtime/index.js";
 import type { ExtractIntentParams } from "./extract/extract-context.js";
 import { ExtractIntent } from "./extract/extract-intent.js";
@@ -34,6 +57,8 @@ import { FunctionCallIntent } from "./function-call/function-call-intent.js";
 import { Intent as IntentClass, type IntentExecutor } from "./intent.js";
 import type { InvocationContext } from "./invocation/invocation-context.js";
 import { InvocationIntent } from "./invocation/invocation-intent.js";
+import type { ToolUseIntentParams } from "./tool-use/tool-use-context.js";
+import { ToolUseIntent } from "./tool-use/tool-use-intent.js";
 
 /**
  * Intent factories, keyed by the exact class name — no mapping layer. The
@@ -51,5 +76,9 @@ export const intents = {
   },
   FunctionCallIntent<T = unknown>(params: FunctionCallIntentParams): Askable<T> {
     return new FunctionCallIntent<T>(params, nolaRuntime.current());
+  },
+  /** emit 22 (tool-use spec 2026-10-08): the public tier adds `.withMaxTurns` */
+  ToolUseIntent<T = unknown>(params: ToolUseIntentParams): ToolUseAskable<T> {
+    return new ToolUseIntent<T>(params, nolaRuntime.current());
   },
 };

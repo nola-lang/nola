@@ -97,6 +97,80 @@ export const fixtures = {
     },
   } satisfies InferenceModel,
   bare: extract("extract the person"),
+  /** a tool-use ask after one tool turn (spec 2026-10-08 §3.6): the transcript renders as assistant/user turns after the task */
+  toolUse: {
+    intent: "tool-use",
+    input: { instruction: "find the visa files on disc D" },
+    tools: [
+      {
+        name: "searchFiles",
+        description: "Search files under a directory.",
+        parameters: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] },
+      },
+    ],
+    transcript: [
+      {
+        text: "Let me look.",
+        calls: [
+          { id: "c1", name: "searchFiles", args: { dir: "D:/" }, result: '["D:/visa/a.pdf"]' },
+          { id: "c2", name: "searchFiles", args: { dir: "E:/" }, result: "[]" },
+        ],
+      },
+    ],
+    output: { syntax: "json", schema: { type: "array", items: { type: "string" } } },
+  } as InferenceModel,
+  /** an ask sequence (spec 2026-10-12 §3.7): the task holds the parts in order — a text, an input block where the value was written, a text, another input */
+  sequence: {
+    intent: "extract",
+    input: {
+      instruction: "the person responsible for project given this policy policy",
+      parts: [
+        { text: "the person responsible for" },
+        { input: { name: "project", type: "{ id: string }", value: { id: "p-1" } } },
+        { text: "given this policy" },
+        { input: { name: "policy", type: "string", value: "least privilege" } },
+      ],
+    },
+    output,
+  } as InferenceModel,
+  /** a tool-use sequence: each list renders as its bracketed wire names where it was written; the definitions ride natively once */
+  sequenceTools: {
+    intent: "tool-use",
+    input: {
+      instruction: "find the visa files using [searchFiles, readFile] or [readDir] then answer",
+      parts: [
+        { text: "find the visa files using" },
+        { tools: ["searchFiles", "readFile"] },
+        { text: "or" },
+        { tools: ["readDir"] },
+        { text: "then answer" },
+      ],
+    },
+    tools: [
+      { name: "searchFiles", parameters: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] } },
+      { name: "readFile", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+      { name: "readDir", parameters: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] } },
+    ],
+    output: { syntax: "json", schema: { type: "array", items: { type: "string" } } },
+  } as InferenceModel,
+  /** a call sequence: the words around the call, the call where it was written, the callee on the attribute */
+  sequenceCall: {
+    intent: "call",
+    input: {
+      instruction: "register the applicant createUser(user id, email) with these defaults defaults",
+      callee: "createUser",
+      parts: [
+        { text: "register the applicant" },
+        { call: "createUser(user id, email)" },
+        { text: "with these defaults" },
+        { input: { name: "defaults", value: { plan: "free" } } },
+      ],
+    },
+    output: {
+      syntax: "json",
+      schema: { type: "object", properties: { arg0: { type: "string" }, arg1: { type: "string" } }, required: ["arg0", "arg1"] },
+    },
+  } as InferenceModel,
   correction: extract("p", undefined, { correction: { response: "123", error: "$: expected string, got number" } }),
   emptyScope: extract("p", { fn: "classify", file: "x.tsi", instruction: "", args: [{ name: "id", contextual: false }] }),
   absentValue: extract("p", {

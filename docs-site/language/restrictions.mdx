@@ -50,7 +50,7 @@ Other proposed forms also remain unsupported: abstract functions, type and inter
 
 ## Runtimes
 
-- **Node ≥ 22.18** is required to load `.tsi` alongside plain `.ts` files. The loader uses Node’s module hooks; running it directly with Bun or Deno is unsupported ([`NOLA3015`](/docs/reference/error-codes/#nola3015)). You can still use npm, pnpm, Yarn or Bun as your package manager, provided Node runs the program. See [Node loader](/docs/tooling/node-loader/#runtimes).
+- **Node ≥ 22.18, or Bun ≥ 1.3 with the Bun plugin.** The Node loader uses Node's module hooks; under Bun, `@nola-lang/bun`'s preload loads `.tsi` from source instead ([Bun](/docs/tooling/bun/)). Running the loader directly with Bun or Deno is [`NOLA3015`](/docs/reference/error-codes/#nola3015); Deno cannot load `.tsi` at all. You can still use npm, pnpm, Yarn or Bun as your package manager. See [Node loader](/docs/tooling/node-loader/#runtimes).
 - **Server-side execution only.** Importing `.tsi` into a client bundle fails with [`NOLA4001`](/docs/reference/error-codes/#nola4001); running an ask in a browser raises [`NOLA3013`](/docs/reference/error-codes/#nola3013). Put the import in a server entry point, route handler or server action.
 
 ## Not restrictions

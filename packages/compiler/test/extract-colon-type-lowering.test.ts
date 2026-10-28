@@ -42,6 +42,22 @@ describe("extractor `: T` lowering", () => {
     expect(b.code).toContain('import type { Choice } from "@nola-lang/runtime"');
   });
 
+  it("a spaced colon lowers byte-identically to the glued one — the space sits inside the replaced span", () => {
+    // Colon-typed spec, amendment 2026-10-12: a colon on the closer's line is
+    // the type, spaced or not. Same emit and the same def, so a ledger keyed
+    // on the glued spelling serves the spaced one.
+    const { a, b } = pair("const a = ask `user id`: number;\n", "const a = ask `user id` : number;\n");
+    expect(b.code).toBe(a.code);
+    pair(
+      "declare function searchFiles(dir: string): string[];\ndeclare function readFile(p: string): string;\nconst files = ask `the files` [\n  searchFiles,\n  readFile\n]: string[];\n",
+      "declare function searchFiles(dir: string): string[];\ndeclare function readFile(p: string): string;\nconst files = ask `the files` [\n  searchFiles,\n  readFile\n] : string[];\n",
+    );
+    pair(
+      "declare function f(a: string): void;\nconst i = f(`a`: string);\n",
+      "declare function f(a: string): void;\nconst i = f(`a` : string);\n",
+    );
+  });
+
   it("a method chain after a delimited type type-checks clean", () => {
     const r = compileNola("const r = ask `p`: string[].withRetry(2);\n", "t.tsi");
     expect(r.diagnostics).toEqual([]);

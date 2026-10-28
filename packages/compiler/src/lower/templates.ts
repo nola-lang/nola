@@ -284,8 +284,31 @@ export const callIntentOpen = (typeText: string) => `__nola.intents.FunctionCall
  * so reformatting elsewhere in the file keeps the identity. Never part of the
  * ask fingerprint.
  */
-export const defHash = (displayFile: string, kind: "extract" | "call", a: string, b: string): string =>
+export const defHash = (displayFile: string, kind: "extract" | "call" | "tool-use", a: string, b: string): string =>
   sha256Hex(`nola-def:1\n${displayFile}\n${kind}\n${a}\n${b}`);
+
+// Tool use (spec 2026-10-08 §3.3, entries by value 2026-10-09 §3.3): the
+// opener mirrors the extractor's; the closer carries the entries as DEFERRED
+// SOURCES — the value as written, its verdict accessor, the written text and
+// the member expression's object — then the answer type, loc and def. The
+// runtime pairs each value with its verdict when the ask composes.
+export const toolUseOpen = (typeText: string) => `__nola.intents.ToolUseIntent${typeText}({ instruction: `;
+export const TOOLS_OPEN = ", tools: [";
+/** A verdict accessor's name (spec 2026-10-09 §3.3): the site counter under the tool prefix, never mistaken for a type accessor. */
+export const toolAccessorName = (n: number) => `__nola_tool_$${n}`;
+/** The inert / final verdict accessor: a carrier or a `__nola.tools.*` group. */
+export const toolAccessorDecl = (accessor: string, expr: string) =>
+  `function ${accessor}(): import("@nola-lang/runtime").ToolVerdict { return ${expr}; }\n`;
+/** `__nola.tool(` / `__nola.toolSpread(` — the written entry follows (anchored by the caller). */
+export const toolSourceOpen = (spread: boolean) => (spread ? "__nola.toolSpread(" : "__nola.tool(");
+/** After the entry: the verdict accessor, then for a bare entry the written name and the member expression's object. */
+export const toolSourceClose = (accessor: string, spread: boolean, written: string | undefined, receiver: string | undefined) => {
+  if (spread) return `, ${accessor}())`;
+  const name = written !== undefined ? JSON.stringify(written) : receiver !== undefined ? "undefined" : undefined;
+  return `, ${accessor}()${name !== undefined ? `, ${name}` : ""}${receiver !== undefined ? `, ${receiver}` : ""})`;
+};
+export const toolUseClose = (typeExpr: string, loc: Position, def: string) =>
+  `], type: ${typeExpr}, loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)} })`;
 
 /** `instructionField` is the full JS text after `instruction: ` — a JSON string for prose, the hint's copy for a hint with holes. */
 export const callIntentArgsHead = (tagText: string, instructionField: string, loc: Position, def: string) =>
@@ -293,6 +316,27 @@ export const callIntentArgsHead = (tagText: string, instructionField: string, lo
   `loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)}, args: [`;
 
 export const CALL_INTENT_CLOSE = "] })";
+
+// The ask sequence (spec 2026-10-12 §3.4): the instruction is an array of
+// parts. Texts stay in place; a value is wrapped at its seams; every part but
+// the first is preceded by the separator; the closer carries the type (not
+// for the call kind, whose type is the callee's), loc and def.
+export const SEQUENCE_CLASS = { extract: "ExtractIntent", call: "FunctionCallIntent", "tool-use": "ToolUseIntent" } as const;
+export const sequenceOpen = (className: string, typeText: string) => `__nola.intents.${className}${typeText}({ instruction: [`;
+export const SEQ_PART_SEP = ", ";
+export const OBJ_PART_OPEN = "__nola.var.obj({ value: ";
+/** After the value's bytes: its written name and, when the walk can type it, the optional value accessor. */
+export const objPartClose = (name: string, typeAccessor?: string) =>
+  `, name: ${JSON.stringify(name)}${typeAccessor !== undefined ? `, type: ${typeAccessor}()` : ""} })`;
+export const TOOLS_PART_OPEN = "__nola.var.tools(";
+export const TOOLS_PART_CLOSE = ")";
+export const FUNC_PART_OPEN = "__nola.var.func({ fn: ";
+export const funcPartArgsHead = (name: string) => `, name: ${JSON.stringify(name)}, args: [`;
+export const FUNC_PART_CLOSE = "] })";
+export const sequenceClose = (kind: "extract" | "call" | "tool-use", typeExpr: string, loc: Position, def: string) =>
+  kind === "call"
+    ? `], loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)} })`
+    : `], type: ${typeExpr}, loc: ${JSON.stringify(locText(loc))}, def: ${JSON.stringify(def)} })`;
 
 /** An untyped extractor resolves as a string. */
 export const EXTRACT_DEFAULT_TYPE_EXPR = "__nola.types.string()";

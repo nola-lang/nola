@@ -52,6 +52,7 @@ const EXPECTED: ReadonlyArray<{ name: string; prefix: string; kind: Kind }> = [
   { name: "Ask (free text)", prefix: "askfree", kind: "expression" },
   { name: "Ask with provider", prefix: "askwith", kind: "expression" },
   { name: "Call intent", prefix: "calli", kind: "expression" },
+  { name: "Tool use", prefix: "tooli", kind: "expression" },
   { name: "Extractor", prefix: "extract", kind: "expression" },
 ];
 

@@ -34,7 +34,7 @@ Create a project, run a small extraction and check the result. Choose the defaul
   </TabItem>
 </Tabs>
 
-Nola requires **Node ≥ 22.18**. The scaffolder warns if your Node version is too old.
+Nola requires **Node ≥ 22.18**. The scaffolder warns if your Node version is too old. `bun create nola` produces a Bun project instead — `.tsi` runs from source under Bun ≥ 1.3 through the [Bun plugin](/docs/tooling/bun/); the `nola` command line still runs on Node.
 
 Enter a project name, or press Enter to use `nola-app`, then choose a template:
 
@@ -42,6 +42,7 @@ Enter a project name, or press Enter to use `nola-app`, then choose a template:
 | --- | --- |
 | `feature-extraction` (default) | Extract typed data with top-level asks in one `.tsi` file. Includes recorded answers for offline use. |
 | `function-calling` | Let an ask fill the arguments of an async function in a neighboring `.ts` file. Includes recorded answers. |
+| `tool-use` | Offer two functions from a neighboring `.ts` file as tools the model calls as it needs before it answers. Includes recorded answers. |
 | `agent-loop` | Run a top-level `while` loop whose ask is typed as a `Problem` or `null`, with a context statement read again on every pass. Uses a mock provider. |
 | `typescript-interop` | Import an `infer function` from plain TypeScript and await its result. Includes recorded answers. |
 | `triage-ticket` | Triage a ticket with typesafe.ai. Requires `TYPESAFE_API_KEY`. |
@@ -53,7 +54,7 @@ The next prompt, *Select an inference provider:*, determines where answers come 
 
 - **nola: dev** gives you 25 free hosted runs. The scaffolder requests a trial key, saves it as `NOLA_API_KEY` in the git-ignored `.env` file and sets `model: "nola"`. Nola's service chooses the model.
 - **OpenAI**, **Anthropic**, **Gemini** or **typesafe.ai** configures that vendor. Copy the generated `.env.example` to `.env` and add your key before running the project. The configs use `openai("gpt-5-mini")`, `anthropic("claude-sonnet-4-5")`, `google("gemini-2.5-flash")` or `typesafe()`. The typesafe.ai option supports only literal unions and booleans, so it cannot run every ask in `feature-extraction`.
-- **Skip for now** keeps the template's configuration. `feature-extraction`, `function-calling` and `typescript-interop` use a replay ledger and `agent-loop` a mock provider, so all four work offline.
+- **Skip for now** keeps the template's configuration. `feature-extraction`, `function-calling`, `tool-use` and `typescript-interop` use a replay ledger and `agent-loop` a mock provider, so all five work offline.
 
 Each machine can request one anonymous trial. If yours already has a trial key, choosing *nola: dev* opens the browser to sign you in and creates a key on your account instead. If sign-in fails, the provider menu returns. You can also sign in later with `npx nola-lang login`. For a non-interactive run, pass `--provider nola` to request a key or `--provider none` to skip; `--trial` and `--no-trial` are equivalent shortcuts.
 

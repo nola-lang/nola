@@ -31,6 +31,22 @@
   "overrides": [
     {
       "includes": [
+        "packages/browser/src/vendor/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "useOptionalChain": "off",
+            "noUselessUndefinedInitialization": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
         "packages/console-ui/src/components/ui/**"
       ],
       "linter": {

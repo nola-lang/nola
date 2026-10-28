@@ -231,3 +231,50 @@ describe("NolaVirtualCode: snapshot identity across updates", () => {
     expect(back.mappings.some((m) => m.data.semantic)).toBe(true);
   });
 });
+
+// TypeScript reads `dist/*.d.ts.map` (declaration maps) to navigate into
+// sources; Volar registers every file the host is asked for and warns
+// `languageId not found` — as [error] lines in the output channel — when no
+// plugin names a language for it. A source map is JSON; naming it stops the
+// noise, and the file is served by the host either way.
+describe("files TypeScript reads beside the program", () => {
+  it("a source map is json to Volar; everything else is still not ours", () => {
+    expect(plugin.getLanguageId("/proj/dist/a.d.ts.map")).toBe("json");
+    expect(plugin.getLanguageId("/proj/dist/a.js.map")).toBe("json");
+    expect(plugin.getLanguageId("/proj/a.ts")).toBeUndefined();
+    expect(plugin.getLanguageId("/proj/a.d.ts")).toBeUndefined();
+  });
+});
+
+// A compiler failure is a Nola bug, never the user's; thrown out of the
+// language plugin it ends the language server process (2026-10-13: an empty
+// call argument crashed the lowerer and VS Code restarted the server in a
+// loop). The virtual code reports it on the root document as NOLA2021 and
+// serves last-good, exactly like an unparsable snapshot.
+describe("a compiler failure inside the virtual code", () => {
+  it("is reported as NOLA2021 and the last-good embedded code is served stale", () => {
+    let fail = false;
+    const failing = createNolaLanguagePlugin<string>((id) => id, {
+      compilerConfig: () => {
+        if (fail) throw new Error("boom");
+        return {};
+      },
+    });
+    const made = failing.createVirtualCode?.("/proj/f.tsi", "nola", snap("const i = ..`x`: string;\n"), {} as never);
+    if (!(made instanceof NolaVirtualCode)) throw new Error("no virtual code");
+    const good = generatedText(made);
+    fail = true;
+    expect(() => failing.updateVirtualCode?.("/proj/f.tsi", made, snap("const i = ..`y`: number;\n"), {} as never)).not.toThrow();
+    expect(made.stale).toBe(true);
+    expect(generatedText(made)).toBe(good);
+    expect(made.derivations).toEqual([]);
+    expect(made.diagnostics.map((d) => d.code)).toEqual(["NOLA2021"]);
+    expect(made.diagnostics[0]?.message).toContain("boom");
+    expect(made.diagnostics[0]?.loc.start).toEqual({ line: 1, column: 0 });
+    fail = false;
+    failing.updateVirtualCode?.("/proj/f.tsi", made, snap("const i = ..`y`: number;\n"), {} as never);
+    expect(made.stale).toBe(false);
+    expect(made.diagnostics).toEqual([]);
+    expect(generatedText(made)).toContain("ExtractIntent<number>");
+  });
+});

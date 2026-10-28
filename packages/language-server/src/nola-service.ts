@@ -1,10 +1,11 @@
-import { compileNola } from "@nola-lang/compiler";
+import { compileNola, sequenceShapes } from "@nola-lang/compiler";
 import { derivationDiagnostics } from "@nola-lang/derive";
 import { NolaVirtualCode } from "@nola-lang/language-core";
 import type { Diagnostic, LanguageServicePlugin } from "@volar/language-service";
 import type ts from "typescript";
 import type { Provide } from "volar-service-typescript";
 import { URI } from "vscode-uri";
+import { layoutSequences } from "./sequence-format.js";
 
 /**
  * The one hand-written service plugin.
@@ -23,7 +24,11 @@ import { URI } from "vscode-uri";
  * generated-side indentation maps back double-indented. Edits that touch a
  * nola construct (a replaced source span) are dropped — the TS formatter has
  * no idea what `..` or a tagged infer header means, so only whitespace
- * decisions over plain-TS source regions are trusted.
+ * decisions over plain-TS source regions are trusted. An ask sequence's
+ * texts and values are verbatim in the lowering, so its gaps are not
+ * replaced spans, and TypeScript's reading of them is wrong (tagged
+ * templates and an index): `layoutSequences` drops its edits there and lays
+ * the sequence out itself, from the shapes `sequenceShapes` reads.
  */
 export function createNolaServicePlugin(typescript: typeof ts, options: { sourceRoot: string }): LanguageServicePlugin {
   const { sourceRoot } = options;
@@ -116,8 +121,10 @@ export function createNolaServicePlugin(typescript: typeof ts, options: { source
           const constructRanges = result.meta.spans
             .filter((s) => s.kind === "replaced" && s.sourceEnd > s.sourceStart)
             .map((s) => ({ start: s.sourceStart, end: s.sourceEnd }));
+          const shapes = sequenceShapes(text, "format.tsi") ?? [];
+          const requested = { start: document.offsetAt(range.start), end: document.offsetAt(range.end) };
 
-          const changes = formatter.format(text, document.offsetAt(range.start), document.offsetAt(range.end), {
+          const changes = formatter.format(text, requested.start, requested.end, {
             convertTabsToSpaces: options.insertSpaces,
             tabSize: options.tabSize,
             indentSize: options.tabSize,
@@ -133,22 +140,26 @@ export function createNolaServicePlugin(typescript: typeof ts, options: { source
             semicolons: typescript.SemicolonPreference.Ignore,
           });
 
-          const edits = [];
-          for (const change of changes) {
+          const outsideConstructs = changes.filter((change) => {
             const editStart = change.span.start;
             const editEnd = change.span.start + change.span.length;
-            const touchesConstruct = constructRanges.some((r) =>
+            return !constructRanges.some((r) =>
               change.span.length === 0
                 ? editStart > r.start && editStart < r.end // pure insertion strictly inside
                 : editStart < r.end && r.start < editEnd,
             );
-            if (touchesConstruct) continue;
-            edits.push({
-              range: { start: document.positionAt(editStart), end: document.positionAt(editEnd) },
-              newText: change.newText,
-            });
-          }
-          return edits;
+          });
+          const laidOut = layoutSequences(text, shapes, outsideConstructs, requested, {
+            tabSize: options.tabSize,
+            insertSpaces: options.insertSpaces,
+          });
+          return laidOut.map((change) => ({
+            range: {
+              start: document.positionAt(change.span.start),
+              end: document.positionAt(change.span.start + change.span.length),
+            },
+            newText: change.newText,
+          }));
         },
       };
     },

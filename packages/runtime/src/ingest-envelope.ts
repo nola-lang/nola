@@ -1,5 +1,5 @@
 import type { NolaIngestEnvelope, NolaIngestKind, NolaTelemetry } from "@nola-lang/core";
-import { NOLA_INGEST_VERSION, redactSecrets } from "@nola-lang/core";
+import { NOLA_INGEST_VERSION, processId, redactSecrets } from "@nola-lang/core";
 import { nolaRuntime } from "./runtime/index.js";
 
 /**
@@ -18,7 +18,7 @@ export function envelopeObserver(name: string, send: (envelope: NolaIngestEnvelo
     const envelope: NolaIngestEnvelope = {
       v: NOLA_INGEST_VERSION,
       runId,
-      pid: process.pid,
+      pid: processId(),
       ...(project !== undefined ? { project } : {}),
       seq: seq++,
       at: Date.now(),
@@ -50,5 +50,7 @@ export function envelopeObserver(name: string, send: (envelope: NolaIngestEnvelo
     onAskEnd: (e) => emit("askEnd", e),
     onInvocationStart: (e) => emit("invocationStart", e),
     onInvocationEnd: (e) => emit("invocationEnd", e),
+    onToolCallStart: (e) => emit("toolCallStart", e),
+    onToolCallEnd: (e) => emit("toolCallEnd", e),
   };
 }

@@ -6,5 +6,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{ "path": "../ast" }, { "path": "../compiler" }]
+  "references": [{ "path": "../ast" }, { "path": "../core" }, { "path": "../compiler" }]
 }

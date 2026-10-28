@@ -1,0 +1,7 @@
+// A throw INSIDE an infer function body: the wrapper's opener takes a line of its own above the body.
+export infer function capital(.country: string) {
+  const answer = ask `the capital`: string;
+  throw new Error(`boom in infer after ${answer}`);
+}
+
+await capital("France");

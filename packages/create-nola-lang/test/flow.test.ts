@@ -116,6 +116,7 @@ describe("resolveScaffoldOptions", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -130,6 +131,7 @@ describe("resolveScaffoldOptions", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -143,7 +145,27 @@ describe("resolveScaffoldOptions", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
+  });
+
+  it("a scaffold bun ran is a Bun project; --runtime overrides either way; an unknown runtime is refused", async () => {
+    const bun = await resolveScaffoldOptions({ interactive: false, packageManager: "bun" }, scripted({}));
+    expect(bun).toMatchObject({ kind: "scaffold", runtime: "bun" });
+    const node = await resolveScaffoldOptions({ interactive: false, packageManager: "bun", runtime: "node" }, scripted({}));
+    expect(node).toMatchObject({ kind: "scaffold", runtime: "node" });
+    const forced = await resolveScaffoldOptions({ interactive: false, runtime: "bun" }, scripted({}));
+    expect(forced).toMatchObject({ kind: "scaffold", runtime: "bun" });
+    await expect(resolveScaffoldOptions({ interactive: false, runtime: "deno" }, scripted({}))).rejects.toThrow(
+      /invalid --runtime "deno" \(valid: node, bun\)/,
+    );
+  });
+
+  it("add mode carries the runtime too", async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "package.json"), '{ "name": "existing" }\n');
+    const out = await resolveScaffoldOptions({ add: true, dir, interactive: false, packageManager: "bun" }, scripted({}));
+    expect(out).toMatchObject({ kind: "add", dir, runtime: "bun" });
   });
 
   it("empty name answer falls back to the default", async () => {
@@ -229,7 +251,7 @@ describe("runFlow", () => {
 describe("resolveScaffoldOptions — add mode", () => {
   it("--add resolves straight to the add outcome (default dir '.')", async () => {
     const out = await resolveScaffoldOptions({ add: true, interactive: false }, scripted({}));
-    expect(out).toEqual({ kind: "add", dir: ".", provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir: ".", provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 
   it("--add keeps an explicit dir", async () => {
@@ -237,7 +259,7 @@ describe("resolveScaffoldOptions — add mode", () => {
       { add: true, dir: "proj", interactive: true, provider: "none" },
       scripted({}),
     );
-    expect(out).toEqual({ kind: "add", dir: "proj", provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir: "proj", provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 
   it("--add with --template is contradictory", async () => {
@@ -251,7 +273,7 @@ describe("resolveScaffoldOptions — add mode", () => {
     await writeFile(join(cwd, "package.json"), '{"name":"my-api"}');
     const p = scripted({ select: ["add"] });
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
-    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 
   it("detection: choosing new project continues into the normal flow", async () => {
@@ -267,6 +289,7 @@ describe("resolveScaffoldOptions — add mode", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -290,6 +313,7 @@ describe("resolveScaffoldOptions — add mode", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -298,7 +322,7 @@ describe("resolveScaffoldOptions — add mode", () => {
     await writeFile(join(dir, "package.json"), '{"name":"existing"}');
     const p = scripted({ select: ["add"] });
     const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 
   it("non-empty target WITH package.json can still scaffold fresh", async () => {
@@ -306,7 +330,7 @@ describe("resolveScaffoldOptions — add mode", () => {
     await writeFile(join(dir, "package.json"), '{"name":"existing"}');
     const p = scripted({ select: ["fresh"] });
     const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 
   it("non-empty target WITHOUT package.json keeps the remove-confirm", async () => {
@@ -314,7 +338,7 @@ describe("resolveScaffoldOptions — add mode", () => {
     await writeFile(join(dir, "keep.txt"), "x");
     const p = scripted({ confirm: [true] });
     const out = await resolveScaffoldOptions({ dir, template: "typescript-interop", interactive: true, provider: "none" }, p);
-    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "scaffold", dir, template: "typescript-interop", force: true, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 });
 
@@ -331,6 +355,7 @@ describe("resolveScaffoldOptions — the setup step is retired (editor + agents 
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
     expect(asked).toEqual([TEMPLATE_QUESTION]);
     expect(asked.join("\n")).not.toContain(SETUP_QUESTION);
@@ -342,7 +367,7 @@ describe("resolveScaffoldOptions — the setup step is retired (editor + agents 
     const p = scripted({ select: ["add"] });
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ interactive: true, provider: "none", cwd }, p);
-    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir: cwd, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
     expect(asked).toHaveLength(1);
   });
 
@@ -359,6 +384,7 @@ describe("resolveScaffoldOptions — the setup step is retired (editor + agents 
       provider: "none",
       ide: "none",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -521,7 +547,7 @@ describe("runFlow — install + open VS Code step", () => {
       await realpath(join(workspace, "packages", "runtime")),
     );
     const notes = p.notes.join("\n");
-    expect(notes).toContain("NOLA_LINK_CHECKOUT: linked @nola-lang/runtime, @nola-lang/providers, nola-lang");
+    expect(notes).toContain("NOLA_LINK_CHECKOUT: linked @nola-lang/runtime, @nola-lang/providers, @nola-lang/bun, nola-lang");
     expect(notes).toContain("npm install");
     // The linked runtime lives in packages/*/dist, outside node_modules, so the
     // launch config must blackbox it or F10 over the first ask runs to the end.
@@ -868,11 +894,32 @@ async function seedConfig(home: string, apiUrl = "https://api.nola.sh") {
 }
 const sessionOf = async (home: string) => JSON.parse(await readFile(join(home, ".nola", CREDENTIALS_FILE), "utf8"));
 
+describe("runFlow — Bun project", () => {
+  it("runFlow under bun writes the Bun project and the add path merges the Bun package", async () => {
+    const parent = await tmp();
+    const dir = join(parent, "bun-app");
+    expect(await runFlow({ dir, template: "empty", ide: "none", agents: "none" }, { interactive: false, packageManager: "bun", cwd: parent, home: parent })).toBe(0);
+    expect(existsSync(join(dir, "bunfig.toml"))).toBe(true);
+    const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("bun src/main.tsi");
+    expect(pkg.devDependencies["@nola-lang/bun"]).toMatch(/^\^\d/);
+
+    const existing = join(parent, "existing");
+    await mkdir(existing);
+    await writeFile(join(existing, "package.json"), '{ "name": "existing", "private": true }\n');
+    expect(await runFlow({ dir: existing, add: true, ide: "none", agents: "none" }, { interactive: false, packageManager: "bun", cwd: parent, home: parent })).toBe(0);
+    const added = JSON.parse(await readFile(join(existing, "package.json"), "utf8"));
+    expect(added.devDependencies["@nola-lang/bun"]).toMatch(/^\^\d/);
+    expect(existsSync(join(existing, "bunfig.toml"))).toBe(false); // add mode suggests, never writes
+  });
+});
+
 describe("template menu", () => {
-  it("the first menu is the featured examples by feature — feature-extraction first, agent-loop third, triage-ticket (typesafe.ai) before empty — then one row that opens the rest", () => {
+  it("the first menu is the featured examples by feature — feature-extraction first, tool-use third, agent-loop fourth, triage-ticket (typesafe.ai) before empty — then one row that opens the rest", () => {
     expect(templateMenu().map((o) => o.value)).toEqual([
       "feature-extraction",
       "function-calling",
+      "tool-use",
       "agent-loop",
       "typescript-interop",
       "triage-ticket",
@@ -884,7 +931,8 @@ describe("template menu", () => {
     expect(more.hint).toContain("file-ticket");
     expect(more.hint).not.toContain("triage-ticket");
     expect(more.hint).not.toContain("agent-loop");
-    for (const o of templateMenu().slice(0, 6)) {
+    expect(more.hint).not.toContain("tool-use");
+    for (const o of templateMenu().slice(0, 7)) {
       expect(o.label).toBe(o.value === "triage-ticket" ? "triage-ticket (typesafe.ai)" : o.value);
     }
   });
@@ -956,6 +1004,7 @@ describe("wizard order", () => {
       provider: "nola",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 
@@ -979,7 +1028,7 @@ describe("wizard order", () => {
     const asked = recording(p);
     const out = await resolveScaffoldOptions({ add: true, dir, interactive: true }, p);
     expect(asked).toEqual([PROVIDER_QUESTION]);
-    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"] });
+    expect(out).toEqual({ kind: "add", dir, provider: "none", ide: "vscode", agents: ["claude", "universal"], runtime: "node" });
   });
 });
 
@@ -1441,6 +1490,7 @@ describe("a template that pins its vendor (triage-ticket)", () => {
       provider: "none",
       ide: "vscode",
       agents: ["claude", "universal"],
+      runtime: "node",
     });
   });
 

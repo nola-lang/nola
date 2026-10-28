@@ -1,0 +1,9 @@
+import { readFile, searchFiles } from "./tools.js";
+
+// A tool-use ask: the functions in brackets are the TOOLS the model may call
+// — as often as it needs, in the order it chooses — before it answers. Nola
+// runs each call here, hands the result back to the model and asks again; the
+// typed answer ends the loop. Parentheses run a function, brackets offer them.
+const files = ask `the files on disc D that belong to a US visa application` [searchFiles, readFile]: string[];
+
+console.log(JSON.stringify(files));

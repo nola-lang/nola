@@ -65,10 +65,12 @@ There are three ways to create an intent:
 | calling an infer function — `summarize(text)` | the function's result | `Intent<T>` |
 | an extractor — `` ..`instruction`: T `` (the dots are optional directly after `ask` and in a call's argument list) | a request to pull a `T` from context | `Askable<T>` |
 | a call intent — `` fn`hint`(…) `` or a plain call with an extractor argument | a request to fill the arguments, then call `fn` | `Askable<T>` |
+| a tool-use ask — `` `instruction` [fn, g.h]: T `` | a request for a `T` the model may call the listed functions to reach | `ToolUseAskable<T>` |
 
 | Tier | What it can do |
 | --- | --- |
 | `Askable<T>` | resolvable only through `ask`; carries `.withRetry(n)`, `.withModel(…)`, `.withParams({…})`, `.withTimeout(ms)` |
+| `ToolUseAskable<T>` extends `Askable<T>` | everything above, plus `.withMaxTurns(n)` — the provider turns the loop may take |
 | `Intent<T>` extends `Askable<T>`, `PromiseLike<T>` | everything above, plus `.detached()` and `then` — so plain TypeScript can `await` it |
 
 An infer function’s intent includes enough information to start an **invocation**: its function, instruction, source file and contextual parameters. An extractor or call intent needs an existing invocation and uses the context of the `ask` that resolves it. Only `Intent<T>` supports `await`. See [Intent methods](/docs/language/intent-methods/) for configuration and [Intent API](/docs/reference/intent-api/) for signatures.

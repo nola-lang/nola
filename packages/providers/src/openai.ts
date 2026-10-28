@@ -1,5 +1,15 @@
-import type { InferRequest, JsonSchema, LanguageModel, RenderedPrompt } from "@nola-lang/core";
-import { NolaProviderError, parseRetryAfter, renderPrompt } from "@nola-lang/core";
+import type { InferRequest, JsonSchema, LanguageModel, RenderedPrompt, ToolCall, ToolUseMode } from "@nola-lang/core";
+import { NolaProviderError, parseRetryAfter, readEnv, renderPrompt } from "@nola-lang/core";
+import {
+  ANSWER_TOOL,
+  ANSWER_TOOL_DESCRIPTION,
+  parseArgs,
+  partitionCalls,
+  splitMessages,
+  toolUseBrand,
+  transcriptTurns,
+  wireTools,
+} from "./tools.js";
 import { ENVELOPE_NOTE, envelope, resolveRootRef, schemaNote } from "./wire.js";
 
 export interface OpenAiOptions {
@@ -17,6 +27,16 @@ export interface OpenAiOptions {
    * reject json_schema.
    */
   structuredOutputs?: boolean;
+  /**
+   * The tool-use strategy for a tool-use ask (`` ask `task` [fn]: T ``).
+   * Default "native": chat-completions tool calling, one call per turn, the
+   * loop in Nola — the answer is one more strict function and no
+   * response_format goes out (OpenAI-compatible hosts reject the pair).
+   * false: this host offers no tool calling — the model is unbranded, a
+   * tool-use ask over it is NOLA3019 before the network, and a `fallback`
+   * group skips it for tool-use asks.
+   */
+  toolUse?: ToolUseMode | false;
 }
 
 type StrictSchema = Record<string, unknown>;
@@ -171,6 +191,25 @@ function fromStrict(value: unknown, schema: JsonSchema, defs?: Record<string, Js
   return value;
 }
 
+/**
+ * The conversation with the transcript in chat-completions form: the task
+ * turn, then per tool turn an assistant message carrying `tool_calls` and one
+ * `tool` message per call, then the correction pair when one ran.
+ */
+function nativeMessages(intent: InferRequest["intent"]): unknown[] {
+  const { task, tail } = splitMessages(intent);
+  const turns: unknown[] = [];
+  for (const turn of transcriptTurns(intent)) {
+    turns.push({
+      role: "assistant",
+      content: turn.text ?? null,
+      tool_calls: turn.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } })),
+    });
+    for (const c of turn.calls) turns.push({ role: "tool", tool_call_id: c.id, content: c.result });
+  }
+  return [task, ...turns, ...tail];
+}
+
 /** A bare model string is shorthand for `{ model }` — every other option defaulted. */
 export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
   const options = typeof optionsOrModel === "string" ? { model: optionsOrModel } : optionsOrModel;
@@ -178,12 +217,16 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
   const model = options.model;
   return {
+    // tool use (spec 2026-10-08): chat completions take tools natively, unless `toolUse: false`
+    ...toolUseBrand("openai", options.toolUse),
     name: "openai",
     async infer(req: InferRequest) {
       const requestedAt = Date.now();
       const envName = options.apiKeyEnv ?? "OPENAI_API_KEY";
-      const apiKey = options.apiKey ?? process.env[envName];
-      if (!apiKey) {
+      const apiKey = options.apiKey ?? readEnv(envName);
+      // A custom `fetch` owns authentication (a relay, a proxy, a test): no key is needed and no
+      // vendor header is sent without one. Without a custom fetch the key is required, as before.
+      if (!apiKey && !options.fetch) {
         throw new NolaProviderError(
           `OpenAI API key not found: environment variable ${envName} is not set (checked process.env, including the project .env applied by the Nola loader) and no \`apiKey\` was passed to openai(). Fix: set ${envName}, or pass openai({ apiKeyEnv: "MY_VAR" }) or openai({ apiKey }) in nola.config.ts.`,
           { definitive: true },
@@ -199,12 +242,33 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
       // structuredOutputs: false — the schema goes into the system turn instead of the wire field
       const enforce = options.structuredOutputs !== false;
       const system = (enveloped ? baseSystem + ENVELOPE_NOTE : baseSystem) + (!enforce && transport ? schemaNote(transport) : "");
+      // the echo is the text rendering; the wire carries the transcript natively (tool use)
       const sent: RenderedPrompt = { system, messages };
+      const tools = wireTools(req.intent);
       const body: Record<string, unknown> = {
         model,
-        messages: [{ role: "system", content: system }, ...messages],
+        messages: [{ role: "system", content: system }, ...(tools.length > 0 ? nativeMessages(req.intent) : messages)],
       };
-      if (transport && enforce) {
+      if (tools.length > 0) {
+        // Tools and response_format do not mix on OpenAI-compatible hosts
+        // (Cerebras and Groq reject the pair; 2026-10-09), so the answer is one
+        // more strict function carrying the output schema, and tool_choice
+        // `required` makes every turn a call — a real tool continues the loop,
+        // the answer tool ends it. Strict function calling gives OpenAI itself
+        // the guarantee response_format would. Without enforcement the model
+        // answers in text under the schema note.
+        const answerTool = transport && enforce ? [{ name: ANSWER_TOOL, description: ANSWER_TOOL_DESCRIPTION, parameters: transport }] : [];
+        body.tools = [...tools, ...answerTool].map((t) => ({
+          type: "function",
+          function: {
+            name: t.name,
+            ...(t.description !== undefined ? { description: t.description } : {}),
+            strict: true,
+            parameters: toStrict(t.parameters),
+          },
+        }));
+        body.tool_choice = answerTool.length > 0 ? "required" : "auto";
+      } else if (transport && enforce) {
         body.response_format = {
           type: "json_schema",
           json_schema: { name: "nola_extraction", strict: true, schema: toStrict(transport) },
@@ -212,7 +276,7 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
       }
       const res = await doFetch(`${baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
         body: JSON.stringify(body),
         signal: req.signal ?? null,
       });
@@ -230,15 +294,48 @@ export function openai(optionsOrModel: OpenAiOptions | string): LanguageModel {
           },
         );
       }
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
-      const content = data.choices?.[0]?.message?.content;
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: unknown; tool_calls?: Array<{ id?: unknown; function?: { name?: unknown; arguments?: unknown } }> };
+        }>;
+      };
+      const message = data.choices?.[0]?.message;
+      const calls: ToolCall[] = (message?.tool_calls ?? [])
+        .filter((c) => typeof c.function?.name === "string")
+        .map((c, i) => ({
+          id: typeof c.id === "string" ? c.id : `call_${i + 1}`,
+          name: c.function?.name as string,
+          args: parseArgs(typeof c.function?.arguments === "string" ? c.function.arguments : "{}"),
+        }));
+      if (calls.length > 0) {
+        const { answer, tools: toolCalls } = partitionCalls(calls);
+        if (toolCalls.length > 0) {
+          // a turn of the loop: the runtime runs the calls and comes back with the transcript
+          const text = typeof message?.content === "string" ? message.content : "";
+          return { text, toolCalls, durationMs: Date.now() - requestedAt, sent };
+        }
+        if (answer && reqSchema) {
+          // the answer tool's arguments are the answer; a non-object (unparsable) argument string passes through for the runtime to report
+          if (typeof answer.args === "string") return { text: answer.args, durationMs: Date.now() - requestedAt, sent };
+          const value = enveloped ? (answer.args as { value?: unknown } | null)?.value : answer.args;
+          // an enveloped answer without `value` goes through as written, so validation reports the shape
+          const text = value === undefined ? JSON.stringify(answer.args) : JSON.stringify(fromStrict(value, reqSchema));
+          return { text, durationMs: Date.now() - requestedAt, sent };
+        }
+      }
+      const content = message?.content;
       if (typeof content !== "string") throw new NolaProviderError("OpenAI response had no message content.");
       if (!reqSchema) return { text: content, sent };
       let parsed: unknown;
       try {
         parsed = JSON.parse(content);
       } catch (e) {
-        throw new NolaProviderError("OpenAI returned non-JSON despite structured outputs.", { cause: e });
+        throw new NolaProviderError(
+          tools.length > 0 && enforce
+            ? "OpenAI returned non-JSON text instead of a call to the answer tool."
+            : "OpenAI returned non-JSON despite structured outputs.",
+          { cause: e },
+        );
       }
       const value = enveloped ? (parsed as { value?: unknown }).value : parsed;
       const durationMs = Date.now() - requestedAt;

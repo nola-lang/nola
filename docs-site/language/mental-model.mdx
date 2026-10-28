@@ -35,7 +35,7 @@ Calling an infer function returns an `Intent<T>` without running its body. An ex
 
 A parameter with a leading dot, such as `.message`, is a **contextual parameter**. Its value is included in the prompt for every `ask` in that invocation. A plain parameter such as `userId` stays available to your code; the prompt does not include it.
 
-An **extractor** requests a typed answer: `` ask `instruction`: T ``. In a [call intent](/docs/language/call-intents/) the argument is written the same way, `` createTicket(`a short title`: string) ``. When you store an extractor in a variable, add two dots: `` ..`instruction`: T ``.
+An **extractor** requests a typed answer: `` ask `instruction`: T ``. In a [call intent](/docs/language/call-intents/) the argument is written the same way, `` createTicket(`a short title`: string) ``. When you store an extractor in a variable, add two dots: `` ..`instruction`: T ``. A list of functions between the template and the type, `` ask `instruction` [searchFiles, readFile]: T ``, offers them to the model as tools — parentheses run a function, brackets offer functions ([Tool use](/docs/language/tool-use/)).
 
 ## 5. Lowering: the JSX model
 
@@ -51,6 +51,7 @@ The Nola toolchain compiles `.tsi` into plain TypeScript, much as a JSX transfor
 | **askable** | anything `ask` accepts: an extractor, a call intent, an infer function's intent |
 | **extractor** | `` ask `instruction`: T `` (`` ..`instruction`: T `` when stored, away from `ask` and a call's arguments) — a request to pull a `T` from context |
 | **call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument — the model fills the arguments, then the function runs |
+| **tool-use ask** | `` `instruction` [fn, g.h]: T `` — the model may call the listed functions, as often as it needs, before it answers; see [Tool use](/docs/language/tool-use/) |
 | **context statement** | a bare template literal on its own line, optionally continued with values (`` `Page` oncall `when …` ``) — text every later `ask` in the scope sees, read at each ask |
 | **instruction** | the backtick text you write: a context statement, an extractor's prompt, a call hint |
 | **prompt** | what a provider sends; the default rendering is described in [The prompt](/docs/language/prompt/), and receipts carry what was sent |

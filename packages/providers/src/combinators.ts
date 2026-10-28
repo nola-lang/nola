@@ -1,6 +1,15 @@
 import { Codes } from "@nola-lang/ast";
-import type { InferRequest, InferResult, LanguageModel } from "@nola-lang/core";
-import { DECISION_MODEL, isDecisionModel, isPlatformModel, NolaConfigError, NolaProviderError } from "@nola-lang/core";
+import type { InferRequest, InferResult, LanguageModel, ToolUseMode } from "@nola-lang/core";
+import {
+  DECISION_MODEL,
+  isDecisionModel,
+  isPlatformModel,
+  isToolModel,
+  isToolUseRequest,
+  NolaConfigError,
+  NolaProviderError,
+  TOOL_MODEL,
+} from "@nola-lang/core";
 import { isDecisionRequest } from "./decision-request.js";
 import { requireInfer } from "./require-infer.js";
 
@@ -68,10 +77,31 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Build the outer model of a combinator: branded a decision model iff any inner is; `run` receives the request as is. */
+/**
+ * The tool-use strategy the inners agree on: `false` and absent are "no
+ * strategy" (a host without tool use sits in a group beside a native one);
+ * two different strategies are a config error — the runtime picks the loop
+ * before it knows which inner will serve.
+ */
+function agreedToolUse(name: string, inners: LanguageModel[]): { toolUse?: ToolUseMode } {
+  const modes = new Set(inners.map((m) => m.toolUse).filter((m): m is ToolUseMode => typeof m === "string"));
+  if (modes.size > 1) {
+    throw new NolaConfigError(
+      `${name}: its models disagree on toolUse (${[...modes].map((m) => JSON.stringify(m)).join(" vs ")}) — a group must share one tool-use strategy.`,
+      Codes.ConfigInvalid,
+    );
+  }
+  const [mode] = modes;
+  return mode === undefined ? {} : { toolUse: mode };
+}
+
+/** Build the outer model of a combinator: branded a decision / tool model iff any inner is, carrying the inners' tool-use strategy; `run` receives the request as is. */
 function outer(name: string, inners: LanguageModel[], run: (req: InferRequest) => Promise<InferResult>): LanguageModel {
-  const brand = inners.some((m) => isDecisionModel(m)) ? { [DECISION_MODEL]: true as const } : {};
-  return { name, ...brand, infer: (req: InferRequest) => run(req) };
+  const brand = {
+    ...(inners.some((m) => isDecisionModel(m)) ? { [DECISION_MODEL]: true as const } : {}),
+    ...(inners.some((m) => isToolModel(m)) ? { [TOOL_MODEL]: true as const } : {}),
+  };
+  return { name, ...brand, ...agreedToolUse(name, inners), infer: (req: InferRequest) => run(req) };
 }
 
 /**
@@ -106,13 +136,18 @@ export function withRetry(provider: LanguageModel, policy: RetryPolicy): Languag
   });
 }
 
-/** Try each inner in order; on a decision request, unbranded inners are skipped (they would fabricate). */
+/** Try each inner in order; on a decision / tool-use request, unbranded inners are skipped (they would fabricate, or ignore the tools). */
 async function tryInOrder(name: string, ordered: LanguageModel[], req: InferRequest): Promise<InferResult> {
   const decision = isDecisionRequest(req);
+  const toolUse = isToolUseRequest(req);
   const failures: string[] = [];
   for (const p of ordered) {
     if (decision && !isDecisionModel(p)) {
       failures.push(`${p.name}: not a decision model`);
+      continue;
+    }
+    if (toolUse && !isToolModel(p)) {
+      failures.push(`${p.name}: not a tool model`);
       continue;
     }
     try {

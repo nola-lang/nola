@@ -70,6 +70,46 @@ export function deriveType(node: ts.Node, ctx: WalkContext, declaredName?: strin
   return { expr, accessors: w.accessors, imports: w.imports, deps: [...w.deps] };
 }
 
+/**
+ * A tool list entry's contract (tool-use spec 2026-10-08 §3.4). `node` is the
+ * entry as lowered — an identifier or a member chain — and the type there
+ * must be callable: its FIRST signature's parameters become one object
+ * carrier keyed by parameter name in declaration order (optional and
+ * defaulted parameters optional, a `this` parameter is no argument), with
+ * the signature's JSDoc summary as the tool's description and `@param` tags
+ * as the properties'. A rest parameter is refused: the runtime spreads the
+ * arguments positionally, and a rest array has no fixed slot. A value with
+ * no call signature is NOLA2018; an underivable parameter type fails the
+ * entry with the walk's reason, like an extractor's type (never pruned).
+ */
+export interface ToolRequestFlags {
+  /** the ask the entry belongs to (its loc text) — collisions are checked per ask */
+  ask: string;
+  /** a spread entry (`...group`): a group flattened, a function refused */
+  spread?: true;
+  /** the written text of a name or dotted chain: one function's name, or a bare group's prefix */
+  written?: string;
+}
+/** The walk's answer plus the wire-visible names it could declare (spec 2026-10-09 §1.4). */
+export type ToolOutcome = WalkOutcome & { names: string[] };
+
+export function deriveTool(node: ts.Node, ctx: WalkContext, flags: ToolRequestFlags = { ask: "" }): ToolOutcome {
+  const w = new Walker(ctx);
+  const { expr, names } = w.toolEntry(node, flags);
+  return { expr, names, accessors: w.accessors, imports: w.imports, deps: [...w.deps] };
+}
+
+/** Same collapse as the syntactic walker's jsdocDescription: lines trimmed and joined by one space. */
+function collapseDoc(text: string): string | undefined {
+  const collapsed = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .join(" ")
+    .trim();
+  return collapsed.length > 0 ? collapsed : undefined;
+}
+
 class Walker {
   readonly accessors: NamedAccessor[] = [];
   readonly imports: ViewImport[] = [];
@@ -353,16 +393,131 @@ class Walker {
     return named && named.symbol.flags & TS.SymbolFlags.TypeAlias ? named : undefined;
   }
 
-  /** Same collapse as the syntactic walker's jsdocDescription: lines trimmed and joined by one space. */
+  /** A property's (or parameter's) JSDoc text, collapsed. */
   private docText(prop: ts.Symbol): string | undefined {
-    const text = TS.displayPartsToString(prop.getDocumentationComment(this.ctx.checker));
-    const collapsed = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-      .join(" ")
-      .trim();
-    return collapsed.length > 0 ? collapsed : undefined;
+    return collapseDoc(TS.displayPartsToString(prop.getDocumentationComment(this.ctx.checker)));
+  }
+
+  /** The tool contract of the callable at `at` — see deriveTool. */
+  /**
+   * A tool list entry (spec 2026-10-09 §3.4): the type at the anchored
+   * expression decides — one function (a carrier), or a group (a verdict):
+   * a tuple, an array, an object or module namespace of functions. Names
+   * follow §1.4: a written single name, `<written>.<member>` for a bare
+   * group, the member alone for a spread; what cannot be named here
+   * (array elements, computed entries) the runtime names.
+   */
+  toolEntry(at: ts.Node, flags: ToolRequestFlags): { expr: string; names: string[] } {
+    const written = at.getText();
+    const type = this.ctx.checker.getTypeAtLocation(at);
+    // an opaque type — `any`, `unknown`, a union with a function in it — is refused by name (§1.3) whether spread or not
+    const opaque =
+      (type.flags & (TS.TypeFlags.Any | TS.TypeFlags.Unknown)) !== 0 || (type.isUnion() && type.types.some((m) => m.getCallSignatures().length > 0));
+    if (opaque || type.getCallSignatures().length > 0) {
+      if (flags.spread && !opaque) {
+        throw new DerivationError(`'${written}' is one function — spread a group (an array or an object of functions), not a function.`, "NOLA2018");
+      }
+      return { expr: this.toolFunction(type, written, at), names: flags.written !== undefined ? [flags.written] : [] };
+    }
+    const { checker } = this.ctx;
+    const groupShaped = checker.isTupleType(type) || checker.isArrayType(type) || (type.flags & TS.TypeFlags.Object) !== 0;
+    if (!groupShaped) {
+      throw new DerivationError(`'${written}' is not callable (its type is ${this.shown(type)}) — a tool list holds functions, or groups of them.`, "NOLA2018");
+    }
+    if (!flags.spread && flags.written === undefined) {
+      throw new DerivationError(`'${written}' is a group reached through an expression — name it or spread it.`, "NOLA2018");
+    }
+    const prefix = flags.spread ? "" : `${flags.written}.`;
+    return this.toolGroup(type, written, prefix);
+  }
+
+  /** The verdict of a group and the names it declares (spec 2026-10-09 §3.4). */
+  private toolGroup(type: ts.Type, written: string, prefix: string): { expr: string; names: string[] } {
+    const { checker } = this.ctx;
+    if (checker.isTupleType(type)) {
+      const elements = checker.getTypeArguments(type as ts.TypeReference);
+      const items = elements.map((el, i) => this.toolFunction(el, `element ${i + 1} of ${written}`));
+      const names = elements
+        .map((el) => el.getSymbol()?.name)
+        .filter((n): n is string => n !== undefined && n !== "__function" && n !== "__type");
+      return { expr: `__nola.tools.tuple([${items.join(", ")}])`, names: names.map((n) => `${prefix}${n}`) };
+    }
+    if (checker.isArrayType(type)) {
+      const el = checker.getTypeArguments(type as ts.TypeReference)[0] as ts.Type;
+      return { expr: `__nola.tools.array(${this.toolFunction(el, `an element of ${written}`)})`, names: [] };
+    }
+    if (type.flags & TS.TypeFlags.Object) {
+      const parts: string[] = [];
+      const names: string[] = [];
+      for (const prop of checker.getPropertiesOfType(type)) {
+        if (prop.name === "default") continue;
+        const propType = checker.getTypeOfSymbol(prop);
+        // a constant, an object, a class (construct signatures only): skipped, never a sub-group
+        const callable = propType.getCallSignatures().length > 0 || (propType.isUnion() && propType.types.some((m) => m.getCallSignatures().length > 0));
+        if (!callable) continue;
+        const expr = this.toolFunction(propType, `member '${prop.name}' of ${written}`);
+        parts.push(`${IDENT.test(prop.name) ? prop.name : JSON.stringify(prop.name)}: ${expr}`);
+        names.push(`${prefix}${prop.name}`);
+      }
+      if (parts.length === 0) {
+        throw new DerivationError(
+          `'${written}' has no function-valued member (its type is ${this.shown(type)}) — a group is an object or module of functions, or an array of them.`,
+          "NOLA2018",
+        );
+      }
+      return { expr: `__nola.tools.members({ ${parts.join(", ")} })`, names };
+    }
+    // unreachable: toolEntry admits only tuple, array and object types here
+    throw new DerivationError(`'${written}' is not a function or a group of functions (its type is ${this.shown(type)}).`, "NOLA2018");
+  }
+
+  /**
+   * The contract of one function (spec 2026-10-08 §3.4, 2026-10-09 §1.3):
+   * exactly one DECLARED signature — a union of function types, `any` and
+   * `unknown` are refused (an alias of an array element used to derive a
+   * synthesized union signature by luck); overloads take the first. `label`
+   * names the entry or the member in messages; `at` is the entry's node when
+   * there is one (a parameter's type is read at the site), absent for a
+   * group member.
+   */
+  toolFunction(type: ts.Type, label: string, at?: ts.Node): string {
+    const { checker } = this.ctx;
+    if (type.flags & TS.TypeFlags.Any) {
+      throw new DerivationError(`'${label}' is any — the checker cannot see a function there; give it a type.`, "NOLA2018");
+    }
+    if (type.flags & TS.TypeFlags.Unknown) {
+      throw new DerivationError(`'${label}' is unknown — the checker cannot see a function there; give it a type.`, "NOLA2018");
+    }
+    if (type.isUnion()) {
+      throw new DerivationError(
+        `'${label}' is a union of function types (${this.shown(type)}) — a tool has one declared signature; name one function.`,
+        "NOLA2018",
+      );
+    }
+    const sig = type.getCallSignatures()[0];
+    if (!sig) {
+      throw new DerivationError(`'${label}' is not callable (its type is ${this.shown(type)}) — a tool list holds functions.`, "NOLA2018");
+    }
+    const parts: string[] = [];
+    for (const param of sig.getParameters()) {
+      const decl = param.valueDeclaration;
+      const p = decl && TS.isParameter(decl) ? decl : undefined;
+      if (p?.dotDotDotToken) {
+        throw new DerivationError(`rest parameter '${param.name}' of ${label} cannot be a tool argument — give the function a fixed parameter list`);
+      }
+      const optional = Boolean(p?.questionToken || p?.initializer) || (param.flags & TS.SymbolFlags.Optional) !== 0;
+      const declared = at ? checker.getTypeOfSymbolAtLocation(param, at) : checker.getTypeOfSymbol(param);
+      const inner = optional ? this.stripUndefined(declared) : declared;
+      let expr = this.walk(inner, false, `parameter '${param.name}' of ${label}`);
+      if (optional) expr = `__nola.types.optional(${expr})`;
+      const doc = this.docText(param);
+      if (doc) expr = `${expr}.describe(${JSON.stringify(doc)})`;
+      parts.push(`${IDENT.test(param.name) ? param.name : JSON.stringify(param.name)}: ${expr}`);
+    }
+    let expr = parts.length > 0 ? `__nola.types.object({ ${parts.join(", ")} })` : "__nola.types.object({})";
+    const summary = collapseDoc(TS.displayPartsToString(sig.getDocumentationComment(checker)));
+    if (summary) expr = `${expr}.describe(${JSON.stringify(summary)})`;
+    return expr;
   }
 
   private stripUndefined(t: ts.Type): ts.Type {

@@ -142,6 +142,16 @@ export class SpanRecorder {
     this.edits.push({ sourceStart: pos, sourceEnd: pos, text, side: 1, seq: this.seq++ });
   }
 
+  /**
+   * Whether any recorded edit touches the inside of [start, end): a ranged edit
+   * overlapping it, or an insert strictly inside. The bytes of such a range are
+   * no longer one verbatim run, so a derivation request over them would have
+   * no lowered range (the ask sequence's bare values, spec 2026-10-12 §3.5).
+   */
+  hasEditsIn(start: number, end: number): boolean {
+    return this.edits.some((e) => e.sourceStart < end && e.sourceEnd > start);
+  }
+
   /** The EOF insert (runtime import + accessors). Always the last content. */
   appendix(text: string): void {
     this.s.append(text);

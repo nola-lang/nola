@@ -22,7 +22,7 @@ import { acquireKey, SignInRequiredError } from "./key.js";
 import { type Launcher, realLauncher } from "./launch.js";
 import { nodeVersionWarning } from "./node-version.js";
 import { openBrowser } from "./open-url.js";
-import { detectPackageManager, type PackageManager, packageManagerCommands } from "./package-manager.js";
+import { defaultRuntime, detectPackageManager, isRuntime, type PackageManager, packageManagerCommands, type Runtime } from "./package-manager.js";
 import { isProviderId, PROVIDERS, type ProviderId, providerById, providerIds } from "./providers.js";
 import { entryFile, exampleNames, featuredNames, type TemplateDef, templateByName, templateNames } from "./registry.js";
 import { ownVersion, scaffold, vendorEnvVar } from "./scaffold.js";
@@ -74,6 +74,10 @@ export interface FlowInput {
   provider?: string;
   /** --trial / --no-trial: shorthand for --provider nola / --provider none */
   trial?: boolean;
+  /** --runtime <node|bun>; undefined = bun when bun ran the scaffolder, else node */
+  runtime?: string;
+  /** the manager that invoked us — decides the default runtime */
+  packageManager?: PackageManager;
   /** how the nola row is worded, decided by runFlow from ~/.nola (spec 2026-09-04-cli-sign-in-design.md §5); default trial */
   keyPath?: KeyPath;
   /**
@@ -100,8 +104,9 @@ export type FlowOutcome =
     provider: ProviderId;
     ide: "vscode" | "none";
     agents: AgentId[];
+    runtime: Runtime;
   }
-  | { kind: "add"; dir: string; provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[] }
+  | { kind: "add"; dir: string; provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[]; runtime: Runtime }
   | { kind: "cancelled" };
 
 const DEFAULT_DIR = "nola-app";
@@ -315,17 +320,26 @@ async function resolveProvider(input: FlowInput, prompter: Prompter, template?: 
   }
 }
 
+/** `--runtime`, else the manager's default (bun → bun). Validated up front like the other flags. */
+function resolveRuntime(input: FlowInput): Runtime {
+  if (input.runtime !== undefined) {
+    if (!isRuntime(input.runtime)) throw new Error(`invalid --runtime "${input.runtime}" (valid: node, bun)`);
+    return input.runtime;
+  }
+  return defaultRuntime(input.packageManager ?? "npm");
+}
+
 /** The provider and setup (editor + agents) questions, in that order, shared by every outcome site; null = cancelled. */
 async function resolveExtras(
   input: FlowInput,
   prompter: Prompter,
   dir: string,
   template?: string,
-): Promise<{ provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[] } | null> {
+): Promise<{ provider: ProviderId; ide: "vscode" | "none"; agents: AgentId[]; runtime: Runtime } | null> {
   const provider = await resolveProvider(input, prompter, template);
   if (provider === null) return null;
   const setup = await resolveSetup(input, prompter, dir);
-  return setup === null ? null : { provider, ...setup };
+  return setup === null ? null : { provider, ...setup, runtime: resolveRuntime(input) };
 }
 
 /** Args fill prompts; whatever is missing is asked (never asked non-interactively). */
@@ -337,6 +351,9 @@ export async function resolveScaffoldOptions(input: FlowInput, prompter: Prompte
   }
   if (input.ide !== undefined && input.ide !== "vscode" && input.ide !== "none") {
     throw new Error(`invalid --ide "${input.ide}" (valid: vscode, none)`);
+  }
+  if (input.runtime !== undefined && !isRuntime(input.runtime)) {
+    throw new Error(`invalid --runtime "${input.runtime}" (valid: node, bun)`);
   }
   if (input.agents !== undefined) parseAgentsFlag(input.agents); // throws on unknown ids
   flaggedProvider(input); // throws on an unknown id or a contradiction
@@ -459,6 +476,7 @@ export interface RunFlowArgs {
   agents?: string;
   provider?: string;
   trial?: boolean;
+  runtime?: string;
 }
 
 /**
@@ -473,6 +491,11 @@ export const FLOW_OPTIONS = {
   },
   add: { type: "boolean", description: "add Nola to the existing project in [dir] instead of scaffolding" },
   ide: { type: "string", description: "editor setup: vscode (the default) | none" },
+  runtime: {
+    type: "string",
+    description:
+      "runtime the project runs on: node | bun (default: bun when bun ran the scaffolder — bunfig.toml preload + `bun src/main.tsi`)",
+  },
   agents: {
     type: "string",
     description: `agent skill files: ${AGENT_IDS.join(",")} | all | none (default: claude,universal)`,
@@ -740,6 +763,8 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
     agents: args.agents,
     provider: args.provider,
     trial: args.trial,
+    runtime: args.runtime,
+    packageManager: pm,
     keyPath,
     signIn: signInNow,
     cwd: opts.cwd,
@@ -753,7 +778,7 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
     }
     if (outcome.kind === "add") {
       const grant = outcome.provider === "nola" ? await obtainTrial(prompter, opts, interactive) : null;
-      const result = await addNola(outcome.dir, { provider: outcome.provider });
+      const result = await addNola(outcome.dir, { provider: outcome.provider, runtime: outcome.runtime });
       const trial = grant
         ? await applyTrial(outcome.dir, { apiKey: grant.apiKey, hasConfig: !result.wrote.includes("nola.config.ts") })
         : { wrote: [], skipped: [] };
@@ -773,7 +798,12 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       }
       const lines = [
         packageManagerCommands(pm).install,
-        'optional start script:  "start": "nola run src/main.ts"',
+        ...(outcome.runtime === "bun"
+          ? [
+              'bunfig.toml: preload = ["@nola-lang/bun/preload"] (runs .tsi from source under Bun)',
+              'optional start script:  "start": "bun src/main.ts"',
+            ]
+          : ['optional start script:  "start": "nola run src/main.ts"']),
         'tsconfig tip: directory-style include (e.g. ["src"]) lets the editor see .tsi files',
         commented(CONSOLE_COMMAND, CONSOLE_NOTE),
       ];
@@ -786,7 +816,13 @@ export async function runFlow(args: RunFlowArgs, opts: RunFlowOptions = {}): Pro
       const grant = outcome.provider === "nola" ? await obtainTrial(prompter, opts, interactive) : null;
       // A nola choice without a key (declined sign-in, API failure) scaffolds the plain template — the note above says why.
       const provider: ProviderId = outcome.provider === "nola" ? (grant ? "nola" : "none") : outcome.provider;
-      const { files } = await scaffold(outcome.dir, { template: outcome.template, force: outcome.force, provider, ide: outcome.ide });
+      const { files } = await scaffold(outcome.dir, {
+        template: outcome.template,
+        force: outcome.force,
+        provider,
+        ide: outcome.ide,
+        runtime: outcome.runtime,
+      });
       let trialWrote: string[] = [];
       if (grant) {
         const trial = await applyTrial(outcome.dir, { apiKey: grant.apiKey, hasConfig: false });

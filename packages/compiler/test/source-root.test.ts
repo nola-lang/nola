@@ -11,13 +11,13 @@ describe("sourceRoot", () => {
     const file = join("/proj", "src", "a.tsi");
     const { code, diagnostics } = compileNola(SRC, file, { sourceRoot: "/proj" });
     expect(diagnostics).toEqual([]);
-    expect(code).toContain('__nola.context.module("src/a.tsi", 21)');
+    expect(code).toContain('__nola.context.module("src/a.tsi", 24)');
     expect(code).not.toContain("proj");
   });
 
   it("leaves the path untouched when no sourceRoot is given", () => {
     const { code } = compileNola(SRC, "x.tsi");
-    expect(code).toContain('__nola.context.module("x.tsi", 21)');
+    expect(code).toContain('__nola.context.module("x.tsi", 24)');
   });
 
   it("keeps diagnostics on the absolute path", () => {

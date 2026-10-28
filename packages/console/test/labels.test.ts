@@ -25,6 +25,13 @@ describe("record labels", () => {
     expect(askLabel({ kind: "call" })).toBe("?(..)");
   });
 
+  it("renders a tool-use ask as ..`instruction` [tools]<T>", () => {
+    expect(askLabel({ kind: "tool-use", instruction: "find the visa files", tools: ["searchFiles", "fs.readFile"], typeText: "string[]" })).toBe(
+      "..`find the visa files` [searchFiles, fs.readFile]<string[]>",
+    );
+    expect(askLabel({ kind: "tool-use", instruction: "p" })).toBe("..`p` []");
+  });
+
   it("collapses whitespace so a multi-line instruction stays one line", () => {
     expect(askLabel({ kind: "extract", instruction: "  find\n  the   owner " })).toBe("..`find the owner`");
   });

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_DISCOVERY_TTL_MS, discoverCompilerConfig } from "@nola-lang/language-core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // discoverCompilerConfig runs on EVERY compile of every open file — each
 // keystroke. The walk up to the nearest nola.config.ts is one existsSync per
@@ -31,6 +31,16 @@ describe("discoverCompilerConfig", () => {
   it("finds the nearest config above the file", () => {
     writeFileSync(configPath, config("prune"));
     expect(at(t)).toEqual({ underivableContextType: "prune" });
+  });
+
+  it("discovers nothing where there is no file system (a browser worker): the defaults, no throw", () => {
+    writeFileSync(configPath, config("prune")); // on disk, but unreachable without node:fs
+    const spy = vi.spyOn(process, "getBuiltinModule").mockReturnValue(undefined as never);
+    try {
+      expect(at(t)).toEqual({});
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("an edited config lands on the very next call (the mtime check is not memoized)", () => {

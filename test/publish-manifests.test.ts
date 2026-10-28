@@ -15,6 +15,8 @@ const PUBLIC = [
   "create-nola-lang",
   "nola-lang",
   "@nola-lang/ast",
+  "@nola-lang/browser",
+  "@nola-lang/bun",
   "@nola-lang/compiler",
   "@nola-lang/console",
   "@nola-lang/core",

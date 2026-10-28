@@ -1,0 +1,55 @@
+{
+  "name": "@nola-lang/bun",
+  "version": "0.1.5",
+  "description": "Bun plugin for Nola (.tsi): run .tsi from source with a bunfig.toml preload, bundle and compile in one step with Bun.build, load .tsi in bun test",
+  "keywords": [
+    "nola",
+    "bun",
+    "bun-plugin",
+    "llm",
+    "ai"
+  ],
+  "license": "Apache-2.0",
+  "author": "Evgen Mykhailenko",
+  "homepage": "https://github.com/nola-lang/nola#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nola-lang/nola.git",
+    "directory": "packages/bun"
+  },
+  "bugs": {
+    "url": "https://github.com/nola-lang/nola/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./preload": {
+      "types": "./dist/preload.d.ts",
+      "default": "./dist/preload.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/.tsbuildinfo",
+    "!dist/**/*.map"
+  ],
+  "dependencies": {
+    "@nola-lang/ast": "0.1.5",
+    "@nola-lang/compiler": "0.1.5",
+    "@nola-lang/derive": "0.1.5",
+    "@nola-lang/node-loader": "0.1.5",
+    "@nola-lang/runtime": "0.1.5"
+  },
+  "devDependencies": {
+    "bun-types": "1.3.14"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

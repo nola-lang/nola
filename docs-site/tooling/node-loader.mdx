@@ -34,7 +34,7 @@ For deployment, prefer `nola build`. It writes JavaScript with the configuration
 
 ## Runtimes
 
-The loader requires Node ≥ 22.18 and uses Node's module hooks. Running it in Bun or Deno (`bun --bun`, `bun src/main.ts`, or `deno run`) fails with [`NOLA3015`](/docs/reference/error-codes/#nola3015). You can still use those tools as package managers: `bun run start`, `pnpm start`, and `yarn start` launch the `nola` executable under Node.
+The loader requires Node ≥ 22.18 and uses Node's module hooks. Under Bun, use the [Bun plugin](/docs/tooling/bun/) instead: its `bunfig.toml` preload loads `.tsi` from source (`bun src/main.tsi`), and `nola build` output runs under `bun` with nothing added. Running the loader itself in Bun or Deno (`bun --bun`, `deno run`) fails with [`NOLA3015`](/docs/reference/error-codes/#nola3015); Deno has no loader at all. Any tool works as the package manager: `bun run start`, `pnpm start`, and `yarn start` launch the `nola` executable under Node.
 
 Nola handles `.tsi` files. Node handles plain `.ts` files, including entry points and helpers, through native type stripping. This is enabled by default from Node 22.18 and 23.6.
 

@@ -157,9 +157,77 @@ extract the person
 </task>
 ```
 
+## A tool-use ask
+
+A [tool-use ask](/docs/language/tool-use/) opens like any other: the context blocks, then the task. The tools are not rendered as text; they ride the request natively, and the vendor models send the transcript in their own form too.
+
+{/* fixture: toolUse */}
+
+```txt
+<task>
+find the visa files on disc D
+</task>
+```
+
+The default rendering of the turns so far, which the receipt shows and a text-only model would send, puts the model's text and each requested call in an assistant turn, and the results in the user's reply:
+
+```txt
+assistant: Let me look.
+<tool_call id="c1" name="searchFiles">
+{"dir":"D:/"}
+</tool_call>
+<tool_call id="c2" name="searchFiles">
+{"dir":"E:/"}
+</tool_call>
+
+user: <tool_result id="c1">
+["D:/visa/a.pdf"]
+</tool_result>
+<tool_result id="c2">
+[]
+</tool_result>
+```
+
+A correction turn, when one ran, follows the last tool turn.
+
+## An ask sequence
+
+When the instruction holds [values](/docs/language/extractors/#values-in-the-instruction), the task holds the parts in order, one per line. A bare value renders as an input block where it was written:
+
+{/* fixture: sequence */}
+
+```txt
+<task>
+the person responsible for
+<input name="project">
+{
+  "id": "p-1"
+}
+</input>
+given this policy
+<input name="policy">
+least privilege
+</input>
+</task>
+```
+
+A tool list renders as its names in brackets, the definitions riding natively once; a call renders as its text, with the callee on the task attribute:
+
+{/* fixture: sequenceTools */}
+
+```txt
+<task>
+find the visa files using
+[searchFiles, readFile]
+or
+[readDir]
+then answer
+</task>
+```
+
 ## The schema is not in the prompt
 
-The answer's type reaches the model through the provider's structured-output feature, not as text: `response_format` for OpenAI, the output format for Anthropic, the response schema for Gemini, and the platform's own routing. JSDoc descriptions on your types travel with the schema. For a server that cannot enforce a schema, set `structuredOutputs: false` on the provider and the schema is added to the system turn as a `<schema>` block — see [Providers API](/docs/reference/providers-api/).
+The answer's type reaches the model through the provider's structured-output feature, not as text: `response_format` for OpenAI, the output format for Anthropic, the response schema for Gemini, and the platform's own routing; in a tool-use ask, the parameters of the answer tool the model calls to finish. JSDoc descriptions on your types travel with the schema. For a server that cannot enforce a schema, set `structuredOutputs: false` on the provider and the schema is added to the system turn as a `<schema>` block — see [Providers API](/docs/reference/providers-api/).
 
 ## The system turn
 

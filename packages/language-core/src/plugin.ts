@@ -26,7 +26,14 @@ export function createNolaLanguagePlugin<T>(
 ): LanguagePlugin<T, NolaVirtualCode> {
   return {
     getLanguageId(scriptId) {
-      if (asFileName(scriptId).endsWith(".tsi")) return "nola";
+      const fileName = asFileName(scriptId);
+      if (fileName.endsWith(".tsi")) return "nola";
+      // TypeScript reads `dist/*.d.ts.map` (declaration maps) through the host
+      // to navigate into sources; Volar registers every file the host is asked
+      // for and warns `languageId not found` — [error] lines in the output
+      // channel, four per file — when no plugin names a language for it. A
+      // source map is JSON; the file is served by the host either way.
+      if (fileName.endsWith(".map")) return "json";
       return undefined;
     },
     createVirtualCode(scriptId, languageId, snapshot) {

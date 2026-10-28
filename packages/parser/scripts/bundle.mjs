@@ -16,6 +16,9 @@ const result = await build({
   // The fork's `charcodes` (CommonJS) would be wrapped in getters — a function
   // call per character in the tokenizer; the ESM shim's constants inline instead.
   alias: { charcodes: fileURLToPath(new URL("../../../scripts/esbuild/charcodes.js", import.meta.url)) },
+  // Babel's build-time switch: the fork's tsc output reads it from the environment at run time, once per
+  // node. `false` is what the source parser and the tests run (the dev branches); decided here instead.
+  define: { "process.env.IS_PUBLISH": "false" },
   sourcemap: true,
   logLevel: "info",
 });

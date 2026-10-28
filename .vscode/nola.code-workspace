@@ -5,7 +5,7 @@
 			"path": ".."
 		},
 		{
-			"name": "DOCS",
+			"name": "INT",
 			"path": "<not exists7>"
 		},
 		{
@@ -13,12 +13,8 @@
 			"path": "../docs"
 		},
 		{
-			"name": " - docs-site",
-			"path": "../docs-site"
-		},
-		{
-			"name": " - examples",
-			"path": "../examples"
+			"name": " - labs",
+			"path": "../labs"
 		},
 		{
 			"name": "CONSOLE",
@@ -80,6 +76,10 @@
 		{
 			"name": " - derive",
 			"path": "../packages/derive"
+		},
+		{
+			"name": " - browser",
+			"path": "../packages/browser"
 		},
 		{
 			"name": "RUNTIME",

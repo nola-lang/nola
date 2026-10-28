@@ -121,10 +121,18 @@ describe("implied extractor sigil in call slots", () => {
     expect(nodes(ast as BaseNode, "TSInstantiationExpression")).toHaveLength(0);
   });
 
-  it("a spaced colon is never the extractor's", () => {
-    const { ast, diagnostics } = parseNola("f(`a` : string);\n", "x.tsi");
-    expect(ast).toBeNull();
-    expect(diagnostics[0]?.code).toBe("NOLA1001");
+  it("a spaced colon types the slot too, on the template's line or the next (a line break never separates an extractor from its type)", () => {
+    for (const [src, span] of [
+      ["f(`a` : string);\n", "`a` : string"],
+      ["f(\n  `a`\n    : string,\n);\n", "`a`\n    : string"],
+    ]) {
+      const { ast, diagnostics } = parseNola(src, "x.tsi");
+      expect(diagnostics, src).toEqual([]);
+      const [e] = extracts(ast as BaseNode);
+      expect(e?.prompt, src).toBe("a");
+      expect(typeOf(e)?.type, src).toBe("TSStringKeyword");
+      expect(sliceSpan(src, e as BaseNode), src).toBe(span);
+    }
   });
 
   describe("outside a slot the dots are still required", () => {

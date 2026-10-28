@@ -6,17 +6,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { BUN } from "./helpers/bun.js";
 import { capture, ensureBuilt } from "./helpers/ensure-built.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CREATE = join(ROOT, "packages", "create-nola-lang", "dist", "main.js");
 const NOLA = join(ROOT, "packages", "nola-lang", "dist", "main.js");
+const hasBun = BUN !== null;
 
-/** Workspace-link the runtime packages the scaffolded app depends on. */
-function linkDeps(app: string): void {
+/** Workspace-link the runtime packages the scaffolded app depends on (a Bun project adds the plugin). */
+function linkDeps(app: string, pkgs: readonly string[] = ["runtime", "providers"]): void {
   const scope = join(app, "node_modules", "@nola-lang");
   mkdirSync(scope, { recursive: true });
-  for (const pkg of ["runtime", "providers"]) {
+  for (const pkg of pkgs) {
     symlinkSync(join(ROOT, "packages", pkg), join(scope, pkg), "junction");
   }
 }
@@ -72,6 +74,26 @@ describe("scaffolded project (feature-extraction, the default)", () => {
     expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toMatchObject({ name: "Alice Smith", seniority: "staff" });
   });
 
+  it.skipIf(!hasBun)("--runtime bun: the scaffold is a Bun project that runs from source under bun", { timeout: 180_000 }, async () => {
+    const parent = await mkdtemp(join(tmpdir(), "nola-bun-scaffold-e2e-"));
+    const dir = join(parent, "app");
+    await run([CREATE, dir, "--runtime", "bun"], parent);
+    expect(readFileSync(join(dir, "bunfig.toml"), "utf8")).toContain('preload = ["@nola-lang/bun/preload"]');
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(pkg.scripts.start).toBe("bun src/main.tsi");
+    expect(pkg.scripts.check).toBe("nola check");
+    expect(pkg.devDependencies["@nola-lang/bun"]).toMatch(/^\^0\./);
+    expect(pkg.engines.bun).toBe(">=1.3.0");
+    // the editor files are still written: F5 runs the file under Node's loader
+    expect(existsSync(join(dir, ".vscode", "launch.json"))).toBe(true);
+    expect(readFileSync(join(dir, "src", "main.tsi"), "utf8")).toContain("bun start");
+    linkDeps(dir, ["runtime", "providers", "bun"]);
+    const out = await capture(BUN as string, ["src/main.tsi"], { cwd: dir });
+    expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toMatchObject({ name: "Alice Smith", seniority: "staff" });
+    // the Node CLI still serves the project
+    expect(await run([NOLA, "check"], dir)).toContain("no errors");
+  });
+
   it("nola init lays down the identical template", async () => {
     const dir = join(await mkdtemp(join(tmpdir(), "nola-init-e2e-")), "app2");
     await run([NOLA, "init", dir], ROOT);
@@ -99,6 +121,20 @@ describe("scaffolded project (feature-extraction, the default)", () => {
       title: "Cannot log in before a customer demo",
       priority: 1,
     });
+    expect(await run([NOLA, "check"], dir)).toContain("no errors");
+  });
+
+  it("tool-use: a top-level ask offering two functions from src/tools.ts as tools, replayed turn by turn keylessly, checks clean", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "nola-tool-use-e2e-")), "app");
+    await run([CREATE, dir, "--template", "tool-use"], ROOT);
+    for (const f of ["nola.replay.jsonl", "src/main.tsi", "src/tools.ts"]) expect(existsSync(join(dir, f)), f).toBe(true);
+    linkDeps(dir);
+    const out = await run([NOLA, "run", "src/main.tsi"], dir);
+    // the ledger's turns: searchFiles, readFile, then the answer — the two tools ran in-process between them
+    expect(JSON.parse(out.trim().split("\n").at(-1) as string)).toEqual([
+      "D:/docs/visa/ds-160-confirmation.pdf",
+      "D:/docs/visa/passport-scan.pdf",
+    ]);
     expect(await run([NOLA, "check"], dir)).toContain("no errors");
   });
 

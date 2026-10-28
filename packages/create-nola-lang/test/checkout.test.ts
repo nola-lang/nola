@@ -31,11 +31,12 @@ describe("linkCheckoutPackages", () => {
     await mkdir(dir, { recursive: true });
     const root = (await checkoutRoot()) as string;
     const linked = await linkCheckoutPackages(dir, root);
-    expect(linked).toEqual(["@nola-lang/runtime", "@nola-lang/providers", "nola-lang"]);
+    expect(linked).toEqual(["@nola-lang/runtime", "@nola-lang/providers", "@nola-lang/bun", "nola-lang"]);
     expect(CHECKOUT_LINKED_PACKAGES).toEqual(linked);
     for (const [name, pkg] of [
       ["@nola-lang/runtime", "runtime"],
       ["@nola-lang/providers", "providers"],
+      ["@nola-lang/bun", "bun"],
       ["nola-lang", "nola-lang"],
     ]) {
       expect(await realpath(join(dir, "node_modules", name))).toBe(await realpath(join(root, "packages", pkg)));

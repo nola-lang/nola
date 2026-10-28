@@ -18,6 +18,42 @@ function snap(text: string) {
 
 const BROKEN = "const p = ..5;\nconst ok = ..`y`<string>;\n";
 
+/** The document formatted through the plugin, the edits applied; `lines` restricts the request to those lines. */
+async function formatSource(content: string, options: { tabSize?: number; insertSpaces?: boolean; lines?: [number, number] } = {}) {
+  const lineStarts = [0];
+  for (let i = 0; i < content.length; i++) if (content[i] === "\n") lineStarts.push(i + 1);
+  const document = {
+    uri: "file:///proj/a.tsi",
+    languageId: "nola",
+    getText: () => content,
+    offsetAt: (p: { line: number; character: number }) => (lineStarts[p.line] ?? content.length) + p.character,
+    positionAt: (offset: number) => {
+      const before = content.slice(0, offset);
+      return { line: before.split("\n").length - 1, character: offset - (before.lastIndexOf("\n") + 1) };
+    },
+  };
+  const instance = nolaServicePlugin.create({} as LanguageServiceContext);
+  const range = options.lines
+    ? { start: { line: options.lines[0], character: 0 }, end: { line: options.lines[1] + 1, character: 0 } }
+    : { start: document.positionAt(0), end: document.positionAt(content.length) };
+  const edits = ((await instance.provideDocumentFormattingEdits?.(
+    document as never,
+    range,
+    { tabSize: options.tabSize ?? 2, insertSpaces: options.insertSpaces ?? true },
+    undefined,
+    {} as never,
+  )) ?? []) as Array<{
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    newText: string;
+  }>;
+  let formatted = content;
+  for (const edit of [...edits].sort((a, b) => document.offsetAt(b.range.start) - document.offsetAt(a.range.start))) {
+    formatted =
+      formatted.slice(0, document.offsetAt(edit.range.start)) + edit.newText + formatted.slice(document.offsetAt(edit.range.end));
+  }
+  return formatted;
+}
+
 describe("nolaServicePlugin", () => {
   it("formats the .tsi source directly, leaving nola constructs untouched", async () => {
     const content = [
@@ -29,42 +65,109 @@ describe("nolaServicePlugin", () => {
       "}",
       "",
     ].join("\n");
-    const lineStarts = [0];
-    for (let i = 0; i < content.length; i++) if (content[i] === "\n") lineStarts.push(i + 1);
-    const document = {
-      uri: "file:///proj/a.tsi",
-      languageId: "nola",
-      getText: () => content,
-      offsetAt: (p: { line: number; character: number }) => (lineStarts[p.line] ?? content.length) + p.character,
-      positionAt: (offset: number) => {
-        const before = content.slice(0, offset);
-        return { line: before.split("\n").length - 1, character: offset - (before.lastIndexOf("\n") + 1) };
-      },
-    };
-    const instance = nolaServicePlugin.create({} as LanguageServiceContext);
-    const fullRange = { start: document.positionAt(0), end: document.positionAt(content.length) };
-    const edits = ((await instance.provideDocumentFormattingEdits?.(
-      document as never,
-      fullRange,
-      { tabSize: 2, insertSpaces: true },
-      undefined,
-      {} as never,
-    )) ?? []) as Array<{
-      range: { start: { line: number; character: number }; end: { line: number; character: number } };
-      newText: string;
-    }>;
-    let formatted = content;
-    for (const edit of [...edits].sort(
-      (a, b) => document.offsetAt(b.range.start) - document.offsetAt(a.range.start),
-    )) {
-      formatted =
-        formatted.slice(0, document.offsetAt(edit.range.start)) +
-        edit.newText +
-        formatted.slice(document.offsetAt(edit.range.end));
-    }
+    const formatted = await formatSource(content);
     expect(formatted).toContain("\n  for (const c of q) {");
     expect(formatted).toContain("  const s = ask ..`n`<string>;");
   });
+});
+
+// An ask sequence is not TypeScript: its formatter reads `` ask `x` [a] `y` ``
+// as tagged templates and an index — it deleted the spaces between the parts
+// and set a part on its own line at the statement's column (2026-10-15). The
+// plugin keeps TypeScript's edits only inside a text, a value or a list entry
+// and lays the sequence out itself: one space between the tokens on a line,
+// the colon and `<T>` glued to the last part, one space after the colon; a
+// part, a list's `]` or the type on its own line one level in from the ask's
+// line, a list's entries two levels in; a comment in a gap leaves the gap
+// alone (ask-sequence spec §3.12).
+describe("nolaServicePlugin: an ask sequence's layout", () => {
+  it("leaves a list spanning lines and the type on its own line as written", async () => {
+    const content = [
+      "const files = ask `the files on disc D that belong to a US visa application` [",
+      "    searchFiles, readFile",
+      "  ] `dsa`  ",
+      "  : string[];",
+      "",
+    ].join("\n");
+    expect(await formatSource(content)).toBe(content);
+  });
+
+  it("indents a part on its own line one level in and glues the colon", async () => {
+    const content = [
+      "const files = ask `the files on disc D that belong to a US visa application`",
+      "  [searchFiles, readFile]",
+      "  `dsa`    : string[];",
+      "",
+    ].join("\n");
+    expect(await formatSource(content)).toBe(
+      [
+        "const files = ask `the files on disc D that belong to a US visa application`",
+        "  [searchFiles, readFile]",
+        "  `dsa`: string[];",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("one space between the tokens on a line: the head, the parts, a list's entries; the type glued", async () => {
+    expect(await formatSource("const a = ask with  gpt  `x`  (user)  `y`  : string;\n")).toBe("const a = ask with gpt `x` (user) `y`: string;\n");
+    expect(await formatSource("const b = ..`x`  [ a , fs.readFile ,...more ]  <string>;\n")).toBe("const b = ..`x` [a, fs.readFile, ...more]<string>;\n");
+    expect(await formatSource("const c = createTicket(`title` : string, 2);\n")).toBe("const c = createTicket(`title`: string, 2);\n");
+    expect(await formatSource("const d = ask   `one`;\n")).toBe("const d = ask `one`;\n");
+  });
+
+  it("lays a list that spans lines out from the ask's line: entries two levels in, the `]` and the type one", async () => {
+    const content = [
+      "infer function f() {",
+      "  const files = ask `x` [",
+      "searchFiles,",
+      "        readFile",
+      "      ]",
+      ": string[];",
+      "  return files;",
+      "}",
+      "",
+    ].join("\n");
+    expect(await formatSource(content)).toBe(
+      [
+        "infer function f() {",
+        "  const files = ask `x` [",
+        "      searchFiles,",
+        "      readFile",
+        "    ]",
+        "    : string[];",
+        "  return files;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    // tabs, when the editor indents with them
+    const tabbed = ["infer function f() {", "\tconst n = ask `x`", "<number>;", "\treturn n;", "}", ""].join("\n");
+    expect(await formatSource(tabbed, { insertSpaces: false, tabSize: 4 })).toBe(
+      ["infer function f() {", "\tconst n = ask `x`", "\t\t<number>;", "\treturn n;", "}", ""].join("\n"),
+    );
+  });
+
+  it("the operand on the line after `ask`, and a blank line between parts, keep their line breaks", async () => {
+    expect(await formatSource("const x = ask\n`p`: number;\n")).toBe("const x = ask\n  `p`: number;\n");
+    expect(await formatSource("const y = ask `p`\n\n[a]: number;\n")).toBe("const y = ask `p`\n\n  [a]: number;\n");
+  });
+
+  it("keeps TypeScript's edits inside a value and leaves a gap with a comment alone", async () => {
+    expect(await formatSource("const r = ask `use` pick( user ) `go`: Result;\n")).toBe("const r = ask `use` pick(user) `go`: Result;\n");
+    // the gap with the comment stays; the one after the list is laid out
+    expect(await formatSource("const r = ask `use` /* the tools */  [a]  : Result;\n")).toBe("const r = ask `use` /* the tools */  [a]: Result;\n");
+  });
+
+  it("a request for some lines touches only those lines", async () => {
+    const content = ["const files = ask `the files`", "[searchFiles, readFile]", "`dsa`    : string[];", "const  n = 1;", ""].join("\n");
+    expect(await formatSource(content, { lines: [3, 3] })).toBe(
+      ["const files = ask `the files`", "[searchFiles, readFile]", "`dsa`    : string[];", "const n = 1;", ""].join("\n"),
+    );
+  });
+});
+
+describe("nolaServicePlugin: documents", () => {
 
   it("returns nothing for non-embedded documents", () => {
     const context = {

@@ -4,6 +4,7 @@
 // createLanguageServicePlugin (Volar quickstart), createProxyLanguageService(ls)
 // -> { initialize(language), proxy }, decorateLanguageServiceHost,
 // decorateHostWithViews, decorateHostHideShadowedDeclarations,
+// decorateHostWithTsiModuleFormat,
 // decorateLanguageServiceWithDerivationDiagnostics,
 // decorateLanguageServiceHideGeneratedCompletions.
 import { useTypeScript } from "@nola-lang/derive";
@@ -15,6 +16,7 @@ import type ts from "typescript";
 import { decorateLanguageServiceWithDerivationDiagnostics } from "./derivation-diagnostics.js";
 import { guardProjectServiceDocumentCache } from "./document-cache-guard.js";
 import { decorateLanguageServiceHideGeneratedCompletions } from "./generated-completions.js";
+import { decorateHostWithTsiModuleFormat } from "./module-format.js";
 import { decorateHostForTsiResolutionWatch } from "./resolution-watch.js";
 import { decorateServerHostForViews } from "./server-host.js";
 import { decorateHostHideShadowedDeclarations } from "./shadowed-declarations.js";
@@ -29,6 +31,7 @@ export function createNolaTsPlugin(): ts.server.PluginModuleFactory {
     guardProjectServiceDocumentCache((info.project as unknown as { projectService: unknown }).projectService);
     decorateServerHostForViews(info.serverHost);
     decorateHostHideShadowedDeclarations(typescript, info.languageServiceHost);
+    decorateHostWithTsiModuleFormat(typescript, info.languageServiceHost);
     // Here `info.languageService` is still the INNER service (Volar swaps in
     // its mapping proxy after this callback returns), so the lazy derivation
     // diagnostics ride generated offsets and get mapped like TypeScript's own;

@@ -49,6 +49,8 @@ const TOLERANT_SOURCES: Record<string, string> = {
   "retired double-dot parameter": "infer function f(..name: string) {\n  return ask `p`<string>;\n}\n",
   "reserved var binding": "var .x = 1;\n",
   "unknown extractor kind": "infer function f() {\n  return ask ..foo`q`<string>;\n}\n",
+  // the ask sequence (spec 2026-10-12): a refused value taken as the value, a dangling member inside a value
+  "half-typed ask sequence": "const a = ask `p` this;\nconst b = ask `q` us.\n",
 };
 
 type ParseNola = typeof parseFromSource;
@@ -84,4 +86,36 @@ describe("the bundled parser parses exactly like the source parser", () => {
       expect(bundled.ast).not.toBeNull();
     });
   }
+
+  // Babel decides `process.env.IS_PUBLISH` at build time; the fork's tsc output
+  // keeps it as a run-time read, one per node in finishNode/getLoc — ~45% of a
+  // parse, and a ReferenceError wherever `process` does not exist. The bundle
+  // scripts define it instead.
+  it("reads nothing from process.env while parsing", () => {
+    const reads: string[] = [];
+    const env = process.env;
+    process.env = new Proxy(env, {
+      get(target, key, receiver) {
+        if (typeof key === "string") reads.push(key);
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    try {
+      for (const { file, source } of corpus.slice(0, 3)) parseFromBundle(source, file);
+    } finally {
+      process.env = env;
+    }
+    expect(reads).toEqual([]);
+  });
+
+  it("every bundle that inlines the fork decided IS_PUBLISH at bundle time", () => {
+    for (const rel of [
+      "packages/parser/dist/index.js",
+      "packages/language-server/dist/server.cjs",
+      "packages/typescript-plugin/dist/plugin.cjs",
+      "packages/next/dist/turbopack-loader.cjs",
+    ]) {
+      expect(readFileSync(join(ROOT, rel), "utf8"), rel).not.toMatch(/process\.env\.IS_PUBLISH/);
+    }
+  });
 });

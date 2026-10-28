@@ -159,6 +159,26 @@ describe("DerivationService", () => {
     svc.dispose();
   });
 
+  it("invalidate() then derive() of the same .tsi answers against the new text, not the text the checker last saw", () => {
+    const v1 = "interface P {\n  name: string;\n}\n\nexport infer function f(.text: string) {\n  return ask `the person`: P;\n}\n";
+    const v2 = v1.replace("  name: string;", "  name: string;\n  age: number;");
+    const root = project({ "tsconfig.json": TSCONFIG, "src/a.tsi": v1 });
+    const svc = createDerivationService({ projectRoot: root, sourceRoot: root, underivableContextType: "error" });
+    const file = join(root, "src/a.tsi");
+    const derive = (source: string) => {
+      writeFileSync(file, source);
+      const p1 = compileNola(source, file, { sourceRoot: root, underivableContextType: "error" });
+      return finalizeDerivations(p1, svc.derive(file, p1).answers, file);
+    };
+    expect(derive(v1).code).toContain("{ return __nola.types.object({ name: __nola.types.string() }); }");
+    // the watch-mode sequence: the file changed, its virtual is forgotten, the next transform re-derives
+    svc.invalidate(file);
+    const second = derive(v2);
+    expect(second.diagnostics).toEqual([]);
+    expect(second.code).toContain("{ return __nola.types.object({ name: __nola.types.string(), age: __nola.types.number() }); }");
+    svc.dispose();
+  });
+
   it("works without a tsconfig (default strict NodeNext options)", () => {
     const src = "export type T = { a: string; b?: number[] };\n";
     const root = project({ "src/t.tsi": src });

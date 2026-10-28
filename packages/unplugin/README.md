@@ -11,6 +11,9 @@ import nola from "@nola-lang/unplugin/vite"; // or /webpack, /rollup, /rolldown,
 Prefer the named wrapper packages (`@nola-lang/vite`, `@nola-lang/webpack`,
 `@nola-lang/rollup`, `@nola-lang/rolldown`, `@nola-lang/esbuild`,
 `@nola-lang/rspack`) — they re-export these adapters with per-bundler setup docs.
+Bun is not an unplugin target: use
+[`@nola-lang/bun`](https://www.npmjs.com/package/@nola-lang/bun) (a `Bun.plugin`
+for the runtime and `Bun.build`).
 
 Nola execution is **server-only in v0**: the plugin lowers `.tsi` for server
 builds (SSR entries, Node targets) and fails client bundles with `NOLA4001`.

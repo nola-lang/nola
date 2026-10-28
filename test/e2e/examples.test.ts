@@ -179,6 +179,15 @@ const EXAMPLES: Example[] = [
     tsi: "person",
     expected: { name: "Alice Smith", age: 32, employer: "Acme Corp", job: "staff engineer" },
   },
+  {
+    dir: "tool-use",
+    tsi: "main",
+    entry: "src/main.tsi",
+    // a tool-use ask replayed turn by turn: the ledger's first turn requests
+    // searchFiles, the second readFile, the third answers; the two tools run
+    // in-process between the turns, so the ledger's transcript keys match
+    expected: ["D:/docs/visa/ds-160-confirmation.pdf", "D:/docs/visa/passport-scan.pdf"],
+  },
 ];
 
 beforeAll(async () => {

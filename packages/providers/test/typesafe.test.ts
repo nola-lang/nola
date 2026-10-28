@@ -1,6 +1,6 @@
 import type { InferenceScope, InferRequest, JsonSchema } from "@nola-lang/core";
 import { isDecisionModel, NolaProviderError } from "@nola-lang/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { typesafe } from "../src/typesafe.js";
 import { modelOf } from "./helpers/model.js";
 
@@ -182,18 +182,24 @@ describe("typesafe provider — keys", () => {
     }
   });
 
-  it("missing key: names the env var, points at nola.config.ts, is definitive, and never fetches", async () => {
+  it("missing key (no custom fetch): names the env var, points at nola.config.ts, is definitive, and never fetches", async () => {
     delete process.env.NOLA_TEST_TS_MISSING;
+    // No `fetch` option: a custom fetch would own authentication and make the key optional.
     const { fn, calls } = fakeFetch(() => answersReply({}));
-    const err = (await provider({ apiKeyEnv: "NOLA_TEST_TS_MISSING", fetch: fn })
-      .infer(req({ schema: bool }))
-      .catch((e: unknown) => e)) as NolaProviderError;
-    expect(err).toBeInstanceOf(NolaProviderError);
-    expect(err.message).toMatch(/NOLA_TEST_TS_MISSING/);
-    expect(err.message).toMatch(/nola\.config\.ts/);
-    expect(err.message).toMatch(/typesafe\(\{ apiKeyEnv/);
-    expect(err.definitive).toBe(true);
-    expect(calls).toHaveLength(0);
+    vi.stubGlobal("fetch", fn);
+    try {
+      const err = (await provider({ apiKeyEnv: "NOLA_TEST_TS_MISSING" })
+        .infer(req({ schema: bool }))
+        .catch((e: unknown) => e)) as NolaProviderError;
+      expect(err).toBeInstanceOf(NolaProviderError);
+      expect(err.message).toMatch(/NOLA_TEST_TS_MISSING/);
+      expect(err.message).toMatch(/nola\.config\.ts/);
+      expect(err.message).toMatch(/typesafe\(\{ apiKeyEnv/);
+      expect(err.definitive).toBe(true);
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

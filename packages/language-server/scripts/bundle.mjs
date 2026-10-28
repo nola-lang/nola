@@ -19,7 +19,8 @@ const result = await build({
   alias: { charcodes: fileURLToPath(new URL("../../../scripts/esbuild/charcodes.js", import.meta.url)) },
   // `import.meta.url` in a CJS bundle (derive's ESM fallback) resolves to this file's URL
   inject: ["../../scripts/esbuild/import-meta-url.js"],
-  define: { "import.meta.url": "import_meta_url" },
+  // …and the fork's Babel build-time switch decided here (see packages/parser/scripts/bundle.mjs)
+  define: { "import.meta.url": "import_meta_url", "process.env.IS_PUBLISH": "false" },
   sourcemap,
   logLevel: "info",
 });

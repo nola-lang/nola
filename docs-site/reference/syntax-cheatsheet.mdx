@@ -33,7 +33,8 @@ Use this page to look up Nola syntax and follow links to the full explanations. 
 | untyped (free text, static `any`) | `` ask `think step by step` `` | [Extractors](/docs/language/extractors/) |
 | interpolation | `` ask `the person described in: ${text}`: Person `` | [Extractors](/docs/language/extractors/#interpolation) |
 | constructed, not yet resolved | `` export const nameIntent = ..`the user's full name`: string; `` | [Extractors](/docs/language/extractors/#construction-anywhere-resolution-only-with-ask) |
-| the `..` spelling (required off the ask site and outside a call's slots) | `` const i = ..`x`: T; fn(cond ? ..`x`: T : y) `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
+| the `..` spelling (required off the ask site and outside a call's slots) | `` const i = ..`x`: T; fn(cond ? (..`x`: T) : y) `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
+| a typed ask in a conditional's consequent: parenthesized | `` cond ? (ask `x`: T) : y `` | [Extractors](/docs/language/extractors/#two-spellings-one-construct) |
 | a decision question: choice | `` ask `Which team?`: Choice<{ billing: "Payments"; sales: null }> `` | [Decision types](/docs/language/decision-types/) |
 | a decision question: scale | `` ask `How frustrated?`: Scale<["Calm", "Civil", "Angry"]> `` | [Decision types](/docs/language/decision-types/) |
 | a decision question: probability | `` ask `Is it urgent?`: Prob `` | [Decision types](/docs/language/decision-types/) |
@@ -55,6 +56,24 @@ Use this page to look up Nola syntax and follow links to the full explanations. 
 | sigil-less (the slot's `..` is implied) | `` ask createTicket(`a short title`: string, 2) `` | [Call intents](/docs/language/call-intents/) |
 | empty marker | ``` ask createTicket``("title", 3) ``` | [Call intents](/docs/language/call-intents/) |
 | hint marker | `` ask createTicket`file the ticket`(`a short title`: string, `priority 1-5`: number) `` | [Call intents](/docs/language/call-intents/) |
+
+## Tool use
+
+| Form | Example | Reference |
+| --- | --- | --- |
+| a tool list: the model may call the functions before it answers | `` ask `the files for a US visa application` [searchFiles, fs.readFile]: string[] `` | [Tool use](/docs/language/tool-use/) |
+| a group of tools: the model sees `fileTools.search`; spread it for flat names | `` ask `analyze this` [fileTools, dbTools]: Report `` · `` [...fileTools] `` | [Tool use](/docs/language/tool-use/#the-tool-contract) |
+| the turn cap | `` ask (..`the matching files` [searchFiles]: string[]).withMaxTurns(3) `` | [Tool use](/docs/language/tool-use/#the-turn-cap) |
+| brackets offer, parentheses run | `` ask getUser(`the id`: string) `` runs once; `` ask `the name` [getUser]: string `` offers | [Tool use](/docs/language/tool-use/#brackets-offer-parentheses-run) |
+
+## The ask sequence
+
+| Form | Example | Reference |
+| --- | --- | --- |
+| a bare value is named data where it stands | `` ask `the owner of` project `given` policy: Person `` | [Extractors](/docs/language/extractors/#values-in-the-instruction) |
+| words on a call | `` ask `register` createUser(`user id`: string) `` | [Call intents](/docs/language/call-intents/) |
+| several lists, words between | `` ask `find` [searchFiles] `or` [readDir] `done`: string[] `` | [Tool use](/docs/language/tool-use/#several-lists-your-words-between-them) |
+| the type glues to the last part | `` `go`: T `` · `` ]: T `` · `` project: T `` (`<T>` after a text or a list only) | [Extractors](/docs/language/extractors/#values-in-the-instruction) |
 
 ## Values in an instruction
 

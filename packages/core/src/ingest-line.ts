@@ -37,6 +37,7 @@ type EndEvent = {
 };
 type InvocationStartEvent = { fn?: string; file?: string };
 type InvocationEndEvent = { trace?: { fn?: string; file?: string } };
+type ToolCallEvent = { turn?: number; name?: string; args?: unknown; result?: string; error?: string; durationMs?: number };
 
 const INSTRUCTION_MAX = 72;
 const KIND_WIDTH = 6;
@@ -110,6 +111,18 @@ export function formatIngestLine(notice: IngestLineNotice, p: LinePalette = plai
     case "invocationEnd": {
       const t = (event as InvocationEndEvent).trace;
       return `${head} ${kind("done", p.dim)} ${t?.fn ?? "?"}() ${p.dim(t?.file ?? "<unknown>")}`;
+    }
+    // tool use (spec 2026-10-08 §3.8): a tool call sits under its ask like an attempt, by turn
+    case "toolCallStart": {
+      const e = event as ToolCallEvent;
+      return `${head} ${kind("tool", p.command, true)} #${e.turn ?? "?"} → ${e.name ?? "?"}`;
+    }
+    case "toolCallEnd": {
+      const e = event as ToolCallEvent;
+      const took = `${e.durationMs ?? "?"}ms`;
+      return e.error === undefined
+        ? `${head} ${kind("tool", p.dim, true)} #${e.turn ?? "?"} ← ${e.name ?? "?"} ${took}`
+        : `${head} ${kind("fail", p.error, true)} #${e.turn ?? "?"} ← ${e.name ?? "?"} ${took} — ${e.error}`;
     }
     default:
       return `${head} ${kind(envelope.kind, p.dim)}`;

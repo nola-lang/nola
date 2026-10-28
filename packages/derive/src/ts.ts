@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { nodeAbsenceReason, nodeBuiltin } from "@nola-lang/core";
 import type TypeScript from "typescript";
 
 type TypeScriptModule = typeof TypeScript;
@@ -19,14 +19,27 @@ export function useTypeScript(module: TypeScriptModule): void {
   injected = module;
 }
 
-/** The loader, the CLI and the bundler plugins never inject: derive's own dependency serves them, resolved on first use. */
+/**
+ * The loader, the CLI and the bundler plugins never inject: derive's own
+ * dependency serves them, resolved on first use through `node:module`
+ * reached at call time (`process.getBuiltinModule`, on every Node the
+ * floor admits; `import.meta.url` is this file's — or, in a CJS bundle, the
+ * URL its build injects). No static `node:` import, so a browser bundle of
+ * derive carries no Node specifier and reaches the throw below only when
+ * the host forgot to inject.
+ */
 function load(): TypeScriptModule {
   if (injected) return injected;
   if (!own) {
-    own =
-      typeof require === "function"
-        ? (require("typescript") as TypeScriptModule)
-        : (createRequire(import.meta.url)("typescript") as TypeScriptModule);
+    const mod = nodeBuiltin<{ createRequire: (from: string) => (id: string) => unknown }>("node:module");
+    // A bundle built without the import.meta.url inject has no usable URL for createRequire either.
+    const from = import.meta.url;
+    if (!mod || typeof from !== "string") {
+      throw new Error(
+        `derive: no TypeScript module — inject the host's with useTypeScript() (${mod ? "this bundle carries no import.meta.url to resolve one from" : nodeAbsenceReason()})`,
+      );
+    }
+    own = mod.createRequire(from)("typescript") as TypeScriptModule;
   }
   return own;
 }

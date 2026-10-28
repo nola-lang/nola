@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const p = (s: string) => fileURLToPath(new URL(s, import.meta.url));
 
@@ -31,6 +31,9 @@ export default defineConfig({
   },
   test: {
     include: ["packages/*/test/**/*.test.ts", "test/**/*.test.ts"],
+    // e2e fixtures are projects the suites copy and run elsewhere: a `*.test.ts` among them
+    // belongs to that project's own runner (bun test), never to vitest.
+    exclude: [...configDefaults.exclude, "test/e2e/fixtures/**"],
     testTimeout: 20_000,
     // names the test that stalled the worker if the 60s RPC timeout ever fires again
     setupFiles: ["test/setup/event-loop-watchdog.ts"],

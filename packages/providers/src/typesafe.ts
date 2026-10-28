@@ -1,5 +1,5 @@
 import type { InferRequest, LanguageModel } from "@nola-lang/core";
-import { DECISION_MODEL, NolaProviderError, parseRetryAfter } from "@nola-lang/core";
+import { DECISION_MODEL, NolaProviderError, parseRetryAfter, readEnv } from "@nola-lang/core";
 import { planFor } from "./decisions.js";
 
 export interface TypesafeOptions {
@@ -51,8 +51,10 @@ export function typesafe(optionsOrModel?: TypesafeOptions | string): LanguageMod
     async infer(req: InferRequest) {
       const requestedAt = Date.now();
       const envName = options.apiKeyEnv ?? "TYPESAFE_API_KEY";
-      const apiKey = options.apiKey ?? process.env[envName];
-      if (!apiKey) {
+      const apiKey = options.apiKey ?? readEnv(envName);
+      // A custom `fetch` owns authentication (a relay, a proxy, a test): no key is needed and no
+      // vendor header is sent without one. Without a custom fetch the key is required, as before.
+      if (!apiKey && !options.fetch) {
         throw new NolaProviderError(
           `TypeSafe API key not found: environment variable ${envName} is not set (checked process.env, including the project .env applied by the Nola loader) and no \`apiKey\` was passed to typesafe(). Fix: set ${envName}, or pass typesafe({ apiKeyEnv: "MY_VAR" }) or typesafe({ apiKey }) in nola.config.ts.`,
           { definitive: true },
@@ -69,7 +71,7 @@ export function typesafe(optionsOrModel?: TypesafeOptions | string): LanguageMod
       const { plan } = mapped;
       const res = await doFetch(`${baseUrl}/v1/systemone`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
         body: JSON.stringify({ model, state: plan.state, questions: plan.questions }),
         signal: req.signal ?? null,
       });

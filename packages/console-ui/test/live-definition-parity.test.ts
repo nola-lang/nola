@@ -39,6 +39,34 @@ describe("applyNotice agrees with storage", () => {
     expect(settled.errorCount).toBe(storedEnd.errorCount);
   });
 
+  it("a tool-use ask carries its tools on the running and the settled row", async () => {
+    const service = new ConsoleService(new SqliteConsoleStorage(":memory:"));
+    const start = envelope(0, 9000, "askStart", {
+      askId: "t1",
+      def: DEF,
+      kind: "tool-use",
+      provider: "openai",
+      instruction: "find the files",
+      typeText: "string[]",
+      tools: ["searchFiles", "fs.readFile"],
+      spanPath: ["inv1"],
+      site,
+    });
+    const end = envelope(1, 9300, "askEnd", {
+      askId: "t1",
+      receipt: { def: DEF, kind: "tool-use", servedBy: "openai", durationMs: 300, attempts: 2, outcome: { ok: true }, spanPath: ["inv1"], site, turns: [{ calls: [] }] },
+    });
+    await service.ingest(start);
+    const stored = (await service.getDefinition(DEF)) as DefinitionDetail;
+    const blank: DefinitionDetail = { ...stored, asks: [], executions: 0, matched: 0, okCount: 0, errorCount: 0, providers: [] };
+    const running = applyNotice(blank, {}, start);
+    expect(running.asks).toEqual(stored.asks);
+    expect(running.asks[0]?.tools).toEqual(["searchFiles", "fs.readFile"]);
+    await service.ingest(end);
+    const storedEnd = (await service.getDefinition(DEF)) as DefinitionDetail;
+    expect(applyNotice(running, {}, end).asks).toEqual(storedEnd.asks);
+  });
+
   it("a failed call ask", async () => {
     const service = new ConsoleService(new SqliteConsoleStorage(":memory:"));
     const start = envelope(0, 7000, "askStart", { askId: "c1", def: DEF, kind: "call", provider: "openai", callee: "lookup", hint: "be brief", spanPath: ["inv1"], site });

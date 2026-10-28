@@ -115,13 +115,45 @@ export function AskBody({ detail }: { detail: AskDetail }) {
   );
 }
 
-/** An extract: the header IS the source (..`instruction`<T>, untruncated), then what it produced. */
+type ToolCallRow = { name?: string; args?: unknown; result?: string; error?: string; durationMs?: number };
+type TurnRow = { calls?: ToolCallRow[] };
+
+/** The tool turns a tool-use ask ran (the receipt's `turns`), one row per call: turn, tool, arguments, result or failure. */
+function ToolCalls({ detail }: { detail: AskDetail }) {
+  const turns = (detail.receipt?.turns as TurnRow[] | undefined) ?? [];
+  const rows = turns.flatMap((turn, i) => (turn.calls ?? []).map((call, j) => ({ turn: i + 1, key: `${i}-${j}`, ...call })));
+  if (rows.length === 0) return null;
+  return (
+    <section>
+      <h2 className={LABEL}>tool calls</h2>
+      <ol className="m-0 list-none rounded-md p-0">
+        {rows.map((row) => (
+          <li key={row.key} className="grid grid-cols-[auto_auto_1fr_auto] items-baseline gap-x-3 border-b px-3 py-1.5 font-mono text-xs last:border-b-0">
+            <span className="text-muted-foreground">#{row.turn}</span>
+            <span>{row.name ?? "?"}</span>
+            <span className="truncate text-[11px] text-muted-foreground">{JSON.stringify(row.args)}</span>
+            <span className="text-[11px] text-muted-foreground">{formatDuration(row.durationMs)}</span>
+            {row.error !== undefined ? (
+              <span className="col-span-full text-err">{row.error}</span>
+            ) : (
+              <span className="col-span-full truncate text-[11px] text-muted-foreground">{row.result}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** An extract or a tool-use ask: the header IS the source (..`instruction` [tools]<T>, untruncated), then what it produced. */
 export function AskPanel({ detail, search }: { detail: AskDetail; search: URLSearchParams }) {
-  const source = `..\`${detail.instruction ?? ""}\`${detail.typeText ? `<${detail.typeText}>` : ""}`;
+  const tools = detail.kind === "tool-use" ? ` [${(detail.tools ?? []).join(", ")}]` : "";
+  const source = `..\`${detail.instruction ?? ""}\`${tools}${detail.typeText ? `<${detail.typeText}>` : ""}`;
   return (
     <>
       <AskHeader detail={detail} title={source} search={search} />
       <ResultBlock detail={detail} title="result" />
+      {detail.kind === "tool-use" && <ToolCalls detail={detail} />}
       <AskBody detail={detail} />
     </>
   );

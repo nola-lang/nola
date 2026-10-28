@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node", "bun-types"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../ast" },
+    { "path": "../compiler" },
+    { "path": "../derive" },
+    { "path": "../node-loader" },
+    { "path": "../runtime" }
+  ]
+}

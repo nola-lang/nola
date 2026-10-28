@@ -6,7 +6,7 @@ import { isPlatformModel, PLATFORM_MODEL } from "@nola-lang/core";
 import { mockProvider, record, replay } from "@nola-lang/providers";
 import type { Frame } from "@nola-lang/runtime";
 import { __nola, fingerprintRequest, NolaConfigError, NolaProviderError, nolaRuntime } from "@nola-lang/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestOf } from "./helpers/model.js";
 
 /** An obviously fake key that still has a real key's shape (nothing key-shaped is committed as a literal). */
@@ -15,6 +15,20 @@ const FAKE_KEY = `sk-proj-${"A".repeat(24)}`;
 afterEach(() => nolaRuntime.reset());
 
 const ledgerIn = () => join(mkdtempSync(join(tmpdir(), "nola-ledger-")), "ledger.jsonl");
+
+describe("ledgers need a file system", () => {
+  it("replay() and record() refuse where there is none (a browser), naming the need for Node", () => {
+    const spy = vi.spyOn(process, "getBuiltinModule").mockReturnValue(undefined as never);
+    try {
+      expect(() => replay("/any/ledger.jsonl")).toThrow(/file system/);
+      expect(() => record(mockProvider(["x"]), "/any/ledger.jsonl")).toThrow(/file system/);
+      // process exists but process.getBuiltinModule does not: that is Node 22.0–22.2, not a browser
+      expect(() => replay("/any/ledger.jsonl")).toThrow(/Node >= 22\.3/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
 
 describe("record()", () => {
   it("passes through and appends a JSONL entry keyed by the RAW request fingerprint, content redacted", async () => {

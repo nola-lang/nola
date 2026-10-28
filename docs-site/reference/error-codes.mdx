@@ -164,7 +164,7 @@ export infer function triage(.ticket: string) {
 
 > a value in a context statement is a name, a call or a bracketed expression, followed by text or the end of the statement — wrap anything else in parentheses, or assign it to a local first (`await`, `ask` and `this` cannot be values).
 
-**Cause:** after the text of a [context statement](/docs/language/context-statements/), a token that cannot continue it on the same line: an operator or an arrow after a value (`` `total` a + b ``, `` `map` x => x ``), or `typeof`, `void`, `await`, `ask`, `this`, `..`, `function` or `class` where a value would start. Also a value that ends with a backtick, which takes the text after it for a tagged template: `` `x` foo<string> `more` ``, `` `x` new Foo `more` ``.
+**Cause:** after the text of a [context statement](/docs/language/context-statements/), a token that cannot continue it on the same line: an operator or an arrow after a value (`` `total` a + b ``, `` `map` x => x ``), or `typeof`, `void`, `await`, `ask`, `this`, `..`, `function` or `class` where a value would start. Also a value that ends with a backtick, which takes the text after it for a tagged template: `` `x` foo<string> `more` ``, `` `x` new Foo `more` ``. The same code, with its own wording, covers an [ask sequence](/docs/language/extractors/#values-in-the-instruction): `this`, `await`, `ask`, `function` or `class` where a value would start after a text, a value ending in a backtick, and text after the type (`` ask `p`: T `more` `` — the type ends the sequence).
 **Fix:** parenthesize the expression — `` `total` (a + b) ``, `` `x` (foo<string>) `more` ``, `` `x` (new Foo) `more` `` — or put it in a `${}` hole of the text. `await`, `ask` and `this` cannot go in a value even in parentheses: a parenthesized `ask` is [`NOLA2010`](/docs/reference/error-codes/#nola2010), and a parenthesized `await` or `this` is a TypeScript error (`TS1308`, `TS2683`), because a context statement is read at each ask, outside the async body, in a hoisted function of its own. Compute the value first, assign it to a local and write its name: `const user = this.user;`, then `` `Page` user ``.
 
 ```tsi
@@ -182,6 +182,27 @@ export infer function total(.items: string[], a: number, b: number) {
   return ask `a summary`: string;
 }
 ```
+
+## NOLA1021
+
+> a tool list holds functions — a name, a member, an expression that is one function, or a group (a module or an object of functions, an array of them), bare or spread; a literal cannot be one, and the list is not empty.
+
+**Cause:** a literal between the brackets of a tool list — `` ask `find the files` [1, "x"]: string[] ``, an arrow function, an object or array literal, a template, `new` — or an empty list, `` ask `p` []: T ``.
+**Fix:** put the function or the group behind a name: `` ask `find the files` [searchFiles, fileTools]: string[] ``, or spread a group, `` [...fileTools] ``. See [Tool use](/docs/language/tool-use/#the-tool-contract).
+
+## NOLA1022
+
+> a call or a tagged template in a tool list is reserved for a future Nola version — name the function (`getUser`); its arguments come from its signature.
+
+**Cause:** an entry written as a call, describing the arguments in place — `` ask `get the user` [getUser(`user id`: string)]: User `` — or as a tagged template. The shape is reserved.
+**Fix:** write the name alone, `` ask `get the user` [getUser]: User ``; the model fills the arguments from the function's signature and JSDoc. See [Tool use](/docs/language/tool-use/#the-tool-contract).
+
+## NOLA1023
+
+> a colon-typed extractor directly in a ternary's consequent (a colon on the extractor's line is its type, spaced or not) — parenthesize it: `` cond ? (ask `p`: T) : y ``.
+
+**Cause:** `` cond ? ask `p`: number : y `` — an extractor typed with the colon spelling stands bare between a conditional's `?` and `:`, so two colons with different meanings sit side by side; and since a colon after the extractor is its type whether glued, spaced or on the next line, `` cond ? ask `p` : y `` reads `y` as the type and the conditional has no alternate left — the formatted `` cond\n  ? ask `p`\n  : y `` reads the same way. An untyped ask is never valid, so neither shape could have meant anything else.
+**Fix:** parenthesize the ask and give it its type: `` cond ? (ask `p`: number) : y ``. A call intent and the angle-bracket spelling (`` cond ? ask `p`<number> : y ``) need no parentheses, and the alternate position is unaffected: `` cond ? y : ask `p`: number ``.
 
 **Compile errors (NOLA2xxx)**
 
@@ -374,6 +395,34 @@ export infer function go(.items: string[], urgent: boolean) {
 }
 ```
 
+## NOLA2018
+
+> 'n' is not callable (its type is number) — a tool list holds functions, or groups of them.
+
+**Cause:** an entry of a tool list that is neither one function nor a group — a value, a type-only import, a class, a union of function types, `any`; a function under a spread; a group reached through an expression (`[groups[0]]`) instead of a name; a method reached through a call (`api.client().search` — the object would be evaluated again to bind the method); a group with no function-valued member or a member the walk cannot use; or two tools that would share one name on the wire: the same function listed twice, `a.b` beside `a_b`, a spread's `search` beside another `search` (a model's tool call comes back by that name, so the vendors' `[A-Za-z0-9_-]` names must stay distinct).
+**Fix:** name a function or a group — `` ask `find the files` [searchFiles, fileTools]: string[] `` — spread a group to flatten it, offer colliding groups bare so their names carry the prefix, and give the functions one declared signature. A parameter the walk cannot derive (a `Map`, a generic parameter, a rest parameter) is [`NOLA2002`](/docs/reference/error-codes/#nola2002) at the entry. Every list of one [ask sequence](/docs/language/tool-use/#several-lists-your-words-between-them) shares one name space; the same written entry in two lists is one tool.
+
+## NOLA2019
+
+> offering tools beside a call is reserved for a future Nola version — offer the function as a tool, `[createUser]`, or make the call a separate ask.
+
+**Cause:** an [ask sequence](/docs/language/extractors/#values-in-the-instruction) that offers tools and also holds a call with typed slots, `` ask `use` [searchFiles] `then` createUser(`id`: string) `` — the kind where the loop runs and the call's slots are the answer, designed but not built; or a `..` sequence written inside a call's slot, `` fn(..`t` user: string) ``, since a slot's instruction is a schema description.
+**Fix:** offer the function as a tool, make the call its own ask after the tool-use ask, and keep a slot to one text.
+
+## NOLA2020
+
+> an ask makes one call — split the asks.
+
+**Cause:** an [ask sequence](/docs/language/extractors/#values-in-the-instruction) that cannot mean one thing: two calls with typed slots; a `: T` beside a call (the call's result is the type); text after a bare call, `` ask f(`x`: string) `more` ``; a call with typed slots inside a data value, `` ask `use` (createUser(`id`: string)) `go`: T ``.
+**Fix:** one call per ask, no `: T` on a call, the words before the call, the call written bare between texts.
+
+## NOLA2021
+
+> the Nola compiler failed on this file: … This is a Nola bug — please report it with the file's contents; the editor keeps serving the last successful compile.
+
+**Cause:** the compiler threw while lowering the file — an internal error, never something written in the file. The editor reports it here instead of stopping: the language server keeps running on the file's last successful compile, so completion and navigation are approximate until the next successful one.
+**Fix:** nothing in your code — report the bug with the file's contents. A build (`nola build`, `nola check`, `nola run`) fails on the same file with the error and its stack, which is what to include.
+
 **Runtime errors (NOLA3xxx)**
 
 ## NOLA3001
@@ -422,10 +471,10 @@ The related message "No Nola model configured" is a `NolaConfigError` without a 
 
 ## NOLA3007
 
-> replay ledger … cannot be read: … · replay ledger …:N is not valid JSON. · replay ledger …:N is missing fingerprint or response.text.
+> replay ledger … cannot be read: … · replay ledger …:N is not valid JSON. · replay ledger …:N is missing fingerprint or response.text. · replay() needs a file system for its ledger — …
 
-**Cause:** the JSONL ledger given to `replay(path)` is missing, unreadable or malformed.
-**Fix:** check the path; re-record the ledger. See [Record and replay](/docs/config/record-and-replay/).
+**Cause:** the JSONL ledger given to `replay(path)` is missing, unreadable or malformed; or `record(…)` / `replay(…)` was called where there is no file system (a browser, or a Node older than 22.3 — the message says which).
+**Fix:** check the path; re-record the ledger; on a browser host, record and replay on Node and bring another model to the browser. See [Record and replay](/docs/config/record-and-replay/).
 
 ## NOLA3008
 
@@ -483,10 +532,10 @@ Not raised — reserved.
 
 ## NOLA3015
 
-> the Nola loader needs Node.js module hooks, which Bun/Deno does not run. Run .tsi code on Node: `bun run start` / `npm start` (the nola bin runs on Node) or `node --import nola-lang/register src/main.ts`; `bun --bun` and `bun src/main.ts` cannot load .tsi files.
+> the Nola loader needs Node.js module hooks, which Bun 1.3.14 does not run. Run .tsi on Bun with @nola-lang/bun: add `preload = ["@nola-lang/bun/preload"]` to bunfig.toml and run `bun src/main.tsi`. Or run on Node: `npm start` / `bun run start` (the nola bin runs on Node) or `node --import nola-lang/register src/main.ts`.
 
-**Cause:** the loader was started under Bun or Deno.
-**Fix:** run on Node (≥ 22.18); any package manager is fine.
+**Cause:** the Node loader (`nola run`, `node --import nola-lang/register`) was started under Bun or Deno.
+**Fix:** on Bun, use the [Bun plugin](/docs/tooling/bun/) — `.tsi` then loads from source without Node's loader; on Deno, run on Node (≥ 22.18). Any package manager is fine.
 
 ## NOLA3016
 
@@ -509,13 +558,48 @@ Not raised — reserved.
 **Cause:** the output type contains `Choice`, `Scale` or `Prob`, but the selected model does not support decision questions. Nola rejects the ask before sending a request because those types require probabilities from a decision model. A `fallback` or `roundRobin` group supports decisions if at least one member does; other members are skipped for decision asks.
 **Fix:** select a decision model with `ask with <name>` or `.withModel()`. If you only need a label or yes/no answer, use a literal union or `boolean`.
 
+## NOLA3019
+
+> this ask offers tools (search, readFile); model "mock" cannot request tool calls — route the ask to a model with tool support (`ask with <name>`), or write the ask without a tool list.
+
+**Cause:** an ask with a tool list — `` ask `find the files` [searchFiles, readFile]: string[] `` — resolved to a model that cannot return tool calls: a hand-written `LanguageModel`, a mock without `{ tools: true }`, a provider without tool support, or a vendor model configured with `toolUse: false`. Nola refuses before the network, since the loop has nothing to run.
+**Fix:** route the ask to a model that supports tool calls (`ask with <name>` or `.withModel()`), brand a mock with `mockProvider(…, { tools: true })`, or write the ask without the list. A `fallback` or `roundRobin` group supports tool use if at least one member does; other members are skipped for tool-use asks. See [Tool use](/docs/language/tool-use/#models).
+
+## NOLA3020
+
+> tool use at src/find.tsi:3:19 exceeded 10 turns without an answer (`.withMaxTurns(n)` or config ask.maxTurns raise the cap).
+
+**Cause:** the model kept requesting tool calls past the turn cap — `.withMaxTurns(n)` on the intent, else config `ask.maxTurns`, 10 by default. Each provider call is a turn; the single correction turn after a bad answer is not counted.
+**Fix:** raise the cap when the task legitimately needs more lookups, give the model tools that answer in fewer calls, or sharpen the task text. The error carries the transcript so far. The failure is definitive: `.withRetry(n)` re-runs the whole loop, tools included.
+
+## NOLA3021
+
+> tool "readFile" threw during tool use at src/find.tsi:3:19: ENOENT: no such file
+
+**Cause:** a tool the model called threw or returned a rejected promise. A thrown error ends the ask — nothing is swallowed — with the error as the `cause` and the transcript so far attached.
+**Fix:** fix the tool, or, when the model should be able to recover from the failure, return it as a value (`{ error: "no such file" }`) instead of throwing — the model sees every returned value. Invalid arguments never reach the function: the validation issues go back to the model as that call's result.
+
+## NOLA3022
+
+> the tool list at 3:19 cannot be built: 'fileTools.search' is not a function (got undefined).
+
+**Cause:** when the ask ran, a tool list entry did not match what its type promised — a group member that is not a function, an array with a different length, a value that is not a function — or a tool had no name (an anonymous function in an array), or two tools shared one wire name. Raised before any provider call.
+**Fix:** keep the value and its type in step (a module's exports, a `const` tuple), name the functions, and offer groups bare when two of them share a member name. See [Tool use](/docs/language/tool-use/#the-tool-contract).
+
+## NOLA3023
+
+> Bun >= 1.3.0 is required by @nola-lang/bun (process.getBuiltinModule is missing in Bun 1.2.0). Upgrade Bun: `bun upgrade`.
+
+**Cause:** `@nola-lang/bun` (the preload or `nola()`) started under a Bun older than 1.3, which lacks `process.getBuiltinModule` — the only way the runtime reaches Node builtins.
+**Fix:** upgrade Bun (`bun upgrade`). See [Bun](/docs/tooling/bun/).
+
 **Bundler errors (NOLA4xxx)**
 
 ## NOLA4001
 
 > .tsi modules are server-only in Nola v0 — this file is being bundled for a browser target. Move the import behind a server boundary (SSR entry, route handler, server action).
 
-**Cause:** a client bundle imports a `.tsi` module.
+**Cause:** a client bundle imports a `.tsi` module — a browser-targeted build of a bundler plugin, or a `Bun.build` with `target: "browser"`.
 **Fix:** import it from server code only (SSR entry, route handler, server action).
 
 Next: [Syntax cheatsheet](/docs/reference/syntax-cheatsheet/)

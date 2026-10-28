@@ -1,7 +1,7 @@
 import type { DerivationAnswer, DerivationRequest } from "@nola-lang/compiler";
 import type ts from "typescript";
 import { TS } from "./ts.js";
-import { DerivationError, deriveType, type WalkContext } from "./walk.js";
+import { DerivationError, deriveTool, deriveType, type WalkContext } from "./walk.js";
 
 export interface AnswerContext {
   /** absolute path of the file whose appendix the answers land in (the .tsi, or the viewed plain file) */
@@ -38,6 +38,12 @@ export function answerRequests(
       ...(ctx.accessorName ? { accessorName: ctx.accessorName } : {}),
     };
     try {
+      // a tool request's node is the entry's expression (its function's signature is the contract); a value request's
+      // node is the bare value's expression (its checker type is the answer, spec 2026-10-12 §3.5); every other kind's is a type
+      if (req.kind === "tool") {
+        const out = deriveTool(node, walkCtx, req.tool ?? { ask: "" });
+        return { accessor: req.accessor, ok: true, expr: out.expr, names: out.names, accessors: out.accessors, imports: out.imports, deps: out.deps };
+      }
       const out = deriveType(node, walkCtx, req.kind === "exported" ? req.name : undefined);
       return { accessor: req.accessor, ok: true, expr: out.expr, accessors: out.accessors, imports: out.imports, deps: out.deps };
     } catch (e) {

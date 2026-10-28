@@ -62,6 +62,12 @@ const FIXTURES: Record<string, string> = {
   // implied sigil: the extractor prefix is an insert at the template start, coalesced with `ask `
   impliedExtract: "infer function go() {\n  return ask `get a name`<string>;\n}\n",
   impliedExtractModule: "const n = ask with fast `hi`;\n",
+  toolUse: "declare function a(): void;\ndeclare const fs: { readFile(p: string): string };\ninfer function go() {\n  return ask `find` [a, fs.readFile]: string[];\n}\n",
+  // the ask sequence (spec 2026-10-12 §3.4): inserts at every seam, values and texts verbatim; a value glued to a text
+  askSequence:
+    "declare const admin: { a: 1 };\ndeclare function g(): void;\ninfer function go() {\n  return ask `use`admin `and` [g] `go`: string;\n}\n",
+  askSequenceCall:
+    "declare function f(a: string, b: number): void;\ninfer function go() {\n  return ask `call` f(`a`: string, 2);\n}\n",
   // emit 14: the value insert after an exported type is a zero-source-length replaced span
   typeValues: "export type P = { x: number };\nexport const s = P.toJsonSchema();\n",
 };

@@ -10,8 +10,8 @@
  * chosen provider's config and the next-steps comment on top.
  *
  * The first menu leads (in this order) and is organized BY FEATURE:
- * `feature-extraction` (the default) and `function-calling` are each one
- * `.tsi` file with a top-level ask — the two things Nola does —
+ * `feature-extraction` (the default), `function-calling` and `tool-use` are
+ * each one `.tsi` file with a top-level ask — the three things Nola does —
  * `agent-loop` is the same shape around a top-level `while`,
  * `typescript-interop` is the infer-function shape called from plain
  * TypeScript, `triage-ticket` the one-file shape on a non-chat vendor, then
@@ -61,6 +61,13 @@ export const TEMPLATES: readonly TemplateDef[] = [
   {
     name: "function-calling",
     label: "call an async function from a TypeScript file",
+    source: "example",
+    featured: true,
+    entry: "src/main.tsi",
+  },
+  {
+    name: "tool-use",
+    label: "offer functions as tools: the model calls them as it needs before it answers",
     source: "example",
     featured: true,
     entry: "src/main.tsi",

@@ -1,9 +1,14 @@
-import { ArrowRightToLine, Braces, SquareFunction } from "lucide-react";
+import { ArrowRightToLine, Braces, SquareFunction, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RecordKind } from "../api";
 
-const ICON = { invocation: SquareFunction, extract: Braces, call: ArrowRightToLine } as const;
-const TITLE: Record<RecordKind, string> = { invocation: "infer function call", extract: "extract", call: "call intent" };
+const ICON = { invocation: SquareFunction, extract: Braces, call: ArrowRightToLine, "tool-use": Wrench } as const;
+const TITLE: Record<RecordKind, string> = {
+  invocation: "infer function call",
+  extract: "extract",
+  call: "call intent",
+  "tool-use": "tool use",
+};
 
 /** The record's kind at a glance — replaces a text badge so rows stay narrow. */
 export function KindIcon({ kind, className }: { kind: RecordKind; className?: string }) {

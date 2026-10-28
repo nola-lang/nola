@@ -145,19 +145,23 @@ describe("anthropic provider", () => {
     }
   });
 
-  it("missing key: names the exact env var, points at nola.config.ts, and is definitive", async () => {
+  it("missing key (no custom fetch): names the exact env var, points at nola.config.ts, is definitive, and never fetches", async () => {
     const original = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
+    // No `fetch` option: a custom fetch would own authentication and make the key optional.
+    const { fn, calls } = fakeFetch(() => messageReply("x"));
+    vi.stubGlobal("fetch", fn);
     try {
-      const { fn } = fakeFetch(() => messageReply("x"));
-      const err = (await anthropic({ fetch: fn, model: "m" })
+      const err = (await anthropic({ model: "m" })
         .infer(requestOf({ system: "s" }))
         .catch((e: unknown) => e)) as NolaProviderError;
       expect(err).toBeInstanceOf(NolaProviderError);
       expect(err.message).toMatch(/ANTHROPIC_API_KEY/);
       expect(err.message).toMatch(/nola\.config\.ts/);
       expect(err.definitive).toBe(true);
+      expect(calls).toHaveLength(0);
     } finally {
+      vi.unstubAllGlobals();
       if (original !== undefined) process.env.ANTHROPIC_API_KEY = original;
     }
   });

@@ -54,6 +54,14 @@ describe("fingerprintRequest (v6: over the intent — the ask as data, never its
     expect(fingerprintRequest({ intent, params: { providerOptions: { top_p: 0.5 } } })).not.toBe(base);
   });
 
+  it("input.parts joins the hash when present and is absent-equivalent when undefined (FINGERPRINT_VERSION stays 6)", () => {
+    const base = fingerprintRequest({ intent });
+    const withParts: InferenceModel = { ...intent, input: { instruction: "user name", parts: [{ text: "user name" }] } };
+    expect(fingerprintRequest({ intent: withParts })).not.toBe(base);
+    const undefinedParts = { ...intent, input: { instruction: "user name", parts: undefined } } as InferenceModel;
+    expect(fingerprintRequest({ intent: undefinedParts })).toBe(base);
+  });
+
   it("keys a profile distinctly, and only when present", () => {
     const base = fingerprintRequest({ intent });
     expect(fingerprintRequest({ intent, profile: "fast" })).not.toBe(base);

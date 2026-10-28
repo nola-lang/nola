@@ -12,6 +12,7 @@ import {
   type NolaExtractExpression,
   type NolaFunctionNode,
   type NolaParamNode,
+  type NolaToolListNode,
   type NolaVariableIdNode,
   type ObjectExpressionNode,
   type ObjectPropertyNode,
@@ -19,7 +20,7 @@ import {
   type TemplateLiteralNode,
   walk,
 } from "@nola-lang/ast";
-import type { UnderivableContextTypeMode } from "@nola-lang/core";
+import { toolWireName, type UnderivableContextTypeMode } from "@nola-lang/core";
 import { collectDecisionTypeUses } from "../decision-imports.js";
 import { collectExportedTypeNames, collectTopLevelValueNames, type ExportedTypeDecl } from "../schema.js";
 import { accessorNameFor } from "../schema-expr.js";
@@ -45,16 +46,36 @@ import {
   FMT_CLOSE,
   FMT_OPEN,
   FRAME_PARAM,
+  FUNC_PART_CLOSE,
+  FUNC_PART_OPEN,
+  funcPartArgsHead,
+  INERT_ACCESSOR_BODY,
   inertAccessorDecl,
   invocationArgEntry,
   invocationClose,
   invocationOpen,
+  locText,
   MODULE_SCOPE_CALL,
+  OBJ_PART_OPEN,
+  objPartClose,
   rawTemplateText,
   runtimeImport,
+  SEQ_PART_SEP,
+  SEQUENCE_CLASS,
+  sequenceClose,
+  sequenceOpen,
   siteAccessorName,
   TEXT_JOIN_HOLE,
+  TOOLS_OPEN,
+  TOOLS_PART_CLOSE,
+  TOOLS_PART_OPEN,
   templateCopy,
+  toolAccessorDecl,
+  toolAccessorName,
+  toolSourceClose,
+  toolSourceOpen,
+  toolUseClose,
+  toolUseOpen,
   typeArgsText,
   typeValueDecl,
   typeValueText,
@@ -62,6 +83,31 @@ import {
 
 /** The scope body a node sits directly in (scope-bodies spec §5.1); "none" is where `ask` is illegal. */
 type AskBody = "infer" | "module" | "none";
+
+/** An identifier or a dotted chain of identifiers (`fs.promises.readFile`): the written text can name a tool or prefix a group. */
+function isNameChain(node: BaseNode): boolean {
+  if (node.type === "Identifier") return true;
+  if (node.type !== "MemberExpression") return false;
+  const m = node as unknown as { computed: boolean; object: BaseNode; property: BaseNode };
+  return !m.computed && m.property.type === "Identifier" && isNameChain(m.object);
+}
+
+/**
+ * A side-effect-free object expression: a name, `this`, or dotted / indexed /
+ * optional access over one with identifier or literal keys. Evaluating it a
+ * second time is harmless, so it can ride as a method's receiver (spec
+ * 2026-10-09 §1.6).
+ */
+function isPureChain(node: BaseNode): boolean {
+  if (node.type === "Identifier" || node.type === "ThisExpression") return true;
+  if (node.type !== "MemberExpression" && node.type !== "OptionalMemberExpression") return false;
+  const m = node as unknown as { computed: boolean; object: BaseNode; property: BaseNode };
+  const key = m.property;
+  const pureKey = m.computed
+    ? key.type === "Identifier" || key.type === "StringLiteral" || key.type === "NumericLiteral" || isPureChain(key)
+    : key.type === "Identifier";
+  return pureKey && isPureChain(m.object);
+}
 
 /** A hole holding the tolerant placeholder of a stray `${.` mid-typing — its bytes are not TypeScript. */
 const isPlaceholderHole = (expr: BaseNode) =>
@@ -99,6 +145,23 @@ interface BodyRecord {
 /** A request whose lowered range is resolved once the span tiling exists (end of run()). */
 interface PendingRequest extends Omit<DerivationRequest, "lowered"> {
   lowered?: DerivationRequest["lowered"];
+}
+
+/** What a part of an ask sequence is by its syntax (spec 2026-10-12 §1.1). */
+type PartKind = "text" | "obj" | "tools" | "func";
+
+/** A classified sequence: the row of the kind table (§1.2) and each part with its kind, in source order. */
+interface ClassifiedParts {
+  kind: "extract" | "call" | "tool-use";
+  parts: Array<{ kind: PartKind; node: BaseNode }>;
+}
+
+/** What an earlier list of the ask emitted for a written entry — re-emitted where the entry is written again, under the same accessor (spec 2026-10-12 §3.4). */
+interface EmittedEntry {
+  accessor: string;
+  spread: boolean;
+  writtenName?: string;
+  receiver?: string;
 }
 
 /**
@@ -207,7 +270,12 @@ export class Lowerer {
     if (this.usedRuntime) {
       let appendix = runtimeImport(this.displayFile, { itemNames: this.moduleItems, localEntries: moduleBody.localEntries }, decisionTypes);
       accessorsStart = appendix.length;
-      for (const r of this.requests) appendix += inertAccessorDecl(r.accessor, r.kind === "context");
+      for (const r of this.requests) {
+        appendix +=
+          r.kind === "tool"
+            ? toolAccessorDecl(r.accessor, INERT_ACCESSOR_BODY)
+            : inertAccessorDecl(r.accessor, r.kind === "context" || r.kind === "value");
+      }
       this.s.appendix(appendix);
     }
 
@@ -244,7 +312,7 @@ export class Lowerer {
     anchors: Array<{ sourceStart: number; sourceEnd: number; generatedStart: number; generatedEnd: number }>,
   ): DerivationRequest["lowered"] {
     const { start, end } = r.source;
-    if (r.kind === "extract") {
+    if (r.kind === "extract" || r.kind === "tool") {
       const a = anchors.find((x) => x.sourceStart === start && x.sourceEnd === end);
       if (a) return { start: a.generatedStart, end: a.generatedEnd };
     }
@@ -255,7 +323,7 @@ export class Lowerer {
   }
 
   private request(kind: DerivationRequest["kind"], node: BaseNode, extra: Partial<PendingRequest> = {}): string {
-    const accessor = extra.accessor ?? siteAccessorName(++this.siteCounter);
+    const accessor = extra.accessor ?? (kind === "tool" ? toolAccessorName(++this.siteCounter) : siteAccessorName(++this.siteCounter));
     this.requests.push({ accessor, kind, source: { start: node.start, end: node.end, loc: node.loc }, ...extra });
     this.usedRuntime = true;
     return accessor;
@@ -339,6 +407,15 @@ export class Lowerer {
           return;
         }
         const ask = node as NolaAskExpression;
+        // Text after a bare call parses as a template tagged by the call; the
+        // words go first (spec 2026-10-12 §1.1).
+        const operand = ask.argument;
+        if (
+          operand.type === "TaggedTemplateExpression" &&
+          this.isCallIntentCall((operand as TaggedTemplateExpressionNode).tag as BaseNode)
+        ) {
+          this.diag(Codes.AskSequenceInvalid, "put the words before the call: `ask `words` fn(…)`.", operand);
+        }
         if (body === "none") {
           this.diag(
             Codes.AskOutsideNolaFunction,
@@ -348,7 +425,8 @@ export class Lowerer {
         } else {
           // Overwriting up to the operand also removes an `with <alias>` span;
           // the alias re-enters as ask's third argument.
-          this.s.overwrite(node.start, ask.argument.start, ASK_OPEN);
+          // `ask` and the whitespace up to its operand — the operand may start on the next line
+          this.s.overwrite(node.start, ask.argument.start, ASK_OPEN + this.lineTerminatorsIn(node.start, ask.argument.start));
           // appendRight: extract-lowering suffixes use appendLeft at the same
           // position and must land BEFORE this closing paren.
           // An infer body threads the frame its wrapper minted; the module body
@@ -384,11 +462,7 @@ export class Lowerer {
         // call intent. Simple callees only — `new`, optional calls, super(),
         // and exotic callees (call results, parenthesized exprs) stay plain
         // calls; the sigil form keeps its wider callee latitude.
-        const callIntent =
-          call.callee.type === "TaggedTemplateExpression" ||
-          ((call.callee.type === "Identifier" || call.callee.type === "MemberExpression") &&
-            call.arguments.some((a) => this.hasExtractorSlot(a as BaseNode)));
-        if (!callIntent) break;
+        if (!this.isCallIntentCall(node)) break;
         if (this.holeSite === "copy") {
           this.diagCopiedHole(node);
           return;
@@ -616,14 +690,91 @@ export class Lowerer {
     (current.scopes[current.scopes.length - 1] as { locals: string[] }).locals.push(name);
   }
 
+  /** A call that is a call intent: the hinted form, or a simple callee with a typed slot (the sigil-less rule). */
+  private isCallIntentCall(node: BaseNode): boolean {
+    if (node.type !== "CallExpression") return false;
+    const call = node as CallExpressionNode;
+    if (call.callee.type === "TaggedTemplateExpression") return true;
+    return (
+      (call.callee.type === "Identifier" || call.callee.type === "MemberExpression") &&
+      call.arguments.some((a) => this.hasExtractorSlot(a as BaseNode))
+    );
+  }
+
+  /** The row of the table (spec 2026-10-12 §1.2) for a sequence, or undefined after the diagnostic that refuses it. */
+  private classifyParts(node: NolaExtractExpression): ClassifiedParts | undefined {
+    const parts = node.parts.map((p) => ({ node: p, kind: this.partKind(p) }));
+    const lists = parts.filter((p) => p.kind === "tools").length;
+    const calls = parts.filter((p) => p.kind === "func");
+    if (calls.length > 1) {
+      this.diag(Codes.AskSequenceInvalid, "an ask makes one call — split the asks.", calls[1]?.node as BaseNode);
+      return undefined;
+    }
+    if (lists > 0 && calls.length === 1) {
+      this.diag(
+        Codes.AskSequenceReserved,
+        "offering tools beside a call is reserved for a future Nola version — offer the function as a tool, `[createUser]`, or make the call a separate ask.",
+        calls[0]?.node as BaseNode,
+      );
+      return undefined;
+    }
+    if (calls.length === 1 && node.typeArgs) {
+      this.diag(Codes.AskSequenceInvalid, "a call intent's result type is its callee's — drop `: T`.", node.typeArgs);
+      return undefined;
+    }
+    for (const p of parts) {
+      if (p.kind === "obj" && this.containsCallIntent(p.node)) {
+        this.diag(
+          Codes.AskSequenceInvalid,
+          "a call with typed slots is the ask's action, not data — write it bare between texts: `ask `words` fn(`slot`: T)`.",
+          p.node,
+        );
+        return undefined;
+      }
+    }
+    return { kind: calls.length === 1 ? "call" : lists > 0 ? "tool-use" : "extract", parts };
+  }
+
+  /** What a part is by its syntax (spec §1.1): text, a list, a call part (a bare, simple call with a typed slot), else data. */
+  private partKind(p: BaseNode): PartKind {
+    if (p.type === "TemplateLiteral") return "text";
+    if (p.type === "NolaToolList") return "tools";
+    const parenthesized = Boolean((p as { extra?: { parenthesized?: boolean } }).extra?.parenthesized);
+    if (p.type === "CallExpression" && !parenthesized) {
+      const call = p as CallExpressionNode;
+      if (
+        (call.callee.type === "Identifier" || call.callee.type === "MemberExpression") &&
+        call.arguments.some((a) => this.hasExtractorSlot(a as BaseNode))
+      ) {
+        return "func";
+      }
+    }
+    return "obj";
+  }
+
+  /** A call intent anywhere inside a value, outside a nested ask — the action written as data. */
+  private containsCallIntent(node: BaseNode): boolean {
+    const visit = (n: BaseNode): boolean => {
+      if (n.type === "NolaAskExpression") return false;
+      if (this.isCallIntentCall(n)) return true;
+      return children(n).some(visit);
+    };
+    return visit(node);
+  }
+
   /**
    * Sigil-less call-intent detection (2026-08-14 spec): a well-formed extractor
    * in a slot position — a direct argument, or nested at any depth inside plain
    * object/array literals (the same walk checkCallIntentArg performs). Tolerant
    * placeholders (nolaError) do NOT count: a half-typed `f(..` stays a plain
-   * call, so the editor never lowers a call intent around a broken slot.
+   * call, so the editor never lowers a call intent around a broken slot. An
+   * EMPTY argument — `f(, 1)` mid-edit — is the null Babel's recovery leaves
+   * in `arguments` (a recoverable raise at the comma, never a node): not a
+   * slot either. This runs on every call in the file, so a throw here took
+   * the language server down (2026-10-13).
    */
-  private hasExtractorSlot(node: BaseNode): boolean {
+  private hasExtractorSlot(node: BaseNode | null | undefined): boolean {
+    if (!node) return false;
     if (node.type === "NolaExtractExpression") {
       return !(node as NolaExtractExpression).nolaError;
     }
@@ -780,7 +931,7 @@ export class Lowerer {
     const simple = callee.type === "Identifier" || callee.type === "MemberExpression";
     const typeText = simple ? callIntentTypeText(calleeText) : "";
     this.s.appendLeft(call.start, callIntentOpen(typeText));
-    const argsStart = call.arguments.length > 0 ? (call.arguments[0] as BaseNode).start : call.end - 1;
+    const argsStart = this.argsStartOf(call);
     const rawHint = tagged ? rawTemplateText(this.source, tagged.quasi) : "";
     const def = defHash(this.displayFile, "call", calleeText, rawHint);
     const head = callIntentArgsHead(calleeText, inst.field, call.loc.start, def);
@@ -795,19 +946,55 @@ export class Lowerer {
     const prevSite = this.holeSite;
     this.holeSite = "none";
     try {
-      for (const arg of call.arguments) this.visit(arg, body, false);
+      for (const arg of call.arguments) if (arg) this.visit(arg, body, false);
     } finally {
       this.holeSite = prevSite;
     }
   }
 
   /**
+   * Where a call's arguments begin: right after the `(`, so the bytes between
+   * it and the first argument — the line terminators of a call written one
+   * argument per line (the layout invariant, 2026-10-15), or the null Babel's
+   * recovery leaves for an empty first argument (`f(, 1)`, tolerant mode) —
+   * stay in the emitted args; a slot after a hole keeps its arity.
+   */
+  private argsStartOf(call: CallExpressionNode): number {
+    const typed = call as CallExpressionNode & { typeArguments?: BaseNode; typeParameters?: BaseNode };
+    const from = typed.typeArguments?.end ?? typed.typeParameters?.end ?? call.callee.end;
+    return this.source.indexOf("(", from) + 1;
+  }
+
+  /**
+   * The line terminators inside a source range a lowering replaces whole. An
+   * ask lowers to one expression, but its type, its list and its parts may
+   * stand on their own lines; the debugger binds a `.tsi` breakpoint raw, by
+   * line, on the compiled script, so the lowered text keeps every terminator
+   * (AGENTS.md "LAYOUT IS LOAD-BEARING") — emitted in front of the
+   * replacement, where no anchor is disturbed.
+   */
+  private lineTerminatorsIn(start: number, end: number): string {
+    return (this.source.slice(start, end).match(/\r\n|\n|\r/g) ?? []).join("");
+  }
+
+  /**
    * NOLA2004 for untyped extractors in slot positions: direct args and anywhere
    * inside plain object/array literal nesting (mirrors the runtime slot walk).
+   * A null argument (an empty one under Babel's recovery) has nothing to check.
    */
-  private checkCallIntentArg(arg: BaseNode): void {
+  private checkCallIntentArg(arg: BaseNode | null | undefined): void {
+    if (!arg) return;
     if (arg.type === "NolaExtractExpression") {
-      if (!(arg as NolaExtractExpression).typeArgs) {
+      const extract = arg as NolaExtractExpression;
+      if (extract.parts.length > 1) {
+        this.diag(
+          Codes.AskSequenceReserved,
+          "a slot's instruction is one text — an ask sequence inside a call slot is reserved for a future Nola version.",
+          arg,
+        );
+        return;
+      }
+      if (!extract.typeArgs) {
         this.diag(
           Codes.UntypedCallIntentArg,
           "an extractor used as a call-intent argument must have an explicit type — write ..`…`: T here.",
@@ -832,6 +1019,17 @@ export class Lowerer {
   private lowerExtract(node: NolaExtractExpression, body: AskBody): void {
     const quasi = node.quasi;
     if (!quasi) return;
+    const { parts } = node;
+    // the three legacy shapes keep their lowering byte for byte (spec 2026-10-12 §1.5, §5)
+    if (parts.length === 2 && parts[1]?.type === "NolaToolList") {
+      this.lowerToolUse(node, quasi, (parts[1] as NolaToolListNode).entries, body);
+      return;
+    }
+    if (parts.length > 1) {
+      const classified = this.classifyParts(node);
+      if (classified) this.lowerSequence(node, classified, body);
+      return;
+    }
     let typeExpr = EXTRACT_DEFAULT_TYPE_EXPR;
     let typeText = EXTRACT_DEFAULT_TYPE_TEXT;
     const typeNode = node.typeArgs?.params[0];
@@ -873,13 +1071,285 @@ export class Lowerer {
     const def = defHash(this.displayFile, "extract", rawTemplateText(this.source, quasi), typeSrc);
     const suffix = extractClose(typeExpr, node.loc.start, def);
     if (node.end > quasi.end) {
-      // Replaces the <T> span (which follows the template).
-      this.s.overwrite(quasi.end, node.end, suffix);
+      // Replaces the <T> span (which follows the template), keeping the line
+      // terminators of a type written on its own line.
+      this.s.overwrite(quasi.end, node.end, this.lineTerminatorsIn(quasi.end, node.end) + suffix);
     } else {
       // appendLeft: must precede an enclosing ask's appendRight ")".
       this.s.appendLeft(node.end, suffix);
     }
     this.usedRuntime = true;
     for (const expr of quasi.expressions) this.visit(expr, body, false);
+  }
+
+  /**
+   * A tool-use ask (spec 2026-10-08 §3.3, entries by value 2026-10-09 §3.3):
+   * the extractor's shape with the list between the template and the type.
+   * The opener is the extractor's (the answer type copied and anchored, an
+   * `extract` request); the closer overwrites the list and the type — each
+   * entry re-emitted as a DEFERRED SOURCE, `__nola.tool(<entry>, <verdict>(),
+   * "<written>"?, <receiver>?)` for a bare entry and `__nola.toolSpread(<arg>,
+   * <verdict>())` for a spread, with the entry's text ANCHORED (hover,
+   * definition and the missing-import fix work inside the brackets, and the
+   * anchor is where the `tool` request's checker walk reads the type). The
+   * written text rides only for a name or a dotted chain — the tool's name,
+   * or a group's prefix; a member expression passes its object as the
+   * receiver (bound at run time, since `.bind` on a group would throw). The
+   * def hashes the written entries in order after the type text. Two written
+   * entries that would share a wire name — the same name twice, `a.b` beside
+   * `a_b` — are NOLA2018 here, before any checker runs, since the model's
+   * tool calls come back by that name; what a group declares is checked by
+   * finalize, and the live list by the runtime (NOLA3022).
+   */
+  private lowerToolUse(node: NolaExtractExpression, quasi: TemplateLiteralNode, tools: BaseNode[], body: AskBody): void {
+    let typeExpr = EXTRACT_DEFAULT_TYPE_EXPR;
+    let typeText = EXTRACT_DEFAULT_TYPE_TEXT;
+    const typeNode = node.typeArgs?.params[0];
+    let typeSrc = "";
+    if (typeNode) {
+      typeSrc = this.source.slice(typeNode.start, typeNode.end);
+      typeText = typeArgsText(typeSrc);
+      typeExpr = `${this.request("extract", typeNode)}()`;
+    }
+    const open = toolUseOpen(typeText);
+    const openAnchors = typeNode
+      ? [{ sourceStart: typeNode.start, sourceEnd: typeNode.end, textOffset: open.indexOf(typeText) + 1 }]
+      : undefined;
+    if (node.start < quasi.start) {
+      this.s.overwrite(node.start, quasi.start, open, { anchors: openAnchors });
+    } else {
+      this.s.appendLeft(node.start, open, { anchors: openAnchors });
+    }
+    for (const expr of quasi.expressions) {
+      if (isPlaceholderHole(expr)) continue;
+      this.s.appendLeft(expr.start, FMT_OPEN);
+      this.s.appendLeft(expr.end, FMT_CLOSE);
+    }
+    const ask = locText(node.loc.start);
+    // the list always follows the template, so there are bytes to overwrite;
+    // a list spanning lines, or a type on its own line, keeps its terminators
+    const kept = this.lineTerminatorsIn(quasi.end, node.end);
+    const { text, anchors, written } = this.toolSourcesText(tools, ask, new Map(), new Map(), kept.length + TOOLS_OPEN.length);
+    const def = defHash(this.displayFile, "tool-use", rawTemplateText(this.source, quasi), `${typeSrc}\n${written.join(",")}`);
+    this.s.overwrite(quasi.end, node.end, kept + TOOLS_OPEN + text + toolUseClose(typeExpr, node.loc.start, def), { anchors });
+    this.usedRuntime = true;
+    for (const expr of quasi.expressions) this.visit(expr, body, false);
+  }
+
+  /**
+   * The deferred sources of one list's entries (spec 2026-10-09 §3.3) as the
+   * text that replaces the list's bytes — `__nola.tool(…)` / `__nola.toolSpread(…)`
+   * joined by `, ` — with an anchor per entry (textOffset counted from
+   * `textBase`, where the text lands in the replacement). `wire` and `earlier`
+   * span every list of one ask (spec 2026-10-12 §3.4): a written text seen in
+   * an earlier list is ONE tool — re-emitted where it is written again, under
+   * the earlier list's accessor, so the model reads each list's names where
+   * written (§1.4) while the verdict is requested and checked once; the same
+   * text twice in ONE list, or two texts sharing a wire name, are NOLA2018.
+   */
+  private toolSourcesText(
+    entries: BaseNode[],
+    ask: string,
+    wire: Map<string, string>,
+    earlier: Map<string, EmittedEntry>,
+    textBase: number,
+  ): { text: string; anchors: EditAnchor[]; written: string[] } {
+    let text = "";
+    const anchors: EditAnchor[] = [];
+    const written: string[] = [];
+    const fresh: Array<[string, EmittedEntry]> = [];
+    for (const entry of entries) {
+      const spread = entry.type === "SpreadElement";
+      const target = spread ? (entry as unknown as { argument: BaseNode }).argument : entry;
+      const entryText = this.source.slice(entry.start, entry.end);
+      written.push(entryText);
+      const targetText = this.source.slice(target.start, target.end);
+      const prev = earlier.get(entryText);
+      if (prev !== undefined) {
+        if (text !== "") text += ", ";
+        text += toolSourceOpen(prev.spread);
+        anchors.push({ sourceStart: target.start, sourceEnd: target.end, textOffset: textBase + text.length });
+        text += targetText + toolSourceClose(prev.accessor, prev.spread, prev.writtenName, prev.receiver);
+        continue;
+      }
+      // a name or a dotted chain is the tool's name (a single function) or the group's prefix
+      const writtenName = !spread && isNameChain(target) ? targetText : undefined;
+      if (writtenName !== undefined) {
+        const wireName = toolWireName(writtenName);
+        const prior = wire.get(wireName);
+        if (prior === undefined) {
+          wire.set(wireName, writtenName);
+        } else {
+          this.diag(
+            Codes.ToolEntryInvalid,
+            prior === writtenName
+              ? `'${writtenName}' is listed twice in the tool list.`
+              : `tools '${prior}' and '${writtenName}' would share the name '${wireName}' on the wire — a model's tool call comes back by that name; rename one of them.`,
+            entry,
+          );
+        }
+      }
+      // A member expression keeps its receiver: its object rides to the runtime and the method is bound to it at
+      // the call (spec §1.6). The object is evaluated once more for that, so it must be a plain chain — a name,
+      // `this`, dotted / indexed / optional access over one; an object with a call is refused, never run twice.
+      const member = !spread && (target.type === "MemberExpression" || target.type === "OptionalMemberExpression");
+      const object = member ? (target as unknown as { object: BaseNode }).object : undefined;
+      let receiver: string | undefined;
+      if (object) {
+        if (isPureChain(object)) {
+          receiver = this.source.slice(object.start, object.end);
+        } else {
+          this.diag(
+            Codes.ToolEntryInvalid,
+            `'${targetText}' reaches a method through an object Nola cannot repeat — the object is evaluated once more to bind the method, so it must be a name, \`this\`, or a dotted / indexed chain over one; name the object first (\`const o = …\`) and list the method on it.`,
+            entry,
+          );
+        }
+      }
+      const accessor = this.request("tool", target, {
+        tool: { ask, ...(spread ? { spread: true as const } : {}), ...(writtenName !== undefined ? { written: writtenName } : {}) },
+      });
+      if (text !== "") text += ", ";
+      text += toolSourceOpen(spread);
+      anchors.push({ sourceStart: target.start, sourceEnd: target.end, textOffset: textBase + text.length });
+      text += targetText + toolSourceClose(accessor, spread, writtenName, receiver);
+      fresh.push([entryText, { accessor, spread, ...(writtenName !== undefined ? { writtenName } : {}), ...(receiver !== undefined ? { receiver } : {}) }]);
+    }
+    // recorded after the list, so a text repeated within ONE list still meets the wire check above
+    for (const [k, v] of fresh) earlier.set(k, v);
+    return { text, anchors, written };
+  }
+
+  /**
+   * The ask sequence (spec 2026-10-12 §3.4). The opener goes before the
+   * first text, every later part gets `, ` plus its own wrapper at its
+   * start, the closer overwrites the type bytes after the last part. Texts
+   * and values keep their bytes on their lines; the def hashes the parts'
+   * raw texts joined by newlines.
+   */
+  private lowerSequence(node: NolaExtractExpression, c: ClassifiedParts, body: AskBody): void {
+    const quasi = node.quasi as TemplateLiteralNode;
+    let typeExpr = EXTRACT_DEFAULT_TYPE_EXPR;
+    let typeText = EXTRACT_DEFAULT_TYPE_TEXT;
+    const typeNode = c.kind === "call" ? undefined : node.typeArgs?.params[0];
+    let typeSrc = "";
+    if (c.kind === "call") {
+      const call = c.parts.find((p) => p.kind === "func")?.node as CallExpressionNode;
+      typeText = callIntentTypeText(this.source.slice(call.callee.start, call.callee.end));
+    } else if (typeNode) {
+      typeSrc = this.source.slice(typeNode.start, typeNode.end);
+      typeText = typeArgsText(typeSrc);
+      typeExpr = `${this.request("extract", typeNode)}()`;
+    } else {
+      this.diag(Codes.UntypedCallIntentArg, "an extractor must have an explicit type — write `: T` after the last part.", node);
+    }
+    const open = sequenceOpen(SEQUENCE_CLASS[c.kind], typeText);
+    const openAnchors = typeNode
+      ? [{ sourceStart: typeNode.start, sourceEnd: typeNode.end, textOffset: open.indexOf(typeText) + 1 }]
+      : undefined;
+    if (node.start < quasi.start) this.s.overwrite(node.start, quasi.start, open, { anchors: openAnchors });
+    else this.s.appendLeft(node.start, open, { anchors: openAnchors });
+    const raw: string[] = [];
+    const ask = locText(node.loc.start);
+    const wire = new Map<string, string>();
+    const earlier = new Map<string, EmittedEntry>();
+    let lastEnd = quasi.end;
+    c.parts.forEach((p, i) => {
+      const span = (p.node as NolaContextValueNode).nolaValueSpan ?? { start: p.node.start, end: p.node.end };
+      if (i > 0) {
+        // The separator goes at the previous part's end, after its own closer;
+        // the source whitespace between the parts stays as the space, so the
+        // parts keep their lines. Only glued parts need the space supplied.
+        this.s.appendLeft(lastEnd, span.start === lastEnd ? SEQ_PART_SEP : ",");
+      }
+      switch (p.kind) {
+        case "text": {
+          const t = p.node as TemplateLiteralNode;
+          for (const expr of t.expressions) {
+            if (isPlaceholderHole(expr)) continue;
+            this.s.appendLeft(expr.start, FMT_OPEN);
+            this.s.appendLeft(expr.end, FMT_CLOSE);
+          }
+          raw.push(rawTemplateText(this.source, t));
+          lastEnd = t.end;
+          break;
+        }
+        case "obj": {
+          raw.push(this.source.slice(span.start, span.end));
+          // The value is an ordinary expression: visit it FIRST, so a nested ask
+          // lowers (and anything inside it diagnoses) before the wrapper closes
+          // the span — the closer must land after every inner edit, and the
+          // type request is made only over bytes nothing touched.
+          this.visit(p.node, body, false);
+          lastEnd = this.lowerObjPart(p.node, span);
+          break;
+        }
+        case "tools": {
+          const list = p.node as NolaToolListNode;
+          raw.push(`[${list.entries.map((e) => this.source.slice(e.start, e.end)).join(",")}]`);
+          lastEnd = this.lowerListPart(list, ask, wire, earlier);
+          break;
+        }
+        case "func": {
+          raw.push(this.source.slice(p.node.start, p.node.end));
+          lastEnd = this.lowerFuncPart(p.node as CallExpressionNode, body);
+          break;
+        }
+      }
+    });
+    const def = defHash(this.displayFile, c.kind, raw.join("\n"), typeSrc);
+    const close = sequenceClose(c.kind, typeExpr, node.loc.start, def);
+    // a type on its own line keeps its terminators in front of the close
+    if (node.end > lastEnd) this.s.overwrite(lastEnd, node.end, this.lineTerminatorsIn(lastEnd, node.end) + close);
+    else this.s.appendLeft(node.end, close);
+    this.usedRuntime = true;
+    // holes are ordinary expressions — a nested ask inside lowers; a value part and a call part were visited in place
+    for (const p of c.parts) {
+      if (p.kind === "text") for (const expr of (p.node as TemplateLiteralNode).expressions) this.visit(expr, body, false);
+    }
+  }
+
+  /**
+   * `__nola.var.obj({ value: <bytes>, name, type? })` around a bare value,
+   * visited already; returns the part's end. The type is a `value` request
+   * only when the value's bytes are one verbatim run — a nested ask, a
+   * binding or a context statement inside it (diagnosed by the visit) have
+   * edited them, and a request there would have no lowered range.
+   */
+  private lowerObjPart(value: BaseNode, span: { start: number; end: number }): number {
+    const name = this.source.slice(span.start, span.end);
+    const accessor = this.s.hasEditsIn(span.start, span.end)
+      ? undefined
+      : this.request("value", value, { source: { start: span.start, end: span.end, loc: value.loc }, policy: "omit" });
+    this.s.appendLeft(span.start, OBJ_PART_OPEN);
+    this.s.appendLeft(span.end, objPartClose(name, accessor));
+    return span.end;
+  }
+
+  /** `__nola.var.tools(<sources>)` over a list's bytes; returns the part's end. */
+  private lowerListPart(list: NolaToolListNode, ask: string, wire: Map<string, string>, earlier: Map<string, EmittedEntry>): number {
+    const kept = this.lineTerminatorsIn(list.start, list.end); // a list spanning lines keeps them
+    const { text, anchors } = this.toolSourcesText(list.entries, ask, wire, earlier, kept.length + TOOLS_PART_OPEN.length);
+    this.s.overwrite(list.start, list.end, kept + TOOLS_PART_OPEN + text + TOOLS_PART_CLOSE, { anchors });
+    return list.end;
+  }
+
+  /** `__nola.var.func({ fn: <callee>, name, args: [<arguments>] })` around a call part; its slots lower as a call intent's do. */
+  private lowerFuncPart(call: CallExpressionNode, body: AskBody): number {
+    for (const arg of call.arguments) this.checkCallIntentArg(arg);
+    const callee = call.callee;
+    const calleeText = this.source.slice(callee.start, callee.end);
+    this.s.appendLeft(call.start, FUNC_PART_OPEN);
+    const argsStart = this.argsStartOf(call);
+    this.s.overwrite(callee.end, argsStart, funcPartArgsHead(calleeText));
+    this.s.overwrite(call.end - 1, call.end, FUNC_PART_CLOSE);
+    const prevSite = this.holeSite;
+    this.holeSite = "none";
+    try {
+      for (const arg of call.arguments) if (arg) this.visit(arg, body, false);
+    } finally {
+      this.holeSite = prevSite;
+    }
+    return call.end;
   }
 }

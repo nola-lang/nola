@@ -39,7 +39,9 @@ export default defineConfig({
 ```
 
 `openai({ model })` requires an explicit model; optional fields are `apiKey`,
-`apiKeyEnv` (default `"OPENAI_API_KEY"`), `baseUrl` and `fetch`.
+`apiKeyEnv` (default `"OPENAI_API_KEY"`), `baseUrl` and `fetch`. With a custom
+`fetch`, `apiKey`/`apiKeyEnv` are optional: the fetch authenticates, and without
+a key no vendor auth header is sent (the same rule for every vendor factory).
 
 `typesafe()` (typesafe.ai's Jev, reads `TYPESAFE_API_KEY`, model defaults to
 `jev-latest`) is NOT a chat model: it is the DECISION model that answers the
@@ -232,11 +234,11 @@ the providers package:
     "check": "nola check"
   },
   "dependencies": {
-    "@nola-lang/providers": "^0.1.14",
-    "@nola-lang/runtime": "^0.1.14"
+    "@nola-lang/providers": "^0.1.5",
+    "@nola-lang/runtime": "^0.1.5"
   },
   "devDependencies": {
-    "nola-lang": "^0.1.14",
+    "nola-lang": "^0.1.5",
     "typescript": "^5.6.0"
   },
   "engines": { "node": ">=22.18" }
@@ -269,6 +271,33 @@ for you). Do not mix versions.
   flow, but it ships in `nola-lang`; always invoke it as `npx nola-lang init` —
   a bare `npx nola` outside a project resolves an unrelated npm package named
   `nola`.)
+
+### Running on Bun
+
+`bun create nola` scaffolds a Bun project: `@nola-lang/bun` in devDependencies,
+`bunfig.toml` with its preload, `start: "bun src/main.tsi"`. Any Node project
+becomes one by adding the same three things:
+
+```toml
+# bunfig.toml
+preload = ["@nola-lang/bun/preload"]
+
+[test]
+preload = ["@nola-lang/bun/preload"]
+```
+
+- `bun src/main.tsi` / `bun --watch src/main.tsi` run `.tsi` from source;
+  `bun test` files import `.tsi` modules. Bun ≥ 1.3.
+- One-step bundles and executables: a build script with
+  `Bun.build({ entrypoints: ["src/main.tsi"], plugins: [nola()], target: "bun",
+  compile: { outfile: "my-app" } })` (`import { nola } from "@nola-lang/bun"`).
+- `nola build` output runs under `bun` with nothing added
+  (`bun dist/src/main.tsi.js`, `bun build --compile dist/src/main.tsi.js`).
+- `nola check`, `nola build`, `nola console` run on Node (`bun run check`
+  launches them there). `nola run` is the Node loader — under Bun it is
+  NOLA3015; use the preload. No source map rides a Bun plugin: stack-trace
+  lines through `.tsi` are right at module level and in plain functions, ONE
+  TOO HIGH inside an `infer function` body, and columns inside an `ask` drift.
 
 ## tsconfig.json
 

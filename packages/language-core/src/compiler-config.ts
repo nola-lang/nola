@@ -1,6 +1,17 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { type StaticContextTypeMode, staticUnderivableContextType } from "@nola-lang/compiler";
+import { nodeBuiltin } from "@nola-lang/core";
+
+// Node's file system reached at call time through core's host helper — no static `node:` import,
+// so a browser bundle of language-core (a playground's language worker) carries no Node specifier
+// and discovery there answers the defaults.
+type Fs = {
+  existsSync: (path: string) => boolean;
+  readFileSync: (path: string, encoding: "utf8") => string;
+  statSync: (path: string) => { mtimeMs: number };
+};
+type Path = { dirname: (path: string) => string; join: (...parts: string[]) => string };
+const fs = (): Fs | undefined => nodeBuiltin<Fs>("node:fs");
+const path = (): Path | undefined => nodeBuiltin<Path>("node:path");
 
 /** The compile-relevant slice of nola.config.ts as the editor sees it. */
 export interface EditorCompilerConfig {
@@ -30,17 +41,20 @@ const located = new Map<string, { at: number; configPath: string | null }>();
  * `now` is injectable for tests.
  */
 export function discoverCompilerConfig(fileName: string, now: number = Date.now()): EditorCompilerConfig {
-  const startDir = dirname(fileName);
+  const p = path();
+  const f = fs();
+  if (!p || !f) return {}; // no Node (a browser worker): nothing to discover, the defaults apply
+  const startDir = p.dirname(fileName);
   let hit = located.get(startDir);
   if (!hit || now - hit.at > CONFIG_DISCOVERY_TTL_MS || now < hit.at) {
-    hit = { at: now, configPath: findUp(startDir) };
+    hit = { at: now, configPath: findUp(startDir, p, f) };
     located.set(startDir, hit);
   }
   const configPath = hit.configPath;
   if (!configPath) return {};
   let mtimeMs: number;
   try {
-    mtimeMs = statSync(configPath).mtimeMs;
+    mtimeMs = f.statSync(configPath).mtimeMs;
   } catch {
     // removed since it was located: forget the location so the next call walks again
     located.delete(startDir);
@@ -51,7 +65,7 @@ export function discoverCompilerConfig(fileName: string, now: number = Date.now(
   if (cached && cached.mtimeMs === mtimeMs) return cached.value;
   let value: EditorCompilerConfig = {};
   try {
-    value = { underivableContextType: staticUnderivableContextType(readFileSync(configPath, "utf8")) };
+    value = { underivableContextType: staticUnderivableContextType(f.readFileSync(configPath, "utf8")) };
   } catch {
     // unreadable: behave like no config
   }
@@ -59,16 +73,16 @@ export function discoverCompilerConfig(fileName: string, now: number = Date.now(
   return value;
 }
 
-function findUp(startDir: string): string | null {
+function findUp(startDir: string, p: Path, f: Fs): string | null {
   let dir = startDir;
   for (;;) {
-    const candidate = join(dir, "nola.config.ts");
+    const candidate = p.join(dir, "nola.config.ts");
     try {
-      if (existsSync(candidate)) return candidate;
+      if (f.existsSync(candidate)) return candidate;
     } catch {
       return null;
     }
-    const parent = dirname(dir);
+    const parent = p.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
   }

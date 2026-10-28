@@ -1,4 +1,4 @@
-import { type Askable, NolaResolutionError, Site } from "@nola-lang/core";
+import { type Askable, NolaResolutionError, Site, type ToolUseAskable } from "@nola-lang/core";
 import type { VisibleContext } from "../infer-context/index.js";
 import { Intent } from "../intents/intent.js";
 import { runInvocation } from "../intents/invocation/lifecycle.js";
@@ -24,7 +24,7 @@ export interface AskSite extends VisibleContext {
  * both — resolveModel owns that precedence). `site.locals` and `site.context`
  * are what the site sees; they ride the intent's options to the composer.
  */
-export async function ask<T>(value: Askable<T>, scope: Frame | ModuleContext, site?: AskSite): Promise<T> {
+export async function ask<T>(value: Askable<T> | ToolUseAskable<T>, scope: Frame | ModuleContext, site?: AskSite): Promise<T> {
   if (scope instanceof ModuleContext) {
     const timeout = Intent.isIntent(value) ? value.timeout : undefined;
     const root = scope.runtime.openFrame(scope, timeout === undefined ? {} : { timeout });

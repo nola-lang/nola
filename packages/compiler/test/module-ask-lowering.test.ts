@@ -16,8 +16,8 @@ describe("module-body ask lowering (scope-bodies spec §5)", () => {
         "",
         ";",
         'import { __nola } from "@nola-lang/runtime";',
-        "__nola.useRuntime(21);",
-        'function __nola_module_ctx() { return __nola.context.module("x.tsi", 21); }',
+        "__nola.useRuntime(24);",
+        'function __nola_module_ctx() { return __nola.context.module("x.tsi", 24); }',
         'function __nola_type_$1(): import("@nola-lang/runtime").InferType<unknown> { return (undefined as never); }',
         "",
       ].join("\n"),
@@ -42,7 +42,7 @@ describe("module-body ask lowering (scope-bodies spec §5)", () => {
   it("a file whose module body never asks still gets the one accessor, with no init thunk", () => {
     const src = "infer function go() {\n  return ask ..`v`<string>;\n}\n";
     const { code } = compileNola(src, "x.tsi");
-    expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 21); }');
+    expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 24); }');
     expect(code).not.toContain("() => ({");
   });
 

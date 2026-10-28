@@ -6,5 +6,6 @@ export { type CorrectionRequest, describeModel, Inference, type InferenceTask } 
 export { JsonInference } from "./inference-json.js";
 export { buildInferenceModel, ModelBuilder } from "./model-builder.js";
 export { runPipeline } from "./pipeline.js";
+export { ToolUseInference } from "./tool-use-inference.js";
 export { type ValidationResult, validate } from "./validate.js";
 export { wireSchema } from "./wire-schema.js";

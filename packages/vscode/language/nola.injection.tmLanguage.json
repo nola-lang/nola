@@ -33,7 +33,7 @@
       "patterns": [{ "include": "source.ts#type" }]
     },
     {
-      "comment": "`: T` glued to an extractor's closing backtick (colon-typed extractors, spec 2026-09-23) — exactly the parser's condition, so a spaced ternary colon after a template consequent (`cond ? `yes` : `no``) is left to TypeScript. The end pattern is the TypeScript grammar's own type-annotation end; nested brackets across lines are handled by source.ts#type.",
+      "comment": "`: T` glued to an extractor's closing backtick (colon-typed extractors, spec 2026-09-23). The parser takes a SPACED colon on the backtick's line as the type too (amendment 2026-10-12), but this grammar cannot see the `ask` an extractor follows, so an unconditional spaced rule would recolor a ternary's alternate after a template consequent (`cond ? `yes` : `no``) — the next rule takes the spaced colon only when a primitive type keyword follows, which no alternate can be. The end pattern is the TypeScript grammar's own type-annotation end; nested brackets across lines are handled by source.ts#type.",
       "begin": "(?<=`)(:)(?=\\s*\\S)",
       "beginCaptures": {
         "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
@@ -41,6 +41,127 @@
       "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
       "contentName": "meta.type.annotation.ts",
       "patterns": [{ "include": "source.ts#type" }]
+    },
+    {
+      "comment": "The spaced colon after a backtick, gated on a primitive type keyword (string, number, boolean, bigint, symbol, object, any, unknown, never): a ternary's alternate is never one of these, and a named type in this position is colored by the semantic tokens through the anchor mapping, which a keyword never gets. `void`, `null`, `undefined` and `this` are expressions too and stay out.",
+      "begin": "(?<=`)\\s+(:)(?=\\s*(?:string|number|boolean|bigint|symbol|object|any|unknown|never)\\b)",
+      "beginCaptures": {
+        "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
+      },
+      "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+      "contentName": "meta.type.annotation.ts",
+      "patterns": [{ "include": "source.ts#type" }]
+    },
+    {
+      "comment": "The tool list (tool use, spec 2026-10-08): `[` after an extractor's closing backtick opens the functions the model may call, and the type follows the list — `]: T` glued or spaced on the bracket's line, as the parser reads it since 2026-10-12 (the list has already committed the construct, so unlike the backtick rule no keyword gate is needed; the one shape this misreads is a template index as a ternary's consequent, `ok ? `a`[0] : b`, which the list rule claims anyway), `]<T>` always. One rule spans the construct so that the two type rules above can be repeated inside it anchored on the list's `]` without claiming every `]:` in a file (a computed key, `{ [k]: v }`). It begins by consuming the `[` (a zero-width begin would re-enter itself through the injection), the list body is the nested `\\G` rule (TypeScript's expression rules scope the entries, so a member chain reads as one; applyEndPatternLast lets it open before the end's `]` lookahead, so an empty list — the state while the first entry is typed — still types what follows; an unclosed list ends where the parser's recovery ends it, before `)`, `;` or `}`), and it ends right after the list when no type follows, where TypeScript's type-annotation end falls after `]: T`, and after the `>` of `]<T>`. The list may span lines; the type's end pattern is the one above. Since the line rule (ask-sequence spec, amendment 2026-10-15) the type may also stand on the line AFTER the list: a `]` that ends its line — a trailing line comment allowed, since the parser skips comments — keeps the rule open through blank and comment lines to the next line with code, where the `#tools-body` line-start rules take a leading `: T` or `<T>` and the end's `^` alternative closes the rule on anything else; the line-start alternative replaces the `^` of TypeScript's annotation end so that a blank or comment line does not close it, and the comments themselves are scoped by the nested comment rule.",
+      "begin": "(?<=`)\\s*(\\[)",
+      "beginCaptures": {
+        "1": { "name": "meta.tools.nola punctuation.definition.tools.begin.nola" }
+      },
+      "end": "(?<=\\])(?!\\s*:(?=\\s*\\S)|\\s*<|[ \\t]*(?://.*)?$)|(?<=>)|^(?!\\s*$)(?!\\s*//)(?!\\s*/\\*)|(?<![:|&])(?!\\s*[|&]\\s+)((?=[,);\\}\\]])|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+      "applyEndPatternLast": 1,
+      "patterns": [{ "include": "#tools-body" }]
+    },
+    {
+      "comment": "The continuation (the line rule, ask-sequence spec amendment 2026-10-15: a line break alone never ends an ask sequence). TextMate matches one line at a time, so the rules above cannot see a closing backtick from the next line; this rule begins at a backtick that ends its line — a trailing line comment allowed, captured as the comment it is — consuming the line terminator, so it is never zero-width, and holds, through blank lines and comment lines (the parser skips comments; the nested comment rule scopes them), until the next line that carries code: a leading `[` is a list (`#tools-at-line-start`, the rule above anchored at the line start), a leading `<` the type arguments, a leading `:` the type under the same primitive-keyword gate as the spaced colon (a multi-line ternary puts its alternate on such a line too, `? `yes`` above `: fallback`); any other line ends it where it starts, so TypeScript scopes it. It also ends where its part ends — after a list's `]` when nothing types it, after the type, after a `>` — so the rest of the line, the next part of the sequence or the code after the ask, is TypeScript's again. The cost is the parser's: a `[` opening the line after any template that ends its line is read as a list, as the parser reads it after `ask`, and as an index everywhere else — the entries are colored as the expressions they are either way.",
+      "begin": "(?<=`)[ \\t]*(//.*)?\\s*$",
+      "beginCaptures": {
+        "1": { "name": "comment.line.double-slash.ts" }
+      },
+      "end": "^(?!\\s*$)(?!\\s*//)(?!\\s*/\\*)(?!\\s*\\[)(?!\\s*<)(?!\\s*:(?=\\s*(?:string|number|boolean|bigint|symbol|object|any|unknown|never)\\b))|(?<=\\])(?!\\s*:(?=\\s*\\S)|\\s*<|[ \\t]*(?://.*)?$)|(?<=>)|(?<![:|&])(?!\\s*[|&]\\s+)((?=[,);\\}\\]])|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+      "patterns": [
+        { "include": "source.ts#comment" },
+        { "include": "#tools-at-line-start" },
+        {
+          "begin": "(?:^|(?<=\\*/))\\s*(:)(?=\\s*(?:string|number|boolean|bigint|symbol|object|any|unknown|never)\\b)",
+          "beginCaptures": {
+            "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
+          },
+          "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+          "contentName": "meta.type.annotation.ts",
+          "patterns": [{ "include": "source.ts#type" }]
+        },
+        { "include": "#type-arguments-at-line-start" }
+      ]
+    },
+    {
+      "comment": "A bare value after a text (the ask sequence; 2026-10-16, `` `use this config` searchConfig: string[] `` colored `string` as a variable). The grammar cannot see `ask`, but a template followed by a space and a name, a `(`, a `{`, a digit or a quote on the same line is a Nola shape and nothing else — TypeScript puts only `in`, `instanceof`, `as`, `satisfies` and `extends` there — so this rule begins after the text and holds the value: TypeScript's expression rules scope it (a ternary, an object literal or a call consumes its own colons inside its own rule), a colon they left is the type (no keyword gate — nothing else can stand there), and the rule ends before the next text, before a closer or a comma, where the type ends, and at the start of a line that carries code and is not the type — so a value that ends its line, with or without a trailing comment, still takes a type on the next line, and anything else there is TypeScript's. A value on a line of its own is left to TypeScript: a line that opens with a name is also how a statement, a class member or a property opens.",
+      "begin": "(?<=`)[ \\t]+(?=(?!(?:in|instanceof|as|satisfies|extends)\\b)[_$[:alpha:]]|[(\\{\\d\"'])",
+      "end": "(?=[ \\t]*`)|(?=[;,)\\]}])|^(?!\\s*$)(?!\\s*//)(?!\\s*/\\*)(?!\\s*:)",
+      "patterns": [
+        { "include": "source.ts#comment" },
+        {
+          "begin": "\\s*(:)(?=\\s*\\S)",
+          "beginCaptures": {
+            "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
+          },
+          "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+          "contentName": "meta.type.annotation.ts",
+          "patterns": [{ "include": "source.ts#type" }]
+        },
+        { "include": "source.ts#expression" }
+      ]
     }
-  ]
+  ],
+  "repository": {
+    "tools-at-line-start": {
+      "comment": "The tool list rule above, begun at a line start instead of after a backtick — only ever reached inside the continuation, which guarantees the previous line ended with a backtick; at the top level this begin would claim every computed key of a multi-line object literal.",
+      "begin": "^\\s*(\\[)",
+      "beginCaptures": {
+        "1": { "name": "meta.tools.nola punctuation.definition.tools.begin.nola" }
+      },
+      "end": "(?<=\\])(?!\\s*:(?=\\s*\\S)|\\s*<|[ \\t]*(?://.*)?$)|(?<=>)|^(?!\\s*$)(?!\\s*//)(?!\\s*/\\*)|(?<![:|&])(?!\\s*[|&]\\s+)((?=[,);\\}\\]])|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+      "applyEndPatternLast": 1,
+      "patterns": [{ "include": "#tools-body" }]
+    },
+    "tools-body": {
+      "comment": "What a tool list rule holds: the list body, then the type after its `]` — on the bracket's line, or at the start of a later line (or after a block comment on it) once a `]` ended its own — and the comments in between.",
+      "patterns": [
+        {
+          "begin": "\\G(?!\\s*[);}])",
+          "end": "(\\])|(?=[);}])",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tools.end.nola" }
+          },
+          "name": "meta.tools.nola",
+          "patterns": [{ "include": "source.ts#expression" }, { "include": "source.ts#punctuation-comma" }]
+        },
+        { "include": "source.ts#comment" },
+        {
+          "begin": "(?:(?<=\\])|^|(?<=\\*/))\\s*(:)(?=\\s*\\S)",
+          "beginCaptures": {
+            "1": { "name": "meta.type.annotation.ts keyword.operator.type.annotation.ts" }
+          },
+          "end": "(?<![:|&])(?!\\s*[|&]\\s+)((?=^|[,);\\}\\]]|//)|(?==[^>])|((?<=[\\}>\\]\\)]|[_$[:alpha:]])\\s*(?=\\{)))",
+          "contentName": "meta.type.annotation.ts",
+          "patterns": [{ "include": "source.ts#type" }]
+        },
+        {
+          "begin": "(?<=\\])\\s*(<)",
+          "beginCaptures": {
+            "1": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.begin.ts" }
+          },
+          "end": ">",
+          "endCaptures": {
+            "0": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.end.ts" }
+          },
+          "contentName": "meta.type.parameters.ts",
+          "patterns": [{ "include": "source.ts#type" }]
+        },
+        { "include": "#type-arguments-at-line-start" }
+      ]
+    },
+    "type-arguments-at-line-start": {
+      "begin": "^\\s*(<)",
+      "beginCaptures": {
+        "1": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.begin.ts" }
+      },
+      "end": ">",
+      "endCaptures": {
+        "0": { "name": "meta.type.parameters.ts punctuation.definition.typeparameters.end.ts" }
+      },
+      "contentName": "meta.type.parameters.ts",
+      "patterns": [{ "include": "source.ts#type" }]
+    }
+  }
 }

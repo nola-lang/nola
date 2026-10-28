@@ -96,6 +96,17 @@ describe("formatIngestLine", () => {
     expect(line).toBe("12:04:31.123 done   triage() src/main.tsi");
   });
 
+  it("tool calls indent under the ask by turn; a failed one prints as fail with the error", () => {
+    const base = { askId: "a1", invocationId: "i", spanPath: ["i"], turn: 2, name: "fs.readFile", args: { path: "a" } };
+    expect(formatIngestLine(env("toolCallStart", base))).toBe("12:04:31.123   tool #2 → fs.readFile");
+    expect(formatIngestLine(env("toolCallEnd", { ...base, result: "contents", durationMs: 4 }))).toBe(
+      "12:04:31.123   tool #2 ← fs.readFile 4ms",
+    );
+    expect(formatIngestLine(env("toolCallEnd", { ...base, error: "ENOENT", durationMs: 1 }), tagPalette)).toBe(
+      "<dim>12:04:31.123</dim>   <error>fail</error> #2 ← fs.readFile 1ms — ENOENT",
+    );
+  });
+
   it("colours by role and keeps the text identical without them", () => {
     const e = env("askEnd", {
       askId: "a1",

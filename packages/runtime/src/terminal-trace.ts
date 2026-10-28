@@ -1,6 +1,6 @@
 import { Codes } from "@nola-lang/ast";
 import type { NolaIngestKind, NolaLogLevel, NolaTelemetry } from "@nola-lang/core";
-import { ansiPalette, formatIngestLine, NolaConfigError, plainPalette } from "@nola-lang/core";
+import { ansiPalette, formatIngestLine, NolaConfigError, plainPalette, readEnv, stderrIsTty, writeStderr } from "@nola-lang/core";
 import { envelopeObserver } from "./ingest-envelope.js";
 
 export const TERMINAL_TRACE = "nola:terminal";
@@ -25,11 +25,14 @@ const KIND_LEVEL: Record<NolaIngestKind, NolaLogLevel> = {
   askEnd: "info",
   invocationStart: "info",
   invocationEnd: "info",
+  // a tool call is something the program did, like an ask — not wire chatter
+  toolCallStart: "info",
+  toolCallEnd: "info",
 };
 
-/** picocolors' rule without the dependency: a TTY without NO_COLOR gets colour. */
+/** picocolors' rule without the dependency: a TTY without NO_COLOR gets colour (never in a browser: no TTY there). */
 function colorByDefault(): boolean {
-  return process.stderr.isTTY === true && !process.env.NO_COLOR;
+  return stderrIsTty() && !readEnv("NO_COLOR");
 }
 
 /**
@@ -53,6 +56,6 @@ export function terminalTrace(options: TerminalTraceOptions = {}): NolaTelemetry
       (envelope.event as { receipt?: { outcome?: { ok?: boolean } } }).receipt?.outcome?.ok === false;
     const needed: NolaLogLevel = failed ? "error" : KIND_LEVEL[envelope.kind];
     if (rank(level) < rank(needed)) return;
-    process.stderr.write(`${formatIngestLine(envelope, palette)}\n`);
+    writeStderr(`${formatIngestLine(envelope, palette)}\n`);
   });
 }

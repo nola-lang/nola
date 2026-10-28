@@ -1,7 +1,7 @@
 {
   "name": "nola-vscode",
   "displayName": "Nola",
-  "version": "0.1.14",
+  "version": "0.1.5",
   "private": true,
   "publisher": "nola",
   "description": "Nola language support: highlighting, diagnostics, hover, completion, go-to-definition, and debugging for .tsi files — plus .tsi imports from plain TypeScript.",
@@ -131,14 +131,16 @@
     ]
   },
   "dependencies": {
-    "@nola-lang/language-server": "0.1.14",
-    "@nola-lang/typescript-plugin": "0.1.14",
+    "@nola-lang/language-server": "0.1.5",
+    "@nola-lang/typescript-plugin": "0.1.5",
     "vscode-languageclient": "^10.1.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }

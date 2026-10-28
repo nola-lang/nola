@@ -10,6 +10,7 @@ import {
   type InferResult,
   isDecisionModel,
   isPlatformModel,
+  isToolModel,
   type LanguageModel,
   mergeProviderParams,
   NolaIntentError,
@@ -119,6 +120,7 @@ export abstract class Inference {
       ...(identity?.callee !== undefined ? { callee: identity.callee } : {}),
       ...(identity?.hint !== undefined ? { hint: identity.hint } : {}),
       ...(identity?.typeText !== undefined ? { typeText: identity.typeText } : {}),
+      ...(identity?.tools !== undefined ? { tools: identity.tools } : {}),
     });
 
     try {
@@ -185,6 +187,16 @@ export abstract class Inference {
       );
     }
 
+    // Tool use (spec 2026-10-08 §3.6): the loop has nothing to run on a model
+    // that cannot request tool calls — refused BEFORE the network, like a
+    // decision ask on a chat model.
+    if (model.tools !== undefined && model.tools.length > 0 && !isToolModel(provider)) {
+      throw new NolaIntentError(
+        `this ask offers tools (${model.tools.map((t) => t.name).join(", ")}); model "${provider.name}" cannot request tool calls — route the ask to a model with tool support (\`ask with <name>\`), or write the ask without a tool list.`,
+        Codes.ToolModelRequired,
+      );
+    }
+
     // One request, one shape (prompt-rendering spec 2026-09-28 §3.4): every
     // model takes the intent through `infer` and renders it itself. `project`
     // rides only to the platform.
@@ -210,6 +222,8 @@ export abstract class Inference {
     // TODO(cache): serve repeat fingerprints from config.cache.store when the cache is re-wired.
 
     let res = await this.callProvider(provider, request);
+    // the turns between the first reply and the answer — none for a single-shot strategy
+    ({ res, model } = await this.converse(provider, model, res, requestFor));
     let text = res.text;
     let result = this.interpret(text, model);
 
@@ -238,11 +252,26 @@ export abstract class Inference {
   };
 
   /**
+   * The seam a multi-turn strategy loops in (tool use): called with the first
+   * reply, it returns the reply the answer is read from and the model that
+   * reply answers — the transcript-extended one, which the correction turn
+   * then builds on. The single-shot base returns what it was given.
+   */
+  protected async converse(
+    _provider: LanguageModel,
+    model: InferenceModel,
+    first: InferResult,
+    _requestFor: (m: InferenceModel) => InferRequest,
+  ): Promise<{ res: InferResult; model: InferenceModel }> {
+    return { res: first, model };
+  }
+
+  /**
    * One provider round trip. "As last sent" is the provider's own echo when it
    * rendered text (`sent`), else the default rendering of the intent it
    * received — so a provider that renders differently is reported honestly.
    */
-  private async callProvider(provider: LanguageModel, request: InferRequest): Promise<InferResult> {
+  protected async callProvider(provider: LanguageModel, request: InferRequest): Promise<InferResult> {
     // Fail fast on an already-elapsed timeout even when the provider ignores the signal.
     request.signal?.throwIfAborted();
     const attempt = this.span.attempts.length + 1;

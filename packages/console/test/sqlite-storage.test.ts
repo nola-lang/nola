@@ -344,6 +344,50 @@ describe("SqliteConsoleStorage — records", () => {
     await s.close();
   });
 
+  it("a tool-use ask: the tools ride the record and the summary, the label shows them, tool events land under the ask", async () => {
+    const s = new SqliteConsoleStorage(dbFile());
+    await s.ingest(invocationStart());
+    await s.ingest(askStart({ askId: "t1", kind: "tool-use", instruction: "find the visa files", typeText: "string[]", tools: ["searchFiles", "fs.readFile"] }));
+    await s.ingest(env("providerRequest", { askId: "t1", attempt: 1, provider: "mock" }));
+    await s.ingest(env("providerResponse", { askId: "t1", attempt: 1, provider: "mock", text: "", durationMs: 10 }));
+    await s.ingest(env("toolCallStart", { askId: "t1", invocationId: "inv-root", spanPath: ["inv-root"], turn: 1, name: "searchFiles", args: { dir: "D:/" } }));
+    await s.ingest(env("toolCallEnd", { askId: "t1", invocationId: "inv-root", spanPath: ["inv-root"], turn: 1, name: "searchFiles", args: { dir: "D:/" }, result: '["a"]', durationMs: 3 }));
+    await s.ingest(env("providerRequest", { askId: "t1", attempt: 2, provider: "mock" }));
+    await s.ingest(env("providerResponse", { askId: "t1", attempt: 2, provider: "mock", text: '["a"]', durationMs: 12 }));
+    await s.ingest(
+      env("askEnd", {
+        askId: "t1",
+        receipt: receipt({ askId: "t1", kind: "tool-use", attempts: 2, turns: [{ calls: [{ name: "searchFiles", args: { dir: "D:/" }, result: '["a"]', durationMs: 3 }] }] }),
+      }),
+    );
+    const records = await s.listRecords({ project: "shop" });
+    expect(records[1]).toMatchObject({
+      kind: "tool-use",
+      id: "t1",
+      label: "..`find the visa files` [searchFiles, fs.readFile]<string[]>",
+      tools: ["searchFiles", "fs.readFile"],
+      status: "ok",
+      attempts: 2,
+    });
+    const ask = await s.getAsk("t1");
+    expect(ask?.kind).toBe("tool-use");
+    expect(ask?.tools).toEqual(["searchFiles", "fs.readFile"]);
+    expect(ask?.events.map((e) => e.kind)).toEqual([
+      "askStart",
+      "providerRequest",
+      "providerResponse",
+      "toolCallStart",
+      "toolCallEnd",
+      "providerRequest",
+      "providerResponse",
+      "askEnd",
+    ]);
+    expect((ask?.receipt as { turns?: unknown[] })?.turns).toHaveLength(1);
+    expect((await s.listDefinitions({ project: "shop" }))[0]?.kind).toBe("tool-use");
+    expect((await s.getDefinition(DEF))?.asks[0]).toMatchObject({ askId: "t1", kind: "tool-use", tools: ["searchFiles", "fs.readFile"] });
+    await s.close();
+  });
+
   it("getAsk returns the receipt and the events ordered by seq; unknown ids are undefined", async () => {
     const s = new SqliteConsoleStorage(dbFile());
     await s.ingest(env("askEnd", { askId: "a1", receipt: receipt() }, { seq: 102 }));
@@ -367,7 +411,7 @@ describe("SqliteConsoleStorage — records", () => {
     expect(await s.listRecords()).toEqual([]); // fresh db, old table gone
     await s.close();
     const fresh = new DatabaseSync(file);
-    expect((fresh.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(7);
+    expect((fresh.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(8);
     expect(fresh.prepare("SELECT name FROM sqlite_master WHERE name = 'invocations'").get()).toBeTruthy();
     fresh.close();
     const reopened = new SqliteConsoleStorage(file); // matching stamp: no wipe, still serves

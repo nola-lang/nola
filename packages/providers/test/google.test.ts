@@ -127,19 +127,23 @@ describe("google provider", () => {
     }
   });
 
-  it("missing key: names the exact env var, points at nola.config.ts, and is definitive", async () => {
+  it("missing key (no custom fetch): names the exact env var, points at nola.config.ts, is definitive, and never fetches", async () => {
     const original = process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_API_KEY;
+    // No `fetch` option: a custom fetch would own authentication and make the key optional.
+    const { fn, calls } = fakeFetch(() => candidateReply("x"));
+    vi.stubGlobal("fetch", fn);
     try {
-      const { fn } = fakeFetch(() => candidateReply("x"));
-      const err = (await google({ fetch: fn, model: "m" })
+      const err = (await google({ model: "m" })
         .infer(requestOf({ system: "s" }))
         .catch((e: unknown) => e)) as NolaProviderError;
       expect(err).toBeInstanceOf(NolaProviderError);
       expect(err.message).toMatch(/GEMINI_API_KEY/);
       expect(err.message).toMatch(/nola\.config\.ts/);
       expect(err.definitive).toBe(true);
+      expect(calls).toHaveLength(0);
     } finally {
+      vi.unstubAllGlobals();
       if (original !== undefined) process.env.GEMINI_API_KEY = original;
     }
   });

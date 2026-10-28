@@ -1,0 +1,5 @@
+{
+  "name": "nola-e2e-bun-test",
+  "private": true,
+  "type": "module"
+}

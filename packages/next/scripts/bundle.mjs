@@ -20,7 +20,8 @@ for (const name of ["turbopack-loader", "client-error-loader"]) {
     // The loader inlines node-loader (and, through it, the runtime): their
     // `import.meta.url` reads resolve to this file's URL instead of esbuild's empty `{}`.
     inject: ["../../scripts/esbuild/import-meta-url.js"],
-    define: { "import.meta.url": "import_meta_url" },
+    // …and the fork's Babel build-time switch decided here (see packages/parser/scripts/bundle.mjs)
+    define: { "import.meta.url": "import_meta_url", "process.env.IS_PUBLISH": "false" },
     logLevel: "info",
   });
   if (result.warnings.length > 0) throw new Error(`esbuild reported ${result.warnings.length} warning(s)`);

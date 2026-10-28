@@ -154,4 +154,64 @@ describe("renderPrompt — the tag rendering (spec 2026-09-28 §3.1)", () => {
       "user: <task>\np\n</task>\n\nassistant: 123\n\nuser: <correction>\n$: expected string, got number\n</correction>",
     );
   });
+
+  // Tool use (spec 2026-10-08 §3.6): the transcript renders as turns after the
+  // task — the model's text and tool_call blocks as the assistant, the results
+  // as the user — and the correction, when one ran, follows them. The tool
+  // definitions are not rendered: they ride natively.
+  it("an ask sequence renders its parts in order, each on its own line: text, input block, text", () => {
+    expect(user("sequence")).toBe(
+      [
+        "<task>",
+        "the person responsible for",
+        '<input name="project">',
+        "{",
+        '  "id": "p-1"',
+        "}",
+        "</input>",
+        "given this policy",
+        '<input name="policy">',
+        "least privilege",
+        "</input>",
+        "</task>",
+      ].join("\n"),
+    );
+  });
+
+  it("a tool-use sequence renders each list as its bracketed wire names where it was written", () => {
+    expect(user("sequenceTools")).toBe("<task>\nfind the visa files using\n[searchFiles, readFile]\nor\n[readDir]\nthen answer\n</task>");
+  });
+
+  it("a call sequence keeps the callee on the task attribute and the call's text where it was written", () => {
+    expect(user("sequenceCall")).toBe(
+      '<task call="createUser">\nregister the applicant\ncreateUser(user id, email)\nwith these defaults\n<input name="defaults">\n{\n  "plan": "free"\n}\n</input>\n</task>',
+    );
+  });
+
+  it("a tool-use transcript renders as assistant tool_call turns and user tool_result turns after the task", () => {
+    const { messages } = renderPrompt(fixtures.toolUse);
+    expect(messages).toEqual([
+      { role: "user", content: "<task>\nfind the visa files on disc D\n</task>" },
+      {
+        role: "assistant",
+        content: [
+          "Let me look.",
+          '<tool_call id="c1" name="searchFiles">',
+          '{"dir":"D:/"}',
+          "</tool_call>",
+          '<tool_call id="c2" name="searchFiles">',
+          '{"dir":"E:/"}',
+          "</tool_call>",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: ['<tool_result id="c1">', '["D:/visa/a.pdf"]', "</tool_result>", '<tool_result id="c2">', "[]", "</tool_result>"].join("\n"),
+      },
+    ]);
+    expect(renderPrompt(fixtures.toolUse).messages[0]?.content).not.toContain("searchFiles");
+    const corrected = renderPrompt({ ...fixtures.toolUse, correction: { response: "nope", error: "$: expected array" } });
+    expect(corrected.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant", "user"]);
+    expect(corrected.messages[4]?.content).toBe("<correction>\n$: expected array\n</correction>");
+  });
 });

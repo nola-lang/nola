@@ -28,6 +28,7 @@ export async function checkoutRoot(): Promise<string | null> {
 const LINKS: ReadonlyArray<readonly [name: string, dir: string]> = [
   ["@nola-lang/runtime", "runtime"],
   ["@nola-lang/providers", "providers"],
+  ["@nola-lang/bun", "bun"],
   ["nola-lang", "nola-lang"],
 ];
 

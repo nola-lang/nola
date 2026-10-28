@@ -12,7 +12,7 @@ describe("extract lowering v2", () => {
       `__nola.intents.ExtractIntent<string>({ instruction: \`ticket id\`, type: __nola_type_$1(), loc: "1:11", def: "${defHash("x.tsi", "extract", "ticket id", "string")}" })`,
     );
     expect(code).toContain('import { __nola } from "@nola-lang/runtime";');
-    expect(code).toContain("__nola.useRuntime(21);");
+    expect(code).toContain("__nola.useRuntime(24);");
   });
 
   it("wraps each ${} substitution in __nola.fmt and keeps the template", () => {

@@ -135,10 +135,11 @@ export const stored = ..`the user's full name`: string;         // stored: dots 
 
 > expected a type after the extractor's `:` on the same line — write `…`: T.
 
-The colon spelling `` ask `the ticket id`: string `` needs the colon glued to
-the backtick (a colon after a space is a ternary's, never the extractor's) and
-the type on the colon's line. Two more traps come with it, both from the type
-having no closing delimiter:
+The colon spelling `` ask `the ticket id`: string `` takes the colon glued,
+spaced or on the next line (`` `p` : string `` and `` `p`\n  : string `` are the
+same ask — a line break alone never ends an ask) and needs the type on the
+colon's line. Two more traps come with it, both from the type having no
+closing delimiter:
 
 ```tsi
 interface User { name: string }
@@ -163,6 +164,12 @@ comparison). Chain intent methods after a parenthesized extractor
 > followed by text or the end of the statement — wrap anything else in
 > parentheses, or assign it to a local first (`await`, `ask` and `this` cannot
 > be values).
+
+The same code, with ask-site wording, covers an ask sequence: `this`,
+`await`, `ask`, `function` or `class` where a value would start after a
+text, a value ending in a backtick (`` ask `p` new Foo `more` ``), and text
+after the type (`` ask `p`: T `more` `` — the type ends the sequence; move
+the text before `: T`).
 
 ```tsi
 export infer function total(.items: string[], a: number, b: number) {
@@ -345,6 +352,101 @@ A bare template with no type, `` createTicket(`a short ticket title`, 2) ``,
 is not a slot at all: it is a plain string argument and the call stays an
 ordinary call — no error, and no model request.
 
+## NOLA1021 / NOLA1022 — a tool list holds functions
+
+> a tool list holds functions — a name, a member, an expression that is one function, or a group (a module or an object of functions, an array of them), bare or spread; a literal cannot be one, and the list is not empty.
+
+The brackets after an ask's template are a TOOL LIST (tool use). An entry is
+a value: a name or dotted chain (one function, or a group — a module, an
+object of functions, an array of them), a spread of a group, or an
+expression that is one function. A literal (a string, a number, an arrow,
+an object or array literal) or an empty list is NOLA1021, and a call written
+in the list — describing the arguments in place — is reserved (NOLA1022):
+
+```tsi
+// not-checked — WRONG
+const a = ask `find the files` [searchFiles, "readFile"]: string[];     // NOLA1021
+const b = ask `get the user` [getUser(`the id`: string)]: User;         // NOLA1022 — reserved
+```
+
+```tsi
+// RIGHT
+const a = ask `find the files` [searchFiles, fs.readFile]: string[];
+const g = ask `find the files` [fileTools, ...moreTools]: string[];   // a group by name, a group flattened
+const b = ask `get the user` [getUser]: User;   // the arguments come from getUser's signature
+```
+
+## NOLA1023 — a typed ask in a ternary's consequent
+
+> a typed extractor directly in a ternary's consequent — parenthesize it: `cond ? (ask `p`: T) : y`.
+
+Two colons with different meanings would sit side by side, so the typed ask
+goes in parentheses (an untyped ask, a call intent and the `<T>` form need
+none; the alternate position is free):
+
+```tsi
+// not-checked — WRONG
+const t = cond ? ask `the title`: string : "untitled";
+```
+
+```tsi
+// RIGHT
+const t = cond ? (ask `the title`: string) : "untitled";
+```
+
+## NOLA2018 — a tool list entry the compiler cannot use
+
+An entry that is neither one function nor a group (a value, a type-only
+import, a class, a union of function types — `const f = cond ? a : b` —
+`any`), a function under a spread, a group reached through an expression
+(`[groups[0]]` — name it or spread it), a method reached through a call
+(`api.client().search` — name the object first), a group with nothing
+callable, or
+two tools that would share one name on the wire (`a.b` beside `a_b`; the
+same function twice; a spread's `search` beside another). Name a function
+or a group, keep the names distinct, offer colliding groups bare so their
+names carry the prefix. A parameter the walk cannot derive — a rest
+parameter, a `Map`, a generic parameter — is NOLA2002 at the entry; a group
+member the walk cannot use fails the group, naming the member.
+
+## NOLA2019 — a reserved shape of the ask sequence
+
+Tools beside a call: `` ask `use` [searchFiles] `then` createUser(`id`: string) ``
+is the kind where the loop runs and the call's slots are the answer —
+designed, not built. Offer the function as a tool, or make the call its own
+ask after the tool-use ask. Also a `..` sequence inside a call's slot
+(`` fn(..`t` user: string) ``): a slot's instruction is one text.
+
+## NOLA2020 — an ask sequence that cannot mean one thing
+
+Two calls with typed slots (an ask makes one call — split the asks); a
+`: T` beside a call (the call's result is the type — drop it); text after
+a bare call (`` ask f(`x`: string) `more` `` — put the words first:
+`` ask `more` f(`x`: string) ``); a call with typed slots inside a data
+value (`` ask `use` (createUser(`id`: string)) `go`: T `` — write it bare
+between texts, it is the action, not data).
+
+## NOLA3019 – NOLA3022 — tool use at run time
+
+- NOLA3019: the resolved model cannot request tool calls (a hand-written
+  `LanguageModel`, a mock without `{ tools: true }`, `typesafe()`, a vendor
+  model with `toolUse: false`). Route the
+  ask to `openai` / `anthropic` / `google` / `"nola"`, or brand the mock.
+  Refused before the network.
+- NOLA3020: the model kept calling tools past the cap (`.withMaxTurns(n)`,
+  else `ask.maxTurns`, 10). Raise the cap, give it tools that answer in fewer
+  calls, or sharpen the task. Definitive; the transcript rides the error.
+- NOLA3021: a tool threw. Fix the tool, or return the failure as a value
+  when the model should recover from it. Invalid arguments never reach the
+  function — they go back to the model as that call's result.
+- NOLA3022: the list could not be built when the ask ran — a value that is
+  not what its type promised (a group member that is not a function, a
+  tuple of another length), a function with no name (an anonymous arrow in
+  an array), or two tools with one wire name. Before the network.
+
+`.withRetry(n)` on a tool-use ask re-runs the WHOLE loop, tools included:
+only with tools that are safe to repeat.
+
 ## NOLA3010 — bare `await` on a raw extract or call intent
 
 > extract/call intents carry no construction scope — only `ask` supplies their
@@ -465,13 +567,19 @@ export infer function route(.ticket: string) {
 }
 ```
 
-## NOLA3015 — running `.tsi` under Bun or Deno
+## NOLA3015 — the Node loader under Bun or Deno
 
-The loader is Node's module-hooks API; Bun and Deno do not run it. Any package
-manager is fine (`bun install`, `bun run start`, `pnpm start`, `yarn start` —
-the `nola` bin is a Node script), but `bun --bun`, `bun src/main.ts` and
-`deno run` cannot load `.tsi`. Run on Node: `nola run` or
-`node --import nola-lang/register src/main.ts`.
+`nola run` and `node --import nola-lang/register` ARE Node's module-hooks API;
+Bun and Deno do not run them. On Bun, run `.tsi` from source through
+`@nola-lang/bun` instead: `preload = ["@nola-lang/bun/preload"]` in
+`bunfig.toml`, then `bun src/main.tsi` (see config.md, "Running on Bun").
+Deno cannot load `.tsi` at all — run on Node. Any package manager is fine
+(`bun install`, `bun run start`: the `nola` bin is a Node script).
+
+## NOLA3023 — Bun older than 1.3
+
+`@nola-lang/bun` needs `process.getBuiltinModule` (Bun ≥ 1.3). Run
+`bun upgrade`.
 
 ## Other things that will not parse
 
@@ -481,6 +589,12 @@ the `nola` bin is a Node script), but `bun --bun`, `bun src/main.ts` and
 - `infer` on a method, arrow function or function expression — top-level
   function declarations only.
 - `fn(..)` — the bare derive-all call form is reserved (NOLA1004).
-- `` ask `p` : T `` — a colon after a space is not the extractor's type; only a
-  colon glued to the closing backtick is (`` `p`: T ``). In a ternary the
-  spaced colon is the separator.
+- `` cond ? ask `p` : y `` — a colon on the extractor's line is its type,
+  spaced or glued, so the ask reads `y` as its type and the ternary loses its
+  alternate: NOLA1023. A typed ask standing bare as a consequent is the same
+  code — parenthesize it: `` cond ? (ask `p`: T) : y ``, on one line or
+  three: the formatted `` cond\n  ? ask `p`\n  : y `` reads `y` as the type
+  too, since a line break alone never ends an ask.
+- `` fn(`x` [tools]: T) `` — a tool list is never a call slot; a bracket
+  there keeps its JavaScript meaning. The list goes on the ask site or the
+  stored `..` form only.

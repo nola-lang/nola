@@ -1,6 +1,6 @@
 import { openai } from "@nola-lang/providers";
 import { NolaProviderError } from "@nola-lang/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { requestOf } from "./helpers/model.js";
 
 const req = requestOf({ system: "s" });
@@ -22,14 +22,22 @@ describe("openai provider config", () => {
     }
   });
 
-  it("missing key: names the exact env var, points at nola.config.ts, and is definitive", async () => {
+  it("missing key (no custom fetch): names the exact env var, points at nola.config.ts, is definitive, and never fetches", async () => {
     delete process.env.NOLA_TEST_MISSING_KEY;
-    const p = openai({ apiKeyEnv: "NOLA_TEST_MISSING_KEY", fetch: async () => new Response(okBody), model: "m" });
-    const err = (await p.infer(req).catch((e: unknown) => e)) as NolaProviderError;
-    expect(err).toBeInstanceOf(NolaProviderError);
-    expect(err.message).toMatch(/NOLA_TEST_MISSING_KEY/);
-    expect(err.message).toMatch(/nola\.config\.ts/);
-    expect(err.definitive).toBe(true);
+    // No `fetch` option: a custom fetch would own authentication and make the key optional.
+    const globalFetch = vi.fn(async () => new Response(okBody));
+    vi.stubGlobal("fetch", globalFetch);
+    try {
+      const p = openai({ apiKeyEnv: "NOLA_TEST_MISSING_KEY", model: "m" });
+      const err = (await p.infer(req).catch((e: unknown) => e)) as NolaProviderError;
+      expect(err).toBeInstanceOf(NolaProviderError);
+      expect(err.message).toMatch(/NOLA_TEST_MISSING_KEY/);
+      expect(err.message).toMatch(/nola\.config\.ts/);
+      expect(err.definitive).toBe(true);
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("HTTP failures carry the response status", async () => {

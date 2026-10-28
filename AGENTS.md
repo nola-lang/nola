@@ -43,7 +43,7 @@ form. The parser marks slot starts (`nolaSlotStart` / `nolaInSlotList`,
 saved and restored around `parseCallExpressionArguments`, `parseArrayLike`,
 `parseObjectLike`, `parseNew`, `parseParenAndDistinguishExpression`; the
 item entry is `parseMaybeAssignAllowInOrVoidPattern`) and `parseExprAtom`
-claims a template there only when a glued `: T` follows or `<…>` reads as
+claims a template there only when `: T` follows on its line or `<…>` reads as
 type arguments on TypeScript's own bail-out terms (`` f(`a` < b) `` stays a
 comparison; an UNTYPED template stays a string argument, so `` log(`x`) ``
 is untouched and an untyped slot is still only the `..` form's NOLA2004).
@@ -54,19 +54,259 @@ in a context statement therefore fails at the colon instead of NOLA2010),
 `` ask ..`…` `` and `` fn(..`…`: T) `` remain legal and lower identically
 (loc at the backtick; def/fingerprints never saw the sigil, so the
 function-calling ledger held). THE TYPE HAS TWO SPELLINGS: the
-colon-typed spec (2026-09-23) added `: T` GLUED to the closing backtick,
+colon-typed spec (2026-09-23) added `: T` after the closing backtick —
+GLUED until 2026-10-12, since then glued OR SPACED on the backtick's line
+(owner's call; the parser checks `!hasPrecedingLineBreak()` at both claim
+sites; an untyped extractor is never valid, so `a ? ask `p` : b` was never
+a program and no valid program changes meaning; the injection grammar
+cannot see `ask`, so it follows only where a ternary's alternate cannot be
+mistaken for the type — after a list's `]` outright, after a backtick only
+when a primitive type keyword follows (`string`, `number`, …; a named type
+there is colored by the semantic tokens through the anchor mapping, which a
+keyword never gets) — and `ok ? `yes` : `no`` keeps TypeScript's coloring;
+ACROSS LINES (2026-10-15, the owner's one-part-per-line layout colored
+`string` as a variable) TextMate matches one line at a time and cannot see
+the backtick from the next line, so a backtick or a list's `]` that ends
+its line (a trailing line comment allowed) opens a CONTINUATION rule
+(`nola.injection.tmLanguage.json`, `repository`) that holds through blank
+lines AND COMMENT LINES (2026-10-16: a commented-out part between the list
+and the type closed it; the parser skips comments, the nested
+`source.ts#comment` scopes them) to the next line with code —
+a leading `[` is a list, `<T>` the type arguments, `: T` the type under the
+same gates — and closes where that line starts otherwise, and after the
+part it took; the one cost is a `[` opening the line after ANY template
+that ends its line being scoped as a list, which colors nothing
+differently; A `: T` AFTER A BARE VALUE is colored since 2026-10-16 — a
+template followed by a space and a name, `(`, `{`, a digit or a quote on
+the same line is a Nola shape and nothing else (TypeScript puts only `in`,
+`instanceof`, `as`, `satisfies`, `extends` there), so a VALUE rule begins
+after the text, scopes the value with `source.ts#expression` (a ternary,
+an object literal or a call consumes its own colons), takes a colon they
+left as the type ungated, and ends before the next text, a closer, a
+comma or a comment, where the type ends, and at the start of a line that
+is not the type — a value ending its line still takes `: T` on the next
+line; a value on a line of ITS OWN stays TypeScript's, since a line that
+opens with a name is also how a statement, a class member or a property
+opens, and a line-start value rule miscolored class bodies) —
 `` ask `p`: T `` / `` ..`p`: T ``, beside the original `<T>`; both yield the
 same one-param `typeArgs` node, emit and `def`, and since 2026-09-29
 (owner's call) `: T` IS THE TAUGHT FORM — every example, template, docs
 page, the agent skill and the editor snippets write it, and `<T>` is
 documented once as the equivalent (extractors.mdx "The angle-bracket
 spelling", the cheatsheet row, syntax.md's spellings bullet); keep new
-copy on that rule (a spaced colon is never the extractor's, so a ternary's
-separator stays one; the type starts on the colon's line or it is
+copy on that rule (the colon may also stand on a LATER line since
+2026-10-15 — a line break alone never ends an ask sequence — so a typed ask
+in a ternary's consequent is parenthesized, on one line or three; bare,
+`cond ? ask `p` : y` takes `y` as the type and is
+NOLA1023 with a placeholder alternate in tolerant mode, no bail; the type
+starts on the colon's line or it is
 NOLA1018, tolerant-recovered untyped; a bare type name followed by `.`
 continues the type, so chain intent methods after a parenthesized
 extractor, a delimited type or `<T>`; NOLA2004's message names `: T`, and
-NOLA2014's names `<T>` since only that form reaches it);
+NOLA2014's names `<T>` since only that form reaches it; since 2026-10-08
+a colon-typed extractor standing BARE as a ternary's consequent is NOLA1023
+— parenthesize it, `` cond ? (ask `p`: T) : y `` — the plugin re-implements
+Babel's `parseConditional` to raise it before the ternary's colon);
+THE ASK SEQUENCE (spec 2026-10-12, emit 24): the operand after `ask`, `ask
+with <name>` and `..` is a SEQUENCE — the first text, then texts and values
+alternating (`parts` on `NolaExtractExpression`, kind-blind; `parts[0]` is
+the `quasi`, so `children()` dedupes shared references; a `[list]` is a
+`NolaToolList` part, a bare value carries `nolaValueSpan`; the parser runs
+the context-statement loop in `nolaFinishExtractor`; `: T` follows the
+last part — glued, spaced, or on a later line — and `<T>` only after a text
+or a list; A LINE BREAK ALONE NEVER ENDS A SEQUENCE (2026-10-15, owner's
+call after `` `and`\nsomething.map(x => 1); `` silently lost its value): after
+a text the next part may start on the next line — `nolaStartsSequenceValue`,
+the context-value tokens on any line, with `nolaNextLineOpensDeclaration`
+keeping `type X` / `let x` / `interface I` / `async function` / `declare …`
+/ `enum` / `namespace` / `using x` / `global {` as the next statement by
+TypeScript's own lookahead — while after a VALUE a name on the next line
+is still a new statement (two values never touch) and context statements
+keep JavaScript's rule; the cost is semicolon-free code after a call
+sequence ending on a text, taken as a value (TS2448 when it names the
+result). THE LOWERING KEEPS EVERY LINE TERMINATOR of a span it replaces
+(`lineTerminatorsIn`, emitted in front of the replacement: the type on its
+own line, a list spanning lines, `ask` with its operand on the next line;
+`argsStartOf` puts a call intent's args head right after the `(`), pinned
+over every multi-line shape by `compiler/test/ask-layout.test.ts`; NOLA1020 with
+ask-site wording for `this`/`await`/`ask`/`function`/`class`/a unary keyword
+after text — tolerant mode TAKES the refused expression as the value
+(`nolaParseRecoveredValue`) — a value ending in a template, and text after
+the type). The LOWERER classifies by the parts (`classifyParts`, phase one,
+by syntax): texts + data → `ExtractIntent`, one call with a typed slot →
+`FunctionCallIntent` (typed by the callee's result; `: T` beside it is
+NOLA2020), one or more lists → `ToolUseIntent` (lists union, the same
+written entry in two lists is one tool, `toolSourcesText` shared with the
+one-list path), a list beside a call RESERVED (NOLA2019, the future kind),
+two calls / text after a bare call / a call intent inside a data value
+NOLA2020, a `..` sequence in a slot NOLA2019. The emit (`lowerSequence`):
+`instruction: [`text`, __nola.var.obj({ value: <bytes>, name: "<written>",
+type: __nola_type_$N() }), __nola.var.tools(<today's sources>),
+__nola.var.func({ fn, name, args: [<slots as today>] })]` — texts and values
+keep their bytes and lines, the separator `,` goes at the previous part's
+end so the source whitespace stays the space; the obj type is a `value`
+derivation request (policy omit, an optional accessor, silent when
+underivable, no request when the value holds a nested ask); the def hashes
+the parts' raw texts joined by newlines; the loc is the first backtick's.
+The three legacy shapes (one text, one text + one list, a bare/hinted call)
+lower BYTE FOR BYTE as in emit 23. RUNTIME: `intents/parts.ts` (`__nola.var`,
+branded parts, `normalizeParts`, `requireParts` — a part a class does not
+take is NOLA3001 — `referenceText` = the texts with each value's reference,
+`inlineText` = the slot degrade, `wireParts`); `ToolUseContext` unions every
+list (`materializeTools` keeps one entry for the same function under one
+name by ORIGIN, NOLA3022 for different ones); `FunctionCallContext.
+resolveCall` normalizes the hint form and the func part. WIRE: `input.parts`
+PRESENT-ONLY (`{ text } | { input: { name, type?, value? } } | { tools: wire
+names } | { call: described text }`; `type` is `toNativeType()`, the node
+kind), `input.instruction` is the reference text, a one-text ask composes
+the identical model (the golden identity test in `model-builder.test.ts`;
+FINGERPRINT_VERSION stays 6, all four ledgers hold); `renderTaskBlock`
+prints the parts in order, one per line, an input as its block, a list as
+`[a, b]`. Surfaces: extractors "Values in the instruction", tool-use
+"Several lists", call-intents (words before the call taught, the hint
+marker documented as the equivalent), prompt (fixtures `sequence`,
+`sequenceTools`), the cheatsheet, NOLA2019/2020, the skill's "The ask
+sequence", grammar + LSP guards (every rule fires after a closing backtick;
+since 2026-10-15 the continuation rule carries a backtick or `]` that ends
+its line to the next line's `[` / `: T` / `<T>` — the colon paragraph
+above), handoff
+`../nola-platform/docs/handoff/2026-10-12-ask-sequence-parts.md`.
+TOOL USE (spec 2026-10-08, implemented the same day in six task-scoped
+commits — parser, compiler+derive, core wire+runtime, providers,
+telemetry+console, docs+skill+example — emit 22, entries by value emit 23):
+a bracketed list of values directly after the template of an
+ask-site or `..` extractor, before its type, `` ask `find the files`
+[searchFiles, fs.readFile]: string[] ``, is the TOOL LIST — the functions
+the model may call before it answers (a bounded loop inside `ask`;
+parentheses RUN a function once, brackets OFFER functions); ENTRIES ARE
+VALUES (spec 2026-10-09, tool lists by value — `tools` on
+`NolaExtractExpression` holds any expression the parser did not refuse,
+`SpreadElement` included; `colonType` marks the colon spelling): a literal
+shape or an empty list is NOLA1021, a call-shaped or tagged entry is
+RESERVED (NOLA1022), and the CHECKER decides the rest in phase two — a name
+or dotted chain names one function or a GROUP (a module namespace, an
+object of functions, an array of them) whose members the model sees as
+`<written>.<member>`; `...group` offers them flat; any other expression
+that is one function is named by the function (`fn.name`, `bound `
+stripped); a group reached through an expression, a union/`any`/`unknown`,
+nothing callable, a member the walk cannot use → NOLA2018 from derive;
+`<` after `]` always opens type arguments, and a bracket in a call slot
+keeps its JavaScript meaning; the lowering (`lowerToolUse`, emit 23) emits
+`__nola.intents.ToolUseIntent<T>({ instruction, tools: [__nola.tool(<entry>,
+__nola_tool_$N(), "<written>"?, <receiver>?) | __nola.toolSpread(<arg>,
+__nola_tool_$N())], type, loc, def })` — DEFERRED SOURCES the runtime
+materializes when the ask composes (`materializeTools`,
+`intents/tool-use/tool-group.ts`; an invalid list is NOLA3022 on the ask
+span, before the network); each entry's text is an ANCHOR and one `tool`
+derivation request flagged `{ ask, spread?, written? }` whose accessor
+returns a `ToolVerdict`: `deriveTool` answers one function's carrier
+(exactly one DECLARED signature: a union, `any`, `unknown` → NOLA2018; the
+parameters as ONE object carrier keyed by name in order, optional/defaulted
+optional, `this` skipped, a rest parameter refused, the signature's JSDoc
+as `.describe`, `@param` tags on the properties; an underivable parameter
+NOLA2002 at the entry) or a GROUP verdict (`__nola.tools.tuple/array/
+members`; `default`, constants, nested objects and classes skipped) plus
+the names it could declare, which `finalizeDerivations` checks for
+wire-name collisions per ask (NOLA2018 at the later entry; the same name
+twice counts) after the lowerer's own check over written texts
+(`toolWireName` in core: non `[A-Za-z0-9_-]` → `_`); the def hashes the
+WRITTEN entries after the type text (`defHash` kind `tool-use`; unchanged
+for every list of names); the stub's and the
+runtime's `ask` take `Askable<T> | ToolUseAskable<T>` because TypeScript
+cannot infer a phantom `T` through a subtype. RUNTIME: `ToolUseIntent` +
+`ToolUseContext` (`intents/tool-use/`, the third consumer intent; the
+public tier `ToolUseAskable<T>` adds `.withMaxTurns(n)`), `ToolUseInference`
+(`ask/tool-use-inference.ts`, extends JsonInference) loops in the base's new
+`converse` seam — called with the first reply, it runs the requested calls
+in the reply's order (unknown name / invalid args → fed back as the call's
+result, never invoked; a result rendered by `fmt`; a throw → NOLA3021
+definitive with `cause` and `transcript`), appends the turn to the model's
+`transcript` (per-turn fingerprint on the receipt's `turns`), calls again,
+and hands the answer to the base's validation + single correction turn
+(not counted against the cap); the cap is `.withMaxTurns` → config
+`ask.maxTurns` → `DEFAULT_MAX_TURNS` 10 (NOLA3020); a model without the
+`TOOL_MODEL` brand (core `tool-model.ts`; set by `mockProvider(…, { tools:
+true })`, the vendors and `replay()` in stage 4) is NOLA3019 before the
+network like NOLA3018; NOLA3022 (`ToolListInvalid`) when the materialized
+list disagrees with its verdicts, a tool is unnamed or names collide —
+raised where the model composes (`ToolUseContext.entries()`, inside the
+ask span, before the brand check), so askEnd carries it; wire:
+`InferenceModel.intent` "tool-use" +
+present-only `tools` / `transcript` (FINGERPRINT_VERSION stays 6),
+`InferResult.toolCalls`, `renderPrompt` renders the transcript as
+assistant `<tool_call>` / user `<tool_result>` turns after the task (tool
+definitions ride natively), events `onToolCallStart` / `onToolCallEnd`,
+`AskStartEvent.tools`, `AskReceipt.turns`; `mockProvider` scripts a tool
+turn with `toolCalls([...])`. PROVIDERS (`providers/src/tools.ts`): tools
+go out under their WIRE name and the transcript goes out NATIVELY
+(`splitMessages` = the task turn + the correction pair with the transcript
+left out, spliced per vendor); ON EVERY VENDOR the answer is ONE MORE TOOL
+— `nola_answer` (`ANSWER_TOOL`), its parameters = the (enveloped) output
+schema — because structured output and tools do not mix on Anthropic, on
+Gemini, or on the OpenAI-compatible hosts (Cerebras and Groq reject `tools`
+beside `response_format`; the owner hit it on gpt-oss-120b 2026-10-09 —
+the first cut sent both, which OpenAI itself accepts): `openai` sends strict
+function definitions + the strict answer function with `tool_choice:
+"required"` and NO `response_format` (plain asks keep it; `structuredOutputs:
+false` keeps the schema note and `auto`), reads `tool_calls`, drops an answer
+call beside real calls, and runs a lone answer through `fromStrict`;
+`anthropic` / `google` send `input_schema` / `parametersJsonSchema` with
+`tool_choice any` / mode `ANY`: a call to the answer tool is the answer, any
+other call a turn (without enforcement: `auto` / `AUTO`, text answers);
+Gemini mints call ids and answers by name; all three carry `TOOL_MODEL`,
+`typesafe` does not. THE STRATEGY IS A MODEL OPTION (2026-10-09, owner's
+call — room for a later strategy where the model writes a program over the
+tools, or calls as text for a host without a tool API): `toolUse?:
+ToolUseMode | false` on the three vendor factories beside
+`structuredOutputs` (`toolUseBrand` in `providers/src/tools.ts` validates it
+at construction — NOLA3003 naming the accepted values — and yields the brand
++ the field), copied onto the model object as `LanguageModel.toolUse` (core;
+`ToolUseMode = "native"` today, the union grows as strategies land);
+`false` = this host offers no tool use: unbranded, NOLA3019 before the
+network, skipped by `fallback` / `roundRobin`; combinators carry the
+strategy their inners agree on (`agreedToolUse` in `outer`; `false` and
+absent count as none) and REFUSE a disagreeing group at construction
+(NOLA3003), since the runtime picks the loop before it knows which inner
+serves; `record` copies the inner's; `replay` and the platform model carry
+none; a per-ask override and a config default are deliberately absent until
+a second strategy exists; combinators carry the brand like the decision one and
+`fallback`/`roundRobin` skip unbranded inners on a tool-use request
+(`isToolUseRequest`); `record` carries the brand and stores
+`response.toolCalls`, `replay` serves them and is branded; the platform
+model is branded and passes `NolaInferResponse.toolCalls` through
+(handoff `../nola-platform/docs/handoff/2026-10-08-tool-use.md`).
+TELEMETRY + CONSOLE: the ingest kinds gained `toolCallStart` /
+`toolCallEnd` (ten now; `envelopeObserver` maps the two observer methods,
+`terminalTrace` prints them at `info` — `formatIngestLine` rows `tool #<turn>
+→ name` / `tool #<turn> ← name <ms>` / `fail … — <error>`); storage
+(schema 8) keeps `asks.tools_json` from `AskStartEvent.tools`, the
+records/summaries carry `tools`, `askLabel` renders a tool-use ask as
+``..`instruction` [a, b]<T>``, tool events land under the ask like
+attempts (the generic events table), the receipt's `turns` ride
+`receipt_json`; the UI's `AskKind` gains `"tool-use"` (wrench icon),
+`live-definition` maps the kind and `tools` (parity test holds it), and
+`AskPanel` shows a "tool calls" section from `receipt.turns`. SURFACES:
+`docs-site/language/tool-use.mdx` (sidebar 65, the taught page; cheatsheet
+"Tool use" rows; intent/mental-model/extractors/call-intents/prompt/
+ask-options/intent-api/providers-api pages amended), the skill (SKILL.md
+bullet, syntax.md "## Tool use", patterns.md project, pitfalls.md codes),
+the `tooli` snippet, the editor grammar (2026-10-09: the injection
+grammar's tool-list rule — `[` after an extractor's backtick opens a
+`meta.tools.nola` list that may span lines, with the `]: T` / `]<T>` type
+rules NESTED inside it so a computed key's `]:` elsewhere is never claimed,
+and since 2026-10-15 opening on the line after the text and typed on the
+line after its `]` through the continuation rule;
+held by `packages/vscode/test/grammar.test.ts`, the first automated grammar
+test, which tokenizes through vscode-textmate with VS Code's own TypeScript
+grammar vendored under `packages/vscode/test/fixtures/`), the READMEs, and
+`examples/tool-use` — the fourth
+one-file featured template (first menu: feature-extraction,
+function-calling, tool-use, agent-loop, typescript-interop, triage-ticket,
+empty), replaying a three-turn ledger recorded over `record(mockProvider([
+toolCalls([...searchFiles]), toolCalls([...readFile]), [answer]], { tools:
+true }))` from `src/main.tsi` — a FOURTH ledger to re-record on any
+prompt-composition change (each turn's key includes the transcript, so
+the tools must return what they returned);
 `` fn``(...) `` call intents lower to
 `FunctionCallIntent`; since the 2026-08-14 sigil-less spec the empty marker
 is optional — a plain call with an Identifier/MemberExpression callee whose
@@ -82,7 +322,7 @@ the callee; the ask timeout bounds provider calls only, not the callee. Phase 1 
 
 ## Commands
 
-Node **≥ 22.18** required (plain `.ts` runs on Node's native type stripping, on by default only from 22.18 — the scaffolder warns on older Nodes, see `create-nola-lang/src/node-version.ts`). npm workspaces (not pnpm/yarn).
+Node **≥ 22.18** required (plain `.ts` runs on Node's native type stripping, on by default only from 22.18 — the scaffolder warns on older Nodes, see `create-nola-lang/src/node-version.ts`). npm workspaces (not pnpm/yarn). Bun ≥ 1.3 is a runtime target (`@nola-lang/bun`), never the dev tool.
 
 ```bash
 npm run build      # builds vendored babel-parser FIRST, then `tsc -b` across packages
@@ -147,10 +387,12 @@ ast, core                    # leaf types + shared utilities (errors, redact, fi
   → parser                   # parseNola(): source → { ast, diagnostics }
   → compiler                 # compileNola(): AST → { code, map, meta, diagnostics } — PHASE 1 (inert accessors + meta.derivations) + finalizeDerivations; no TypeScript, no node:path
   → derive                   # deps compiler + typescript (>=5.6 <7): the checker walk (deriveType), answerRequests, DerivationService (one ts.LanguageService per process), derivationDiagnostics
+  → browser                  # deps compiler + core: a browser host's type strip with the loader's debug map (ts-blank-space VENDORED, TypeScript injected — see packages/browser/VENDOR.md), inline map + sourceURL, runtime-import rewrite, blob module URLs; no Node, no typescript import
   → console                  # deps core only: node:sqlite storage + Hono API (`nola console`); serves dist/ui — it has NO UI source
   → console-ui               # PRIVATE SPA (React, react-router, TanStack Query+Table, shadcn/ui = Tailwind v4 + radix-ui, Recharts, lucide-react); `npm run bundle -w @nola-lang/console-ui` type-checks (own tsconfig, outside `tsc -b`) and builds INTO packages/console/dist/ui; src/components/ui/** is `npx shadcn add` output kept upstream-identical (biome overrides exempt it); the palette lives ONLY in src/index.css (since 2026-09-20 the GROUND is the nola.sh landing page's — ink `#0a0c0b` background, `#121615` panels, from the website checkout's landing.css — with the console's own amber accent, status hues and mono type mapped onto shadcn names; PANELS DRAW NO BORDERS — surfaces separate them, `--border` survives only on the resizable handle, inputs and row separators); LIVE UPDATES (2026-09-16) are patch-then-refetch: `/api/events` carries every ingest envelope, `live-sync.ts` applies each one to the cached definitions at once (`applyNotice`, live-definition.ts — a re-implementation of storage's askStart/askEnd row mapping, held to it by `test/live-definition-parity.test.ts`; change the ingest mapping in sqlite.ts and you change it there too) and then refetches only the queries that notice can have changed (`live-keys.ts`) through the self-pacing `refresh-queue.ts` (first at once, one round at a time, never a trailing debounce — that starved under a steady run of asks); notices that arrive mid-round are re-applied when it settles so an older read cannot blink a bar out; the duration chart draws a running execution at its elapsed time, pads to `MIN_SLOTS` so a new bar takes an empty slot, and holds its Y ceiling (`chart-scale.ts`)
   → runtime, providers, language-core  # parallel; providers deps ast+core ONLY (never runtime); every model receives the InferenceModel through `infer(req)` and renders it itself (`renderPrompt` in core is the default; prompt rendering 2026-09-28) — the platform's `/v1/infer` client lives IN the runtime (src/platform-model.ts) behind `nola.infer()` (config v2 2026-09-08); language-core = compiler + Volar, NO runtime dep
   → node-loader, typescript-plugin  # typescript-plugin: language-core + @volar/typescript
+  → bun                      # @nola-lang/bun: the Bun runtime + Bun.build plugin (deps ast, compiler, derive, runtime, node-loader's /project-root ONLY)
   → nola-lang                # the dev tool users install: nola bin (build/run/check/declarations) + ./register
   → unplugin                 # bundler-plugin core (deps node-loader + nola-lang); adapters via subpath exports
   → vite, webpack, rollup, rolldown, esbuild, rspack, next  # thin wrappers over unplugin; next = withNola + CJS loader bundles
@@ -237,7 +479,8 @@ because clack's `select` has no sections: `TEMPLATE_QUESTION` lists the
 FEATURED examples (`featured: true`) and `empty` in registry order, ONE PER
 FEATURE (owner's framing 2026-09-18, list of 2026-09-30) —
 `feature-extraction` (the default, also non-interactively; was
-quick-script/basic for a few hours), `function-calling`, `agent-loop`,
+quick-script/basic for a few hours), `function-calling`, `tool-use`
+(2026-10-08), `agent-loop`,
 `typescript-interop` (the former `starter`, briefly ts-import and
 infer-function; renamed with no alias), `triage-ticket`, `empty` — plus one
 `MORE_EXAMPLES` row that opens `EXAMPLE_QUESTION` over the remaining curated
@@ -256,7 +499,7 @@ template names its `.tsi` as `entry` in the registry, and
 `entryFile(template)` (registry.ts) answers it or `src/main.ts`; that value drives `start` in its
 package.json, the launch.json `program` (`writeVscodeSetup(dir, entry)`),
 what `code` opens, and which file gets the next-steps comment (the VS Code
-variant says "a breakpoint on the `ask` line below"). Re-record the ledgers (`examples/<name>/nola.replay.jsonl` since 2026-09-30) the same way as typescript-interop's — feature-extraction over `record(mockProvider([person, "staff"]))`, function-calling over `record(mockProvider([{ arg0: title, arg1: 1 }]))` (a call intent's slots are one object keyed `arg0`, `arg1`, …) — from `src/main.tsi`. The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
+variant says "a breakpoint on the `ask` line below"). Re-record the ledgers (`examples/<name>/nola.replay.jsonl` since 2026-09-30) the same way as typescript-interop's — feature-extraction over `record(mockProvider([person, "staff"]))`, function-calling over `record(mockProvider([{ arg0: title, arg1: 1 }]))` (a call intent's slots are one object keyed `arg0`, `arg1`, …), tool-use over `record(mockProvider([toolCalls([{ name: "searchFiles", args: {…} }]), toolCalls([{ name: "readFile", args: {…} }]), [answer]], { tools: true }))` (one ledger line per turn; see its README) — from `src/main.tsi`. The `nola` bin is a COMMAND TABLE (`nola-lang/src/commands.ts`: one
 `defineCommand` entry per command, each with its OWN parseArgs option map)
 routed by the zero-dep dispatcher in create-nola-lang (`src/cli.ts` —
 generated help, `--help`/`--version`, per-command flag scoping); `nola init`
@@ -426,13 +669,13 @@ its own copy; `scaffold.test.ts` holds every menu entry to it. The published man
 keeps ZERO runtime deps — `@clack/prompts` is a devDep inlined by
 `scripts/bundle.mjs` (root `npm run build` runs it; the dist is an esbuild ESM
 bundle). The `nola.replay.jsonl` ledgers of `examples/feature-extraction`,
-`examples/function-calling` and `examples/typescript-interop` make the first
+`examples/function-calling`, `examples/tool-use` and `examples/typescript-interop` make the first
 run keyless (in-repo under `test/e2e/examples.test.ts` too); they are
 fingerprint-keyed, so prompt-composition changes fail
-`test/e2e/scaffold.test.ts` and the examples e2e until ALL THREE
+`test/e2e/scaffold.test.ts` and the examples e2e until ALL FOUR
 ledgers are re-recorded (record over
 `mockProvider`, see the plan `docs/superpowers/plans/2026-08-10-scaffolding-phase2.md`).
-Publish partition: 12 public, guarded by `test/publish-manifests.test.ts`.
+Publish partition: every packages/* manifest is classified PUBLIC or PRIVATE in `test/publish-manifests.test.ts` (a new package fails it until classified).
 
 Versioning is LOCKSTEP: every `packages/*` manifest carries the same version, and
 internal refs (deps + devDeps naming a workspace package) are EXACT — the exact
@@ -448,7 +691,7 @@ test, AND (if the CLI/loader import it at runtime) rebuild.
 `comparisons/` is the public marketing proof: the same scenario implemented in Nola
 and in each competitor (BAML, LangChain.js, Ax, Vercel AI SDK, plain OpenAI SDK),
 plus Figma-editable SVG slides of the numbers. It is deliberately OUTSIDE every
-repo-wide mechanism — `workspaces` globs only `packages/*`/`examples/*`, biome's
+repo-wide mechanism — `workspaces` globs only `packages/*`/`examples/*`/`labs/*`, biome's
 `includes` and vitest's `include` are allowlists that omit it, and it has no
 `tsconfig.json` reference — so root `npm install`, `npm run build`, `npm test`, and
 `npm run lint` never touch it. Each project installs on demand in its own folder.
@@ -457,6 +700,13 @@ copies) because its whole claim is that it reproduces an outside user's experien
 do not convert it to a workspace or to `file:` links. That also means language
 changes do not reach it until you publish — when you do, re-run it and recount the
 numbers in `comparisons/inbox-triage/README.md`, which the slides quote.
+
+`labs/` holds internal sandboxes and experiments (`labs/playground` is the
+dogfood debugging sandbox). Each subfolder is an npm workspace, but the whole
+folder is WITHHELD from the public mirror (`scripts/public-exclude.txt`), so
+nothing public may link into it and no shipped test may depend on it existing.
+Put a throwaway project there, never in `examples/` (every `examples/*` entry
+is a curated, published example).
 
 ## Working in the vendored parser (`packages/babel-parser/`)
 
@@ -619,7 +869,12 @@ plugin expects, adapt the *plugin*, never the test expectations.
   boolean on the parser survived the rollback and broke exactly the `<T>`
   case — and a second `const b = ;` in the same file is a different position
   on the same state. Babel recovers `f(, a)` on its own (a recoverable raise
-  at the comma), so that one never reaches the placeholder. Two editor-layer
+  at the comma), so that one never reaches the placeholder — it leaves a NULL
+  in `arguments`, which the lowerer's argument walks skip (`hasExtractorSlot`,
+  `checkCallIntentArg`, the slot visits, `argsStartOf` — the hole stays in a
+  call intent's emitted args); `isCallIntentCall` runs on every call in the
+  file, and a throw there ended the language server in a restart loop
+  (2026-10-13). Two editor-layer
   rules follow from what a
   bail costs: nola-native diagnostics are published on the ROOT document
   (the `.tsi` source, whose identity mapping carries `verification` — Volar
@@ -907,7 +1162,10 @@ plugin expects, adapt the *plugin*, never the test expectations.
   extract/call asks); a lineage with no file root anywhere reports `<unknown>`. Since emit 4
   the lowered EOF insert opens with
   `__nola.useRuntime(<NOLA_EMIT>)` (was `__nola.assertEmit(3)` through emit 3; the
-  contract is 21 today — emit 21 is CONTEXT STATEMENTS (spec 2026-09-29):
+  contract is 24 today — emit 24 is THE ASK SEQUENCE (spec 2026-10-12, the
+  paragraph above), emit 23 TOOL LISTS BY VALUE (spec 2026-10-09, the TOOL
+  USE paragraph above), emit 22 TOOL USE (spec 2026-10-08); emit
+  21 is CONTEXT STATEMENTS (spec 2026-09-29):
   every bare template literal statement in a scope body is a context item,
   lowered IN PLACE as `` void __nola_ctx_N; function __nola_ctx_N() { return __nola.ctx`…`; } ``
   (one file-wide counter; the `void` read is the statement's STEP LOCATION —
@@ -1179,7 +1437,12 @@ plugin expects, adapt the *plugin*, never the test expectations.
   ("Cannot find module 'typescript'", 2026-09-15) and silently dropped the
   plugin; walking a program with a different TypeScript than built it is
   wrong regardless. The loader, CLI and bundler plugins never inject and get
-  derive's own dependency lazily. `test/e2e/editor-bundles-standalone.test.ts`
+  derive's own dependency lazily — through `node:module` reached at call time
+  (`nodeBuiltin("node:module")`, core's host helper over
+  `process.getBuiltinModule`; no static `node:` import and no `require`
+  branch since 2026-10-06, see the browser-ready bullet below), so a browser
+  bundle of derive fails only where the host forgot `useTypeScript()`, with a
+  message that says so. `test/e2e/editor-bundles-standalone.test.ts`
   guards this by staging both bundles OUTSIDE the repo with a copied
   TypeScript as tsdk/tsserver — in-repo runs cannot catch it (the bundles
   sit beside a resolvable `typescript`, and tsserver probes three levels
@@ -1207,8 +1470,15 @@ plugin expects, adapt the *plugin*, never the test expectations.
   key/value and every name the fork reads to it (regenerate it on a
   `charcodes` upgrade), and `test/e2e/parser-bundle-parity.test.ts` holds
   the bundled parser's AST + diagnostics byte-for-byte to the source parser's
-  over every `.tsi` in the repo plus the tolerant recoveries. The fork itself
-  is untouched (no VENDOR.md entry).
+  over every `.tsi` in the repo plus the tolerant recoveries. ALL FOUR ALSO
+  DEFINE `process.env.IS_PUBLISH` as `false` (2026-10-06): Babel's build-time
+  switch survives the fork's `tsc` output as a run-time environment read, one
+  per node in `finishNode`/`getLoc` — ~45% of a parse — and a ReferenceError
+  wherever `process` does not exist (a browser bundle); `false` keeps the dev
+  branches the source parser and the tests run, so the parity suite still
+  holds bundle to source, and it also asserts that no `process.env` read
+  happens while parsing. The fork's source is untouched (VENDOR.md notes the
+  switch).
 - **Cross-file types: the `*.tsi` view rule (emit 14; companions and the
   `*.nola.*` namespace are RETIRED, NOLA2006 with them).** A type reached in
   another project file lowers to `__nola.types.ref("<moduleId>#<Name>", () =>
@@ -1355,7 +1625,26 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   pull model) — protocol tests consume `textDocument/publishDiagnostics`
   (`test/e2e/editor-lsp.test.ts`; both e2e files serialize `npm run build`
   through `test/e2e/helpers/ensure-built.ts` — keep using it). v1 feature set:
-  diagnostics, hover, completion, definition. The server MUST register
+  diagnostics, hover, completion, definition, and FORMATTING over the `.tsi`
+  SOURCE (`nola-service.ts`: TypeScript's syntactic formatter on the source
+  text as a `.ts` script — the lowered text nests infer bodies one level
+  deeper — with its edits dropped inside replaced spans; since 2026-10-15
+  an ASK SEQUENCE is laid out by Nola itself, `sequence-format.ts` over the
+  compiler's `sequenceShapes`: TypeScript reads `` ask `x` [a] `y`: T `` as
+  tagged templates and an index, deleted the spaces between the parts and
+  set a part on its own line at the statement's column; now its edits
+  survive only inside a text, a value or a list entry, and the layout is
+  one space between the tokens on a line, the colon and `<T>` glued, a
+  part / a list's `]` / the type on its own line one level in from the
+  ask's line, a list's entries two, line breaks and comments in a gap kept —
+  the owner's one-part-per-line layout). A COMPILER THROW NEVER REACHES
+  VOLAR (2026-10-13): `NolaVirtualCode.compute` catches it, reports NOLA2021
+  on the root document and serves last-good like a bail — thrown, it ended
+  the server PROCESS and VS Code restarted it in a loop; a build keeps failing
+  loudly through its own path. The plugin's `getLanguageId` also names `.map`
+  files `json`: TypeScript reads `dist/*.d.ts.map` through the host, and Volar
+  logs `languageId not found` as [error] lines for every file no plugin
+  names. The server MUST register
   its own file watchers (`server.fileWatcher.watchFiles` in `server.ts`,
   after `server.initialized()`; the client declares none): Volar re-parses a
   tsconfig's file list only on a watched-file event and registers no watcher
@@ -1436,7 +1725,11 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   drops the bytes and keeps every line terminator (2026-09-22: a
   three-line module instruction removed whole put the ask two lines up,
   and the raw breakpoint copy on the ask line bound to the `console.log`
-  after it — "the breakpoint is skipped"); the infer wrapper's
+  after it — "the breakpoint is skipped"; 2026-10-15: an ask's own
+  replacements — the type on its own line, a list spanning lines, a call
+  intent's arguments one per line, `ask` with its operand on the next line
+  — keep their terminators through `lineTerminatorsIn` / `argsStartOf`,
+  pinned by `compiler/test/ask-layout.test.ts`); the infer wrapper's
   opener/closer still add one line each (raw line N inside a body binds one
   statement early — pre-existing, benign under smart-step, the remaining
   candidate if stepping inside bodies ever misbehaves). transform.test.ts
@@ -1634,6 +1927,49 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   `.withContext({...})` was dropped entirely (2026-07-16, after the MVP's
   `IntentContext` last parameter before it) — context enters a nola function
   only through `.`-contextual parameters (`.name`, one dot; the extractor keeps two).
+- **Browser-ready libraries (2026-10-06, spec
+  `docs/superpowers/specs/2026-10-06-browser-compile-design.md`).** `core`,
+  `compiler`, `derive`, `runtime`, `providers` and `language-core` carry NO
+  static `node:` import and never read a bare `process`: Node is reached at
+  call time through core's `src/host.ts` — `readEnv`, `processId`,
+  `workingDirectory`, `stderrIsTty`, `writeStderr`, and `nodeBuiltin(id)` over
+  `process.getBuiltinModule` (Node ≥ 22.3 — the six library manifests say
+  `engines.node >= 22.3` since the seam, the dev tool's floor stays 22.18) —
+  and each read degrades honestly where Node is absent: no project default
+  (`defaultProject`), the terminal sink prints through `console.error`,
+  derive's own TypeScript needs `useTypeScript()`, config discovery answers
+  the defaults, `record()` / `replay()` refuse with "needs a file system".
+  A refusal says WHERE it runs through `nodeAbsenceReason()`: no `process`
+  is a browser; a `process` without `getBuiltinModule` is Node 22.0–22.2
+  (or a browser carrying a `process` shim) — the message names Node ≥ 22.3.
+  `sha256Hex` (`core/src/sha256.ts`) is `node:crypto`'s digest through
+  `nodeBuiltin` where Node offers it and FIPS 180-4 in plain JS everywhere
+  else (2026-10-07) — every caller is synchronous (`defHash` inside
+  `compileNola`, derive's hashed accessor names, the fingerprint) and the
+  browser's only hash, `crypto.subtle.digest`, is a Promise, so a browser
+  always runs the JS; `packages/core/test/sha256.test.ts` holds the JS to
+  `node:crypto` and the two paths to each other, so fingerprints, `def`
+  hashes and ledger keys are one digest on every host. A vendor model
+  (`openai` / `anthropic` / `google` / `typesafe`) given a custom `fetch`
+  needs no key — the fetch owns authentication and without a key no vendor
+  auth header is sent; without a custom fetch the key is required as before.
+  `test/e2e/browser-bundle.test.ts` guards all of it: esbuild for
+  `platform: "browser"` with no aliases and no externals (a surviving `node:`
+  import is a resolution error), then a `vm` realm with no `process` and no
+  `require` that lowers an example byte-identically to Node, fingerprints
+  identically and runs a module-scope ask through `mockProvider`. A new Node
+  read goes through `host.ts`, never through an import — the e2e fails
+  otherwise. What a browser host needs BEYOND the libraries is
+  `@nola-lang/browser` (packages/browser, same e2e): `stripLowered(ts,
+  lowered, { sourceUrl })` — the loader's strip and debug map for a browser
+  (ts-blank-space v0.9.0 VENDORED with TypeScript as a parameter, held to
+  Node's strip mode over every example by `strip-parity.test.ts`; the
+  compiler's `debug-map.ts` — `layoutMap` / `stripWrapperSegments` / 
+  `wrapperLinesOf`, moved from node-loader — is the map; non-erasable
+  syntax falls back to `transpileModule` + a merged map), `withInlineMap`,
+  `rewriteRuntimeImport` (reports every non-runtime specifier for the host
+  to decide) and `blobModuleUrl`. (The NOLA3013 browser guard is untouched: programs run in a
+  Worker, which has neither `window` nor `document`.)
 - **The runtime is one entity: `NolaRuntime`.** The process-wide slot
   (`globalThis[Symbol.for("nola.runtime")]`) holds a `NolaRuntime` instance — claimed at
   runtime-module import (duplicate incompatible copies fail there, NOLA3002). It owns the
@@ -1695,6 +2031,49 @@ feature-extraction scaffold e2e spreads `person`, which is what catches it. In t
   rewrites those (in `docs-site/` AND the skill) to `^<version>` on every bump —
   `test/docs-site.test.ts` fails on any entry that disagrees with the lockstep
   version.
+- **Bun (spec 2026-10-14-bun-support-design.md).** Built output runs under
+  Bun ≥ 1.3 unchanged; `.tsi` from source runs through `@nola-lang/bun`
+  (`packages/bun`): a `Bun.plugin`/`Bun.build` plugin whose `onLoad` runs
+  `compileNola` → `DerivationService.derive` → `finalizeDerivations` and hands
+  Bun the lowered TS as `loader: "ts"` — Bun's `node:module` has NO
+  `stripTypeScriptTypes`, so `transformNola` is unusable there, and importing
+  the node-loader INDEX fails to link under Bun (static import of that name):
+  the package uses `@nola-lang/node-loader/project-root` only (a unit test
+  pins it). A plugin `onLoad` result carries no source map and Bun ignores an
+  inline one, so stack traces show LOWERED positions: lines hold at module
+  level and in plain functions, but inside an infer function body the
+  reported line is ONE TOO HIGH (the invocation opener's own line — the
+  debugger bullet above) and columns inside an ask drift; the positions e2e
+  pins both. BUN'S RUNTIME HOOK ARGS ARE NOT WHAT bun-types SAY (probed
+  1.3.14): `Bun.plugin`'s `onResolve` receives `{ path, importer }` only — a
+  namespaced importer spelled `"<namespace>:<path>"`, the entry's importer
+  `"bun:main"`, no `namespace`/`kind`/`resolveDir`, and a relative resolve
+  fires twice — and its `onLoad` receives `{ path, loader }`; `Bun.build`
+  passes the typed shapes. `importerFile()` (views.ts) strips the
+  `nola-view:` prefix before the guard and the view resolution — a view of a
+  view (`models.ts` → `address.ts`) arrives that way. Views: a missing
+  `./x.tsi` resolves to `{ path: <x.ts | x.d.ts>, namespace: "nola-view" }`
+  and the view re-exports the source by its ABSOLUTE path — a file-namespace
+  path that is not on disk never reaches a runtime `onLoad` (Bun re-resolves
+  the answer through the plugins and loads nothing; probed 2026-10-14), while
+  a namespaced module resolves absolute and relative imports alike; the
+  bundle-mode wiring module lives in
+  the `nola-wiring` namespace with BOTH imports absolute (`Bun.resolveSync` of
+  the runtime against the project root — one runtime instance). `build.config`
+  present = bundle mode (wiring + NOLA4001), absent = runtime mode. The
+  `./preload` entry registers the plugin FIRST (NOLA3012 for a `.tsi` in the
+  config graph) and configures the runtime from `nola.config.ts` by direct
+  `import()` — Bun awaits the preload's top-level await. NOLA3023 = Bun < 1.3
+  (`process.getBuiltinModule` missing); NOLA3015 (the Node loader under
+  Bun/Deno) now names the preload. The scaffolder writes a Bun project when
+  bun ran it (`--runtime node|bun`: `bunfig.toml`, `bun <entry>` start, the
+  devDependency, `engines.bun`); `nola build/check/console` stay Node.
+  `test/e2e/bun.test.ts` is the parity oracle (skipped without bun;
+  `test/e2e/helpers/bun.ts` finds the executable — on Windows `npm i -g bun`
+  exposes only a `.cmd` shim Node cannot spawn, so it also looks beside
+  node.exe and under `npm root -g`). `scripts/check-docs.mjs` compiles `ts`
+  fences too, so the Bun page's `Bun.build` sample is `// not-checked` (no
+  bun-types in the checker).
 
 ## TDD workflow
 

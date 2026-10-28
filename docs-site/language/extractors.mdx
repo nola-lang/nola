@@ -38,9 +38,11 @@ The two spellings are one construct: they compile to the same code and share one
 
 Three rules come with the colon:
 
-- **The colon touches the backtick, and the type starts on its line.** A colon after a space is never the extractor's, which is what keeps `` cond ? ask `p` : fallback `` an ordinary conditional over an untyped ask, while `` cond ? ask `p`: number : fallback `` asks for a number. A glued colon with nothing after it on its line raises [`NOLA1018`](/docs/reference/error-codes/#nola1018): a type would otherwise continue onto the next line and swallow the next statement.
+- **The colon follows the closing backtick, and the type starts on the colon's line.** Glued, spaced, or on the next line, the colon after the last part is the extractor's: `` ask `p`: number ``, `` ask `p` : number `` and `` ask `p`\n  : number `` are the same ask, and after a tool list `` ]: string[] `` and `` ] : string[] `` are too. In a conditional's consequent, parenthesize a typed ask, `` cond ? (ask `p`: number) : fallback `` — written bare it is [`NOLA1023`](/docs/reference/error-codes/#nola1023), on one line or three: the ask takes the colon after it as its type, so `` cond ? ask `p` : fallback `` would read `fallback` as the type (an untyped ask is never valid, so nothing else could have been meant), and `` cond ? ask `p`: number : fallback `` puts two colons with different meanings side by side. A colon with nothing after it on its line raises [`NOLA1018`](/docs/reference/error-codes/#nola1018): a type would otherwise continue onto the next line and swallow the next statement.
 - **A type name followed by `.` continues the type.** `` ask `p`: User.withRetry(2) `` reads `User.withRetry` as a qualified type name. To chain [intent methods](/docs/language/intent-methods/), parenthesize the extractor (`` ask (..`p`: User).withRetry(2) ``), use a delimited type such as `string[]`, `Array<User>`, `{ … }` or `(User)`, or write `<User>`.
 - **`<` after a type name starts type arguments**, with either spelling: `` ask `p`: User < 5 `` is not a comparison. Parenthesize the ask to compare.
+
+A bracketed list of functions between the template and the type, `` ask `p` [searchFiles, readFile]: T `` (on the stored form too, `` ..`p` [searchFiles]: T ``), makes the ask a [tool-use ask](/docs/language/tool-use/): the model may call the listed functions before it answers. The type then follows the list under the same colon rules.
 
 ## Interpolation
 
@@ -59,6 +61,38 @@ export infer function lookup(text: string) {
 ```
 
 A substitution is ordinary TypeScript, read when the ask runs: a string is spliced verbatim, anything else is written as JSON. It cannot contain another Nola construct ([`NOLA2010`](/docs/reference/error-codes/#nola2010)).
+
+## Values in the instruction
+
+A value written bare between two texts is data the model sees where it stands, under the name you wrote:
+
+```tsi
+// owner.tsi
+interface Person {
+  name: string;
+}
+declare const project: { id: string; lead: string };
+declare const policy: string;
+
+export const owner = ask `the person responsible for` project `given this policy` policy: Person;
+```
+
+The model reads the task as your words with an input block at each value's place. A bare value is named data; a hole, `${project.id}`, is part of your words. Any name, member chain, literal, `new` or plain call is a value, and two values never touch: a text separates them. A function with a typed slot written bare is a [call intent](/docs/language/call-intents/), and a bracketed list is a [tool list](/docs/language/tool-use/). The type follows the last part, text or value: `` `go`: T `` or `` project: T ``. Prefer a hole for a literal, since an input named `42` says little.
+
+An ask may span lines, one part per line if you like: a line break alone never ends it. After a text the next part may start on the next line, and the type may stand on its own line; the ask ends at `;`, a closing bracket, an operator, a statement keyword or its type. After a value, a name on the next line is a new statement, as in JavaScript — two values never touch.
+
+```tsi
+// layout.tsi
+declare function searchFiles(dir: string, pattern: string): string[];
+declare function readFile(path: string): string;
+declare const patterns: string[];
+
+export const files = ask
+  `the files on disc D that belong to a US visa application`
+  [searchFiles, readFile]
+  `matching these patterns`
+  patterns: string[];
+```
 
 ## Two spellings, one construct
 

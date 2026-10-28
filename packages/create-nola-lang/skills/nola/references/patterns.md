@@ -258,6 +258,68 @@ call intent awaits a promise-returning callee itself (`ask` ≈ `await`), so
 ask, `.withRetry(n)` on a call intent re-invokes it on failure — only use it
 when the target is idempotent.
 
+## The tool-use project: offer functions, let the model call them
+
+The same one-file shape for the third feature (`npm create nola` scaffolds
+it as `tool-use`): the top-level `ask` offers two plain-TypeScript functions
+as tools. The model calls them as it needs — here it lists a folder, reads
+a file to be sure, then answers — and the typed answer is what `ask` yields.
+
+```ts
+// src/tools.ts — plain TypeScript; the JSDoc is the contract the model sees
+/**
+ * Lists the files under a directory on disc D.
+ * @param dir an absolute directory path, such as D:/docs
+ * @param pattern keeps only the paths that contain it
+ */
+export async function searchFiles(dir: string, pattern?: string): Promise<string[]> { /* … */ return []; }
+
+/** Reads a file's text. */
+export async function readFile(path: string): Promise<string> { /* … */ return ""; }
+```
+
+```tsi
+// src/main.tsi — run with: nola run src/main.tsi
+import { readFile, searchFiles } from "./tools.js";
+
+const files = ask `the files on disc D that belong to a US visa application` [searchFiles, readFile]: string[];
+
+console.log(JSON.stringify(files));
+```
+
+Parentheses run a function once with model-filled arguments (the
+function-calling project); brackets offer functions the model may call zero
+or more times. Cap the loop with `.withMaxTurns(n)` when a task should not
+wander; return a failure as a value (`{ error: "no such file" }`) when the
+model should recover from it, since a thrown error ends the ask.
+
+## Data in place: a bare value in the instruction
+
+When the model needs a value beside the words that explain it, write the
+value bare between texts (an ask sequence): it reaches the model as a
+named input block where you wrote it. A `${}` hole splices the value into
+your words instead — pick by what the model should treat it as.
+
+```tsi
+// src/main.tsi
+interface Person {
+  name: string;
+}
+declare const project: { id: string; lead: string };
+declare const policy: string;
+
+// data where it stands: <input name="project"> … </input>, then your next words
+export const owner = ask `the person responsible for` project `given this policy` policy: Person;
+
+// words: the id is spliced into the sentence
+export const lead = ask `the lead of project ${project.id}`: string;
+```
+
+The same shape puts words on a call (`` ask `register the applicant` createUser(`user id`: string) ``)
+and words between tool lists (`` ask `find` [searchFiles] `or, when stale,` [readDir] `done`: string[] ``).
+The kind follows the parts, never the data: texts and data extract, a call
+with a typed slot is function calling, lists are tool use.
+
 ## An agent loop with a live context statement
 
 A context statement is read at EACH ask that sees it, so one placed before a

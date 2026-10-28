@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { Codes } from "@nola-lang/ast";
 import type {
   LanguageModel,
@@ -11,7 +9,7 @@ import type {
   NolaTelemetry,
   UnderivableContextTypeMode,
 } from "@nola-lang/core";
-import { isPlatformModel, NolaConfigError } from "@nola-lang/core";
+import { isPlatformModel, NolaConfigError, nodeBuiltin, readEnv, workingDirectory } from "@nola-lang/core";
 import { memoryCacheStore } from "./cache.js";
 import { platformModel } from "./platform-model.js";
 import { terminalTrace } from "./terminal-trace.js";
@@ -35,8 +33,8 @@ export interface ResolvedNolaConfig {
   cache?: Readonly<{ store: NolaCacheStore }>;
   /** present iff `system` was configured */
   system?: Readonly<{ message?: string }>;
-  /** always present, defaults applied; timeoutMs 0 = disabled */
-  ask: Readonly<{ timeoutMs: number }>;
+  /** always present, defaults applied; timeoutMs 0 = disabled; maxTurns is the tool-use turn cap when the intent sets none */
+  ask: Readonly<{ timeoutMs: number; maxTurns: number }>;
   /** always present, defaults applied; the runtime itself never reads it */
   compiler: ResolvedCompilerConfig;
   /** always present, defaults applied; only `nola build` reads it */
@@ -45,6 +43,9 @@ export interface ResolvedNolaConfig {
 
 /** Default per-invocation timeout when neither the intent nor ask.timeoutMs sets one. */
 export const DEFAULT_ASK_TIMEOUT_MS = 60_000;
+
+/** Default turn cap of a tool-use ask (spec 2026-10-08 §3.5) when neither `.withMaxTurns` nor ask.maxTurns sets one. */
+export const DEFAULT_MAX_TURNS = 10;
 
 export type ResolvedCompilerConfig = Readonly<{ underivableContextType: UnderivableContextTypeMode }>;
 
@@ -76,6 +77,8 @@ const HOOK_METHODS = [
   "onAskEnd",
   "onInvocationStart",
   "onInvocationEnd",
+  "onToolCallStart",
+  "onToolCallEnd",
 ] as const;
 
 function fail(source: string | undefined, message: string, code: string = Codes.ConfigInvalid): never {
@@ -88,15 +91,20 @@ function fail(source: string | undefined, message: string, code: string = Codes.
  * no hit anywhere means no project (everything downstream omits it).
  */
 function defaultProject(): string | undefined {
-  let dir = process.cwd();
+  // Node's file system reached at call time (core's host helper, no static node: import): a
+  // browser has none, and nothing names the project there.
+  const fs = nodeBuiltin<{ readFileSync: (p: string, enc: "utf8") => string }>("node:fs");
+  const path = nodeBuiltin<{ dirname: (p: string) => string; join: (...p: string[]) => string }>("node:path");
+  let dir = workingDirectory();
+  if (!fs || !path || dir === undefined) return undefined;
   for (;;) {
     try {
-      const name = (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: unknown }).name;
+      const name = (JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { name?: unknown }).name;
       if (typeof name === "string" && name.trim() !== "") return name;
     } catch {
       // no package.json here (or unreadable/invalid) — keep walking up
     }
-    const parent = dirname(dir);
+    const parent = path.dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
   }
@@ -193,20 +201,27 @@ function validateCache(source: string | undefined, raw: unknown): Readonly<{ sto
   return Object.freeze({ store: store as NolaCacheStore });
 }
 
-function validateAsk(source: string | undefined, raw: unknown): Readonly<{ timeoutMs: number }> {
-  if (raw === undefined) return Object.freeze({ timeoutMs: DEFAULT_ASK_TIMEOUT_MS });
+function validateAsk(source: string | undefined, raw: unknown): Readonly<{ timeoutMs: number; maxTurns: number }> {
+  if (raw === undefined) return Object.freeze({ timeoutMs: DEFAULT_ASK_TIMEOUT_MS, maxTurns: DEFAULT_MAX_TURNS });
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     fail(source, "`ask` must be an object — write ask: { timeoutMs: 60000 }.");
   }
   const cfg = raw as Record<string, unknown>;
   for (const key of Object.keys(cfg)) {
-    if (key !== "timeoutMs") fail(source, `unknown ask config key \`${key}\` — allowed keys: timeoutMs.`);
+    if (key !== "timeoutMs" && key !== "maxTurns") fail(source, `unknown ask config key \`${key}\` — allowed keys: timeoutMs, maxTurns.`);
   }
   const timeoutMs = cfg.timeoutMs;
   if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs < 0)) {
     fail(source, "ask.timeoutMs must be a non-negative finite number of milliseconds (0 disables the timeout).");
   }
-  return Object.freeze({ timeoutMs: (timeoutMs as number | undefined) ?? DEFAULT_ASK_TIMEOUT_MS });
+  const maxTurns = cfg.maxTurns;
+  if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
+    fail(source, "ask.maxTurns must be a positive integer — the provider turns a tool-use ask may take before it must have answered.");
+  }
+  return Object.freeze({
+    timeoutMs: (timeoutMs as number | undefined) ?? DEFAULT_ASK_TIMEOUT_MS,
+    maxTurns: (maxTurns as number | undefined) ?? DEFAULT_MAX_TURNS,
+  });
 }
 
 function validateSystem(source: string | undefined, raw: unknown): Readonly<{ message?: string }> | undefined {
@@ -404,7 +419,7 @@ export function resolveNolaConfig(raw: unknown, opts: { source?: string } = {}):
   // notice, to a tracer the config lists itself. A resolved config is left
   // alone — its env tracer is already there.
   let telemetry = validateTelemetry(source, cfg.telemetry);
-  const envUrl = process.env.NOLA_TRACING_URL;
+  const envUrl = readEnv("NOLA_TRACING_URL");
   const alreadyResolved = (cfg as { [RESOLVED]?: unknown })[RESOLVED] === true;
   if (envUrl && !alreadyResolved) {
     if (telemetry.some((t) => t.name === TRACER_HOOK)) {

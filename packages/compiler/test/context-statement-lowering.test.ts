@@ -78,7 +78,7 @@ describe("context statement lowering (spec 2026-09-29 §3.3)", () => {
       ].join("\n"),
     );
     expect(code).toContain(
-      'function __nola_module_ctx() { return __nola.context.module("src/inbox.tsi", 21, () => ({ context: [__nola_ctx_1, __nola_ctx_3] })); }',
+      'function __nola_module_ctx() { return __nola.context.module("src/inbox.tsi", 24, () => ({ context: [__nola_ctx_1, __nola_ctx_3] })); }',
     );
     expect(typecheckLowered({ "inbox.ts": code })).toEqual([]);
   });
@@ -366,7 +366,7 @@ describe("context statement lowering (spec 2026-09-29 §3.3)", () => {
       expect(code).toContain("}), __nola_module_ctx(), { context: [__nola_ctx_1, __nola_ctx_2] });");
       // site accessors number in source order: triage's param and extractor, the module ask's, then escalate's param
       expect(code).toContain('.func({ fn: "escalate", args: [{ name: "ticket", type: __nola_type_$4(), contextual: true, value: ticket }], moduleContext: [__nola_ctx_1, __nola_ctx_2] }));');
-      expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 21, () => ({ context: [__nola_ctx_1, __nola_ctx_2] })); }');
+      expect(code).toContain('function __nola_module_ctx() { return __nola.context.module("x.tsi", 24, () => ({ context: [__nola_ctx_1, __nola_ctx_2] })); }');
       expect(typecheckLowered({ "x.ts": code })).toEqual([]);
     });
 
@@ -416,9 +416,9 @@ describe("context statement lowering (spec 2026-09-29 §3.3)", () => {
       expect(code.slice(0, code.indexOf("\n;\nimport { __nola }"))).toBe(
         "const user = 'ada';\nvoid __nola_ctx_1; function __nola_ctx_1() { return __nola.ctx`note`; }\nvoid __nola_ctx_2; function __nola_ctx_2() { return __nola.ctx`Page ${user}`; }\n",
       );
-      expect(code).toContain("__nola.useRuntime(21);");
+      expect(code).toContain("__nola.useRuntime(24);");
       expect(code).toContain(
-        'function __nola_module_ctx() { return __nola.context.module("x.tsi", 21, () => ({ context: [__nola_ctx_1, __nola_ctx_2] })); }',
+        'function __nola_module_ctx() { return __nola.context.module("x.tsi", 24, () => ({ context: [__nola_ctx_1, __nola_ctx_2] })); }',
       );
       expect(typecheckLowered({ "x.ts": code })).toEqual([]);
       // a chain of templates counts the same (alone it throws at run time)

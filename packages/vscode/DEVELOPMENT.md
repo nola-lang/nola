@@ -45,7 +45,14 @@ can't):
    string, not as part of the function name; an extractor's `<T>` colors like
    the `<T>` in `class User<T>`; in `ask with <alias>`, `with` colors like
    `ask` and the alias like an enum member (try a keyword alias — `ask with
-   default` — since those are legal config keys).
+   default` — since those are legal config keys); the type after a tool
+   list — `` ask `p` [searchFiles, readFile]: string[] `` — colors like a
+   type annotation, not like a variable, and so does the ask laid out one
+   part per line (the list on the line after the text, `: string[]` on the
+   line after the list). The scopes themselves are held by
+   `test/grammar.test.ts` (vscode-textmate over the TypeScript grammar VS
+   Code bundles, vendored under `test/fixtures/`), so this pass is about
+   the theme's colors, not the tokens.
 2. Type `const x = ..5;` — a nola-native error (NOLA1005) appears; delete it.
 3. Change the ask to `<number>` and assign to a `string` — TS2322 squiggle on
    the right line; undo.
@@ -59,7 +66,7 @@ can't):
    `report.tsi` pick it up (companion freshness).
 9. Break `report.tsi` mid-template (delete the closing backtick) — `main.ts`
    keeps its types (last-good) and `report.tsi` shows the parse error.
-10. Debugging: open `examples/_playground`, "Add Configuration…" in a new
+10. Debugging: open `labs/playground`, "Add Configuration…" in a new
     `launch.json` offers **Nola: Launch File**; set a breakpoint on an `ask`
     line in `src/test_3/classify.tsi`, F5 the playground's "Nola: Launch main"
     config — the breakpoint binds (solid red), execution stops there, and
@@ -71,7 +78,7 @@ can't):
     three ask snippets appear. Snippets are a VS Code-native completion source
     rather than an LSP one, so this checks the two lists coexist; the bodies
     themselves are parse-checked in `test/snippets.test.ts`.
-12. Context statements. Set up as in item 10 (`examples/_playground`, the
+12. Context statements. Set up as in item 10 (`labs/playground`, the
     "Nola: Launch main" config). In `src/test_3/classify.tsi`, add these
     lines just before the `return`:
 
@@ -101,6 +108,21 @@ can't):
     runtime rendered them. `transform.test.ts` pins the line's map; the
     `contextItemOpen` comment in the compiler's templates.ts explains the
     `void` read that gives the statement its step location.
+13. Format Document over an ask laid out one part per line:
+
+    ```
+    const files = ask `the files that belong to the application`
+      [searchFiles, readFile]
+      `then summarize`    : string[];
+    ```
+
+    The list line keeps its indentation (one level in from the `ask` line),
+    the colon glues to the text, and `const files = ask  `x`;` on one line
+    collapses to one space. Before 2026-10-15 TypeScript's formatter read the
+    sequence as tagged templates and an index: it deleted the space between
+    a text and a list and set a list on its own line at column 0. The layout
+    rules are `sequence-format.ts` in the language server, pinned by
+    `packages/language-server/test/nola-service.test.ts`.
 
 ## Scaffolding against the workspace build
 

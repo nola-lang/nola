@@ -81,6 +81,10 @@ The helper runs once per execution of this function body. Retrying the whole `fi
 
 `ask.timeoutMs` and `.withTimeout` limit provider round trips. They do not cancel a function that has already started running. Give the helper its own timeout or cancellation handling if it needs one. See [Ask options](/docs/config/ask-options/#timeouts).
 
+## When the answer needs lookups first
+
+A call intent runs one function once. When the model has to look things up before it can answer, and how often depends on what it finds, offer the functions as tools: `` ask `the files that belong to the application` [searchFiles, readFile]: string[] ``. The model calls them as it needs, each result goes back to it, and the typed answer ends the loop. See [Tool use](/docs/language/tool-use/).
+
 ## Calling from plain TypeScript
 
 ```ts

@@ -1,6 +1,5 @@
 import { stripTypeScriptTypes } from "node:module";
 import remappingImport from "@ampproject/remapping";
-import { decode, encode } from "@jridgewell/sourcemap-codec";
 import type { Diagnostic } from "@nola-lang/ast";
 import {
   type CompileOptions,
@@ -8,6 +7,8 @@ import {
   compileNola,
   type DerivationAnswer,
   finalizeDerivations,
+  layoutMap,
+  stripWrapperSegments,
 } from "@nola-lang/compiler";
 
 // `@ampproject/remapping` ships an array-fallback `exports` map that TS resolves as a
@@ -29,106 +30,9 @@ export class NolaTransformError extends Error {
   }
 }
 
-/**
- * Debugger-facing map hygiene, applied to esbuild's map BEFORE the merge.
- *
- * The loader's merged map is what js-debug steps by, and stepping should walk
- * STRAIGHT THROUGH intent construction: F11 on `ask fn(...)` must land in the
- * callee's body, not tour the lowered wrapper. js-debug's smart-stepping does
- * exactly that for UNMAPPED positions, so here the wrapper lines lose their
- * segments. A wrapper line is a generated line that begins inside replaced
- * text AND carries no verbatim source text of its own (whitespace aside): the
- * infer opener and closer, identified via meta.spans in LOWERED space, where
- * they are still distinguishable. A context statement lowered in place at
- * column 0 also BEGINS inside replaced text — its opener is an insert at the
- * statement's first byte — but the statement's own text follows on the same
- * line, so that line keeps its segments: a breakpoint on it must bind through
- * the map, and the pause inside the item (an ask rendering it) must display
- * the .tsi, not the generated script (playground report 2026-09-29; the same
- * holds for a multi-line statement's continuation lines, which begin inside
- * the gap re-emitted between a value and the next text). Two segment classes
- * must go:
- *
- * - segments whose lowered position sits on a wrapper line (the compiler's
- *   `anchorInsertedLines` anchors — kept in the compiler map for `nola build`
- *   dist maps and `nola check`, deliberately absent from the debug map);
- * - esbuild's line-start CARRY segments: esbuild opens each output line by
- *   re-emitting the previous token run's position, so a wrapper output line
- *   would otherwise inherit the BODY'S LAST TOKEN and the debugger displays
- *   the body's last line while paused in construction (the F11
- *   `return valid;` bug). A carry is precise to detect: a column-0 segment
- *   whose original position equals the previous line's last segment's.
- */
-function wrapperLinesOf(lowered: CompileResult): Set<number> {
-  const generated = lowered.code;
-  const lineStarts = [0];
-  for (let i = 0; i < generated.length; i++) if (generated[i] === "\n") lineStarts.push(i + 1);
-  const lineOf = (offset: number): number => {
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (lineStarts[mid] <= offset) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  };
-  // lines carrying verbatim source text (whitespace aside) are never wrapper lines, whatever begins them
-  const textLines = new Set<number>();
-  for (const sp of lowered.meta.spans) {
-    if (sp.kind !== "verbatim") continue;
-    for (let line = lineOf(sp.generatedStart); line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) {
-      const from = Math.max(sp.generatedStart, lineStarts[line]);
-      const to = Math.min(sp.generatedEnd, line + 1 < lineStarts.length ? lineStarts[line + 1] : generated.length);
-      if (/\S/.test(generated.slice(from, to))) textLines.add(line);
-    }
-  }
-  const wrapperLines = new Set<number>();
-  for (const sp of lowered.meta.spans) {
-    if (sp.kind !== "replaced") continue;
-    let line = lineOf(sp.generatedStart);
-    if (lineStarts[line] < sp.generatedStart) line += 1;
-    for (; line < lineStarts.length && lineStarts[line] < sp.generatedEnd; line++) {
-      if (!textLines.has(line)) wrapperLines.add(line);
-    }
-  }
-  return wrapperLines;
-}
-
-/**
- * The debug map when stripping preserved the layout: the compiler map itself,
- * minus every segment on a wrapper line (the compiler's `anchorInsertedLines`
- * anchors, kept for `nola build` dist maps and `nola check`, deliberately
- * absent here — see stripWrapperSegments). `sources` is the on-disk .tsi in
- * forward-slash form, which is what js-debug's breakpoint matching needs.
- */
-function layoutMap(lowered: CompileResult): string {
-  const map = JSON.parse(lowered.map.toString()) as { mappings: string; sources: string[] };
-  const decoded = decode(map.mappings);
-  for (const line of wrapperLinesOf(lowered)) if (line < decoded.length) decoded[line] = [];
-  map.mappings = encode(decoded);
-  map.sources = map.sources.map((src) => src.replace(/\\/g, "/"));
-  return JSON.stringify(map);
-}
-
-function stripWrapperSegments(jsMap: string, lowered: CompileResult): string {
-  const map = JSON.parse(jsMap) as { mappings: string };
-  const decoded = decode(map.mappings);
-  const wrapperLines = wrapperLinesOf(lowered);
-  let prevLast: number[] | undefined;
-  for (let l = 0; l < decoded.length; l++) {
-    const original = decoded[l];
-    let segments = original.filter((s) => s.length >= 4 && !wrapperLines.has(s[2] as number));
-    const first = segments[0];
-    if (first && first[0] === 0 && prevLast && first[2] === prevLast[2] && first[3] === prevLast[3]) {
-      segments = segments.slice(1);
-    }
-    if (original.length > 0) prevLast = original[original.length - 1] as number[];
-    decoded[l] = segments;
-  }
-  map.mappings = encode(decoded);
-  return JSON.stringify(map);
-}
+// The debug map (wrapper lines unmapped, esbuild-style carry segments dropped) is the
+// compiler's `layoutMap` / `stripWrapperSegments` (packages/compiler/src/debug-map.ts,
+// moved there 2026-10-06 so a browser host shares it with this loader byte for byte).
 
 /**
  * Type stripping is Node's own (`stripTypeScriptTypes`, the same amaro/swc
@@ -186,21 +90,31 @@ export type DeriveStep = (file: string, phase1: CompileResult) => DerivationAnsw
 /** Turbopack seam: rewrite the FINALIZED appendix (inline views) before stripping; the appendix is unmapped, so the map survives. */
 export type InlineViewsStep = (lowered: CompileResult) => CompileResult;
 
+type TransformOptions = CompileOptions & { derive?: DeriveStep; inlineViews?: InlineViewsStep }
+
 export async function transformNola(
-  source: string,
-  file: string,
-  options: CompileOptions & { derive?: DeriveStep; inlineViews?: InlineViewsStep } = {},
+  source: string, file: string, options: TransformOptions = {}
 ): Promise<{ code: string; map: string; deps: string[] }> {
   const { derive, inlineViews, ...compileOptions } = options;
+
   const phase1 = compileNola(source, file, compileOptions);
-  if (phase1.diagnostics.length > 0) throw new NolaTransformError(phase1.diagnostics);
+  if (phase1.diagnostics.length > 0)
+    throw new NolaTransformError(phase1.diagnostics);
+
   const answers = derive ? derive(file, phase1) : [];
+
   let lowered = derive ? finalizeDerivations(phase1, answers, file) : phase1;
-  if (lowered.diagnostics.length > 0) throw new NolaTransformError(lowered.diagnostics);
-  if (inlineViews) lowered = inlineViews(lowered);
+  if (lowered.diagnostics.length > 0)
+    throw new NolaTransformError(lowered.diagnostics);
+
+  if (inlineViews)
+    lowered = inlineViews(lowered);
+
   const deps = [...new Set(answers.flatMap((a) => a.deps))];
   const js = stripTypes(lowered.code, file);
-  if (js.map === undefined) return { code: js.code, map: layoutMap(lowered), deps };
+  if (js.map === undefined)
+    return { code: js.code, map: layoutMap(lowered), deps };
+  
   // Transform mode (non-erasable syntax): the stripper's map chains onto the
   // compiler map. One-shot loader: its single source resolves to the compiler
   // map; the compiler map's own source (same file name) is the original leaf → null.

@@ -1,0 +1,5 @@
+import type { Person } from "./models.js";
+
+export infer function extractPerson(.text: string) {
+  return ask `the person described in the text`: Person;
+}

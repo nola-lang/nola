@@ -1,0 +1,147 @@
+---
+title: Tool use
+description: Offer functions to the model with a tool list after the task. It calls them as it needs, Nola runs each call, and the typed answer ends the loop.
+sidebar:
+  order: 65
+---
+
+A tool-use ask offers the model functions it may call before it answers. Write the functions in brackets between the task and the type:
+
+```tsi
+// find.tsi
+declare function searchFiles(dir: string, pattern?: string): Promise<string[]>;
+declare const fs: { readFile(path: string): Promise<string> };
+
+export infer function find(.query: string) {
+  return ask `the files on disc D that belong to a US visa application` [searchFiles, fs.readFile]: string[];
+}
+```
+
+The model may call `searchFiles` and `fs.readFile` as often as it needs, in the order it chooses. Nola runs each call in your process, hands the result back, and asks again. The typed answer ends the loop. The value of the ask is that answer, a `string[]` here, validated like any extractor's.
+
+## Brackets offer, parentheses run
+
+A [call intent](/docs/language/call-intents/) runs one function exactly once, with arguments the model filled. A tool list offers functions the model may call zero or more times, and the value is the model's answer, not a function's result:
+
+```tsi
+// two-shapes.tsi
+declare function getUser(id: string): Promise<{ name: string }>;
+
+export infer function demo(.request: string) {
+  const a = ask getUser(`the user id in the request`: string);     // getUser runs once; a is what it returned
+  const b = ask `the user's display name` [getUser]: string;      // getUser is offered; b is the model's answer
+  return { a, b };
+}
+```
+
+Reach for the call when you want the function's own result: the loop form would spend a second turn having the model restate it. Reach for the list when the answer needs lookups first.
+
+## Several lists, your words between them
+
+Each list may carry the words that say when its tools apply:
+
+```tsi
+// visa.tsi
+declare function searchFiles(dir: string, pattern?: string): Promise<string[]>;
+declare function readFile(path: string): Promise<string>;
+declare function readDir(dir: string): Promise<string[]>;
+
+export const files = ask `the files on disc D that belong to a US visa application using` [searchFiles, readFile]
+  `or, when the index is stale,` [readDir] `and return their paths`: string[];
+```
+
+The model gets one tool set, each function once, and reads your sentence with each list's names where you wrote it. The words are guidance, nothing enforces them. The same function in two lists is listed once; the same name twice in one list, or two functions sharing a wire name, is [`NOLA2018`](/docs/reference/error-codes/#nola2018). A data value may stand among the lists too, as in any [instruction](/docs/language/extractors/#values-in-the-instruction); a call with typed slots beside a list is reserved ([`NOLA2019`](/docs/reference/error-codes/#nola2019)).
+
+## What happens
+
+Each provider call is a *turn*. On a turn the model either answers or requests tool calls. For a tool call Nola looks the tool up by name, validates the arguments against the function's parameters, runs the function, and renders the result for the model the way `${}` interpolation renders a value: a string verbatim, anything else as JSON. The calls of one turn run in the order the model listed them. Their results go back together on the next turn, and the model continues with the full transcript in front of it.
+
+A call the model gets wrong never reaches your function. An unknown tool name or arguments that fail validation go back to the model as that call's result, so it can correct itself on the next turn. The turn cap bounds how often it may try.
+
+The answer goes through the usual validation and single correction turn. The correction turn is not counted against the cap.
+
+## The tool contract
+
+An entry is a value. Written as a name or a dotted member chain, it names one function (`searchFiles`, `fs.readFile`) or a **group** — a module namespace or an object of functions, or an array of them — and the model sees a group's functions under the group's name, `fileTools.searchFiles`. Spread it, `[...fileTools]`, and the same functions are offered flat, by their own names. Any other expression that is one function works too (`tools[0]`), named by the function itself:
+
+```tsi
+// groups.tsi
+import * as fileTools from "./tools.js";
+declare const dbTools: { query(sql: string): string[] };
+type Report = { summary: string };
+
+const report = ask `analyze this report` [fileTools, dbTools]: Report;   // fileTools.searchFiles, dbTools.query
+const files = ask `the matching files` [...fileTools]: string[];         // searchFiles
+```
+
+Group tools by what they are for: two groups that both have a `search` never collide, while a flat list with two `search` is an error. A group offers every function-valued member in declaration order; constants, nested objects, classes and a module's `default` export are skipped. The contract the model sees derives from each function's signature: one object schema over the parameters, keyed by parameter name in declaration order. Optional and defaulted parameters are optional. The function's JSDoc summary becomes the tool's description, and `@param` tags describe the properties:
+
+```ts
+// tools.ts
+/**
+ * Lists the files under a directory.
+ * @param dir an absolute directory path
+ * @param pattern keeps only paths that contain it
+ */
+export async function searchFiles(dir: string, pattern?: string): Promise<string[]> {
+  return [dir, pattern ?? ""];
+}
+```
+
+A member chain is called on its object, and a group's functions on the group, so a method keeps its receiver. The object must be a plain chain — a name, `this`, dotted, indexed or optional access over one (`clients[i].search`, `svc?.search`); a method reached through a call, `api.client().search`, is [`NOLA2018`](/docs/reference/error-codes/#nola2018): name the object first. A tool's name is the written text for a name or chain, `group.member` for a bare group, the member alone for a spread, and otherwise the function's own `name` — an anonymous arrow in an array has none and is refused. Providers restrict names to letters, digits, `_` and `-`, so a name goes out with other characters replaced by `_`, and two tools that collide that way are [`NOLA2018`](/docs/reference/error-codes/#nola2018) when the compiler can see both names, [`NOLA3022`](/docs/reference/error-codes/#nola3022) at run time otherwise. A tool has exactly one declared signature: a value typed as a union of functions, `any` or `unknown` is `NOLA2018` — name one function. A parameter type Nola cannot derive, a rest parameter included, is [`NOLA2002`](/docs/reference/error-codes/#nola2002) at the entry, and a group member it cannot use fails the whole group, naming the member.
+
+Results need no schema. They reach the model as text.
+
+## The turn cap
+
+By default a tool-use ask may take ten provider turns. Raise or lower it per ask with `.withMaxTurns(n)`, or for every ask with `ask.maxTurns` in `nola.config.ts`:
+
+```tsi
+// capped.tsi
+declare function searchFiles(dir: string, pattern?: string): Promise<string[]>;
+
+export infer function find(.query: string) {
+  return ask (..`the matching files` [searchFiles]: string[]).withMaxTurns(3);
+}
+```
+
+Past the cap the ask fails with [`NOLA3020`](/docs/reference/error-codes/#nola3020). The failure is definitive and carries the transcript so far.
+
+## Errors in tools
+
+A tool that throws, or returns a rejected promise, ends the ask with [`NOLA3021`](/docs/reference/error-codes/#nola3021). The error carries the thrown error as its `cause` and the transcript so far. Nothing is swallowed. When the model should be able to recover from a failure, return it as a value instead of throwing: every returned value reaches the model.
+
+A list that cannot be built when the ask runs — a value that is not the function or group its type promised, a tool without a name, two tools with one name — is [`NOLA3022`](/docs/reference/error-codes/#nola3022), before any provider call.
+
+`.withRetry(n)` re-runs the whole loop, tools included, so use it only when the tools are safe to repeat. `.withTimeout(ms)` and `ask.timeoutMs` bound provider calls, as they do for a call intent. They do not interrupt a tool that is running.
+
+## Models
+
+A tool-use ask needs a model that can request tool calls. The `openai`, `anthropic` and `google` models support it, and so does the Nola platform. A model without that support is refused before any request is made, with [`NOLA3019`](/docs/reference/error-codes/#nola3019). A `fallback` or `roundRobin` group supports tool use if at least one member does, and skips the other members for tool-use asks. How a vendor model carries the loop is its `toolUse` option, described in the [providers reference](/docs/reference/providers-api/#tool-use); `toolUse: false` marks a host without tool calling, so a group routes around it.
+
+For tests, brand a mock and script the turns. A `toolCalls` value is a tool turn; any other value is an answer:
+
+```ts
+// nola.config.ts
+import { mockProvider, toolCalls } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: mockProvider(
+    [toolCalls([{ name: "searchFiles", args: { dir: "D:/docs", pattern: "visa" } }]), ["D:/docs/visa/ds-160.pdf"]],
+    { tools: true },
+  ),
+});
+```
+
+A ledger recorded with `record` replays a tool-use ask turn by turn. Each turn is fingerprinted with the transcript so far, so a replay works when the tools return what they returned when the ledger was recorded.
+
+## Where the list is legal
+
+The list follows the template of an extractor directly after `ask`, after `ask with <name>`, or after `..` for a stored intent, and the type follows the list. A bracket in a call's argument list keeps its JavaScript meaning, and a tool list does not make a call intent. Entries are names only: a call written in the list, `` [getUser(`id`: string)] ``, is reserved ([`NOLA1022`](/docs/reference/error-codes/#nola1022)), and anything else, or an empty list, is [`NOLA1021`](/docs/reference/error-codes/#nola1021). Inside a conditional's consequent the typed ask goes in parentheses, as every typed ask does there ([`NOLA1023`](/docs/reference/error-codes/#nola1023)).
+
+## Receipts and traces
+
+The receipt of a tool-use ask lists its tool turns under `turns`, each call with its arguments, its result or its error, and its duration. Every call also fires `onToolCallStart` and `onToolCallEnd` on the configured telemetry. The terminal trace prints them under the ask, and `nola console` shows them on the ask's page. See [Telemetry](/docs/config/observability/).
+
+Next: [The prompt](/docs/language/prompt/)

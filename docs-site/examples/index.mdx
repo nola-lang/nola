@@ -7,9 +7,9 @@ sidebar:
 
 The repository includes the example projects below. Most pair a `.tsi` module with a plain TypeScript entry point in `src/main.ts` and use a mock provider, so you can run them without an API key.
 
-Four examples are a single `.tsi` file with `src/main.tsi` as the entry point: `feature-extraction` and `function-calling`, which replay recorded answers from a committed ledger, `agent-loop`, which runs on the mock provider, and `triage-ticket`, whose default config calls typesafe.ai (the example explains how to switch to a mock provider).
+Five examples are a single `.tsi` file with `src/main.tsi` as the entry point: `feature-extraction`, `function-calling` and `tool-use`, which replay recorded answers from a committed ledger, `agent-loop`, which runs on the mock provider, and `triage-ticket`, whose default config calls typesafe.ai (the example explains how to switch to a mock provider).
 
-The scaffolder's templates are these examples. Every template except `empty` is copied from the repository at the release tag that matches the CLI's version, so `npm create nola` needs network access for them; the first menu lists `feature-extraction`, `function-calling`, `agent-loop`, `typescript-interop` and `triage-ticket`, and *More examples…* the rest of the ones with a scaffold command below.
+The scaffolder's templates are these examples. Every template except `empty` is copied from the repository at the release tag that matches the CLI's version, so `npm create nola` needs network access for them; the first menu lists `feature-extraction`, `function-calling`, `tool-use`, `agent-loop`, `typescript-interop` and `triage-ticket`, and *More examples…* the rest of the ones with a scaffold command below.
 
 Every example types its asks with the colon spelling, `` ask `…`: T ``; `<T>` means the same thing. See [Extractors](/docs/language/extractors/#the-angle-bracket-spelling).
 
@@ -28,6 +28,7 @@ Every example types its asks with the colon spelling, `` ask `…`: T ``; `<T>` 
 | [cross-file-types](https://github.com/nola-lang/nola/tree/main/examples/cross-file-types) | A type imported from another file (a view of plain TypeScript), self-recursive; `schema.ts` prints its JSON Schema | — |
 | [recursive-tree](https://github.com/nola-lang/nola/tree/main/examples/recursive-tree) | Self-recursive types: JSON Schema `$defs`/`$ref`, validated recursively | — |
 | [file-ticket](https://github.com/nola-lang/nola/tree/main/examples/file-ticket) | Call intents: the model fills a function's arguments, sigil-less and hint forms | `npm create nola my-app -- --template file-ticket` (the `function-calling` example is this feature as one top-level `.tsi` script) |
+| [tool-use](https://github.com/nola-lang/nola/tree/main/examples/tool-use) | A tool-use ask as one top-level `.tsi` script: two plain-TypeScript functions offered in brackets after the task, called by the model as it needs before it answers, replayed turn by turn from a ledger | `npm create nola my-app -- --template tool-use` (on the first template menu) |
 | [agent-loop](https://github.com/nola-lang/nola/tree/main/examples/agent-loop) | An agent loop as one top-level `.tsi` script: a `while` loop whose ask is typed as a `Problem` or `null`, and a context statement before the loop that is read again on every pass | `npm create nola my-app -- --template agent-loop` (on the first template menu) |
 | [triage-ticket](/docs/examples/triage-ticket/) | Ticket triage on typesafe.ai's Jev as one top-level `.tsi` script: literal unions and booleans as typed questions | `npm create nola my-app -- --template triage-ticket` (on the first template menu; skips the provider question; needs `TYPESAFE_API_KEY`) |
 

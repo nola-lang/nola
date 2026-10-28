@@ -1,4 +1,3 @@
-import { appendFileSync, readFileSync } from "node:fs";
 import { Codes } from "@nola-lang/ast";
 import type { InferRequest, LanguageModel, PlatformModel } from "@nola-lang/core";
 import {
@@ -6,13 +5,32 @@ import {
   fingerprintRequest,
   isDecisionModel,
   isPlatformModel,
+  isToolModel,
   NolaConfigError,
   NolaProviderError,
+  nodeAbsenceReason,
+  nodeBuiltin,
   PLATFORM_MODEL,
   redactDeep,
   redactSecrets,
+  TOOL_MODEL,
+  type ToolCall,
 } from "@nola-lang/core";
 import { requireInfer } from "./require-infer.js";
+
+type LedgerFs = {
+  appendFileSync: (path: string, data: string, encoding: "utf8") => void;
+  readFileSync: (path: string, encoding: "utf8") => string;
+};
+
+/** Ledgers live on disk: `node:fs` reached at call time (no static import); where there is none — a browser, or a Node older than 22.3 — the refusal says which. */
+function ledgerFs(what: "record" | "replay"): LedgerFs {
+  const fs = nodeBuiltin<LedgerFs>("node:fs");
+  if (!fs) {
+    throw new NolaConfigError(`${what}() needs a file system for its ledger — ${nodeAbsenceReason()}.`, Codes.ReplayLedgerInvalid);
+  }
+  return fs;
+}
 
 /**
  * Pass-through provider that appends `{ fingerprint, request, response }` JSONL
@@ -25,22 +43,29 @@ import { requireInfer } from "./require-infer.js";
 export function record(inner: PlatformModel, ledgerPath: string): PlatformModel;
 export function record(inner: LanguageModel, ledgerPath: string): LanguageModel;
 export function record(inner: LanguageModel, ledgerPath: string): LanguageModel {
+  const fs = ledgerFs("record");
   requireInfer([inner], "record");
   const brands = {
     ...(isPlatformModel(inner) ? { [PLATFORM_MODEL]: true as const } : {}),
     ...(isDecisionModel(inner) ? { [DECISION_MODEL]: true as const } : {}),
+    ...(isToolModel(inner) ? { [TOOL_MODEL]: true as const } : {}),
   };
   return {
     ...brands,
+    ...(inner.toolUse !== undefined ? { toolUse: inner.toolUse } : {}),
     name: `record(${inner.name})`,
     async infer(req: InferRequest) {
       const res = await inner.infer(req);
       const entry = {
         fingerprint: fingerprintRequest(req),
         request: { intent: redactDeep(req.intent), ...(req.params ? { params: req.params } : {}) },
-        response: { text: redactSecrets(res.text) },
+        // a tool turn's calls ride the entry too, so a replayed tool-use ask runs its loop
+        response: {
+          text: redactSecrets(res.text),
+          ...(res.toolCalls && res.toolCalls.length > 0 ? { toolCalls: redactDeep(res.toolCalls) } : {}),
+        },
       };
-      appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
+      fs.appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
       return res;
     },
   };
@@ -63,16 +88,18 @@ export function record(inner: LanguageModel, ledgerPath: string): LanguageModel 
  * answer instead of failing.
  */
 export function replay(ledgerPath: string): LanguageModel {
+  const fs = ledgerFs("replay");
   let raw: string;
   try {
-    raw = readFileSync(ledgerPath, "utf8");
+    raw = fs.readFileSync(ledgerPath, "utf8");
   } catch (error) {
     throw new NolaConfigError(
       `replay ledger ${ledgerPath} cannot be read: ${error instanceof Error ? error.message : String(error)}`,
       Codes.ReplayLedgerInvalid,
     );
   }
-  const entries = new Map<string, { text: string }[]>();
+  type Hit = { text: string; toolCalls?: ToolCall[] };
+  const entries = new Map<string, Hit[]>();
   raw.split("\n").forEach((line, i) => {
     if (line.trim() === "") return;
     let parsed: unknown;
@@ -81,7 +108,7 @@ export function replay(ledgerPath: string): LanguageModel {
     } catch {
       throw new NolaConfigError(`replay ledger ${ledgerPath}:${i + 1} is not valid JSON.`, Codes.ReplayLedgerInvalid);
     }
-    const e = parsed as { fingerprint?: unknown; response?: { text?: unknown } };
+    const e = parsed as { fingerprint?: unknown; response?: { text?: unknown; toolCalls?: unknown } };
     if (typeof e.fingerprint !== "string" || typeof e.response?.text !== "string") {
       throw new NolaConfigError(
         `replay ledger ${ledgerPath}:${i + 1} is missing fingerprint or response.text.`,
@@ -89,13 +116,14 @@ export function replay(ledgerPath: string): LanguageModel {
       );
     }
     const queue = entries.get(e.fingerprint);
-    const hit = { text: e.response.text };
+    const toolCalls = Array.isArray(e.response.toolCalls) ? (e.response.toolCalls as ToolCall[]) : undefined;
+    const hit: Hit = { text: e.response.text, ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}) };
     if (queue) queue.push(hit);
     else entries.set(e.fingerprint, [hit]);
   });
   return {
-    // a ledger serves whatever it holds — a replayed decision ask needs no live capability
-    ...{ [DECISION_MODEL]: true as const },
+    // a ledger serves whatever it holds — a replayed decision or tool-use ask needs no live capability
+    ...{ [DECISION_MODEL]: true as const, [TOOL_MODEL]: true as const },
     name: "replay",
     async infer(req: InferRequest) {
       const fingerprint = fingerprintRequest(req);
@@ -108,8 +136,8 @@ export function replay(ledgerPath: string): LanguageModel {
       }
       // Shift through recorded entries in ledger order; once the last one is
       // reached, keep serving it (repeat asks past what was recorded still resolve).
-      const hit = queue.length > 1 ? (queue.shift() as { text: string }) : (queue[0] as { text: string });
-      return { text: hit.text };
+      const hit = queue.length > 1 ? (queue.shift() as Hit) : (queue[0] as Hit);
+      return { text: hit.text, ...(hit.toolCalls ? { toolCalls: hit.toolCalls.map((c) => ({ ...c })) } : {}) };
     },
   };
 }

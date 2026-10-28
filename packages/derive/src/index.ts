@@ -5,6 +5,7 @@ export { useTypeScript } from "./ts.js";
 export { type ProjectConfig, readTsconfig } from "./tsconfig.js";
 export {
   DerivationError,
+  deriveTool,
   deriveType,
   type NamedAccessor,
   type ViewImport,

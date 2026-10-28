@@ -11,6 +11,8 @@ export interface AskIdentity {
   callee?: string;
   hint?: string;
   typeText?: string;
+  /** tool-use asks: the tools offered, by written name */
+  tools?: readonly string[];
 }
 
 /**

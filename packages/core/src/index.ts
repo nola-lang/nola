@@ -198,8 +198,30 @@ export class Site {
  * `instruction` becomes `context` (the top-level items, canonical order). An
  * emit-20 build calls the missing tag and passes a string where an object is
  * read, hence the bump.
+ *
+ * Emit 22 is TOOL USE (spec 2026-10-08): an ask with a tool list —
+ * `` ask `task` [fn, g.h]: T `` — lowers to `__nola.intents.ToolUseIntent({
+ * instruction, tools: [{ name, call, args }], type, loc, def })`, where each
+ * tool's `args` is an appendix accessor over the function's parameters (a
+ * `tool` derivation request) and `call` is the function (a member chain
+ * bound to its object). An emit-21 runtime has no `ToolUseIntent` factory,
+ * hence the bump.
+ *
+ * Emit 23 (tool lists by value, spec 2026-10-09): a tool list entry lowers
+ * to `__nola.tool(value, verdict, written?, receiver?)` or
+ * `__nola.toolSpread(value, verdict)`, a deferred source the runtime
+ * materializes when the ask composes; the verdict is an appendix accessor
+ * (`__nola_tool_$N`) returning a carrier or a `__nola.tools.*` group. An
+ * emit-22 runtime has no `tool`, `toolSpread` or `tools`, hence the bump.
+ *
+ * Emit 24 (the ask sequence, spec 2026-10-12): an ask whose operand holds
+ * values lowers its `instruction` as an ARRAY of parts — texts and
+ * `__nola.var.obj({ value, name, type? })` / `__nola.var.tools(…sources)` /
+ * `__nola.var.func({ fn, name, args })` — and the class follows the parts
+ * (ExtractIntent, FunctionCallIntent, ToolUseIntent). A one-text ask lowers
+ * as in emit 23. An emit-23 runtime has no `var`, hence the bump.
  */
-export const NOLA_EMIT = 21;
+export const NOLA_EMIT = 24;
 
 /**
  * The narrow public tier: an intent resolvable ONLY through `ask` — what a
@@ -243,6 +265,21 @@ export interface Intent<T = unknown> extends Askable<T>, PromiseLike<T> {
   withParams(params: ProviderParams): Intent<T>;
   /** resolve without inheriting the caller frame's context (stack-frame opt-out) */
   detached(): Intent<T>;
+}
+
+/**
+ * The tier of a tool-use ask (spec 2026-10-08 §3.9): `Askable` plus the turn
+ * cap. `T` stays phantom here too; `ask` takes `Askable<T> | ToolUseAskable<T>`
+ * because TypeScript infers a phantom parameter only through a reference to
+ * the same interface, never through a subtype.
+ */
+export interface ToolUseAskable<T = unknown> extends Askable<T> {
+  withRetry(retries: number): ToolUseAskable<T>;
+  withModel(model: ModelRef): ToolUseAskable<T>;
+  withParams(params: ProviderParams): ToolUseAskable<T>;
+  withTimeout(timeout: number): ToolUseAskable<T>;
+  /** the provider turns the loop may take before it must have answered (the correction turn is not counted); default config `ask.maxTurns`, 10 */
+  withMaxTurns(turns: number): ToolUseAskable<T>;
 }
 
 export type Message = { role: "user" | "assistant"; content: string };
@@ -326,18 +363,42 @@ export interface InferRequest {
   trace?: AskTrace;
 }
 
+/** A tool call the model requested (tool-use spec 2026-10-08 §3.6): the vendor's call id, the wire name, the arguments as sent. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
 export interface InferResult {
   text: string;
+  /** tool-use: the calls the model requested instead of (or beside) an answer — a turn of the loop; absent or empty = the reply is the answer */
+  toolCalls?: readonly ToolCall[];
   durationMs?: number;
   usage?: { inputTokens?: number; outputTokens?: number };
   /** what a text-rendering provider actually sent — becomes the receipt's `effectivePrompt` */
   sent?: RenderedPrompt;
 }
 
+/**
+ * How a model carries a tool-use ask (tool-use spec 2026-10-08 §3.6, amended
+ * 2026-10-09): "native" is the vendor's tool-calling API — one call per turn,
+ * the loop in Nola. Strategies join this union as they land (a program the
+ * model writes over the tools; calls as text for a host without a tool API).
+ */
+export type ToolUseMode = "native";
+
 /** A configured model instance — what a provider factory returns and what the config's `model` slot holds. */
 export interface LanguageModel {
   name: string;
   infer(req: InferRequest): Promise<InferResult>;
+  /**
+   * The tool-use strategy this model is configured for (the vendor factories'
+   * `toolUse` option); false says it offers none — no TOOL_MODEL brand, so a
+   * tool-use ask over it is refused before the network. Absent = "native"
+   * wherever the brand is present.
+   */
+  toolUse?: ToolUseMode | false;
 }
 
 /** A model pin: an instance, or the name of a `model` map entry. */
@@ -345,8 +406,24 @@ export type ModelRef = LanguageModel | string;
 
 export type NolaLogLevel = "silent" | "error" | "warn" | "info" | "debug";
 
-/** What an ask executes: an extractor (`` ..`prompt`<T> ``) or a call intent (`` fn`hint`(..) ``). */
-export type AskKind = "extract" | "call";
+/** What an ask executes: an extractor (`` ..`prompt`<T> ``), a call intent (`` fn`hint`(..) ``) or a tool-use ask (`` `task` [fn, g]: T ``). */
+export type AskKind = "extract" | "call" | "tool-use";
+
+/** One tool call of a tool-use ask as the receipt records it: the written tool name, the arguments as requested, the rendered result or the failure. */
+export interface ToolCallReceipt {
+  name: string;
+  args: unknown;
+  result?: string;
+  error?: string;
+  durationMs: number;
+}
+
+/** One tool turn of a tool-use ask (spec 2026-10-08 §3.8): the fingerprint of the request that asked for the calls, the model's text, the calls run. */
+export interface ToolUseTurnReceipt {
+  fingerprint?: string;
+  text?: string;
+  calls: readonly ToolCallReceipt[];
+}
 
 export interface AskReceipt {
   askId: string;
@@ -376,6 +453,8 @@ export interface AskReceipt {
   def?: string;
   /** what the ask executed (absent only for legacy synthesized receipts) */
   kind?: AskKind;
+  /** tool-use asks: the tool turns run before the answer, in order (absent when the model answered at once) */
+  turns?: readonly ToolUseTurnReceipt[];
 }
 
 export interface AttemptRecord {
@@ -427,6 +506,26 @@ export interface AskStartEvent {
   readonly hint?: string;
   /** extract intents: the target type as TypeScript text (`Ticket`, `"quote" | "order"`); absent for a raw JSON-schema type */
   readonly typeText?: string;
+  /** tool-use asks: the tools offered, by written name, in order */
+  readonly tools?: readonly string[];
+}
+
+/** A tool call is about to run (tool-use spec 2026-10-08 §3.8): the ask, the turn, the tool by written name, the arguments as validated. */
+export interface ToolCallStartEvent {
+  readonly askId: string;
+  readonly invocationId: string;
+  readonly spanPath: readonly string[];
+  /** the provider turn that requested the call, from 1 */
+  readonly turn: number;
+  readonly name: string;
+  readonly args: unknown;
+}
+
+/** A tool call settled: its rendered result, or the failure that ends the ask. */
+export interface ToolCallEndEvent extends ToolCallStartEvent {
+  readonly result?: string;
+  readonly error?: string;
+  readonly durationMs: number;
 }
 
 export interface ProviderRequestEvent {
@@ -508,6 +607,8 @@ export interface NolaTelemetry {
   onAskEnd?(event: AskEndEvent): void;
   onInvocationStart?(event: InvocationStartEvent): void;
   onInvocationEnd?(event: InvocationEndEvent): void;
+  onToolCallStart?(event: ToolCallStartEvent): void;
+  onToolCallEnd?(event: ToolCallEndEvent): void;
 }
 
 /**
@@ -621,7 +722,7 @@ export interface NolaConfig {
    * provider call receives that signal. 0 disables. Intents override it with
    * .withTimeout(ms).
    */
-  ask?: { timeoutMs?: number };
+  ask?: { timeoutMs?: number; maxTurns?: number };
   /** Compile-time behavior; validated here, consumed by build/check/loader — never by the runtime. */
   compiler?: NolaCompilerConfig;
   /** Build-time behavior; validated here, consumed by `nola build` — never by the runtime. */
@@ -663,7 +764,18 @@ export {
   fingerprintRequest,
   sha256Hex,
 } from "./fingerprint.js";
-export type { InferenceCorrection, InferenceModel, InferenceScope, InferenceScopeArg } from "./inference-model.js";
+export { nodeAbsenceReason, nodeBuiltin, processId, readEnv, stderrIsTty, workingDirectory, writeStderr } from "./host.js";
+export type {
+  InferenceCorrection,
+  InferenceInputValue,
+  InferenceModel,
+  InferencePart,
+  InferenceScope,
+  InferenceScopeArg,
+  ToolCallRecord,
+  ToolDescription,
+  ToolUseTurn,
+} from "./inference-model.js";
 export { ansiPalette, formatIngestLine, type IngestLineNotice, type LinePalette, plainPalette } from "./ingest-line.js";
 export {
   NOLA_ACCOUNT_CLAIM,
@@ -703,4 +815,6 @@ export {
   scopeChain,
 } from "./render-prompt.js";
 export { parseRetryAfter } from "./retry-after.js";
+export { isToolModel, isToolUseRequest, TOOL_MODEL } from "./tool-model.js";
+export { toolWireName } from "./tool-name.js";
 export { formatIssue, formatIssuePath, formatIssues, type ValidationIssue } from "./validation.js";

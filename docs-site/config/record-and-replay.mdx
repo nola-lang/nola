@@ -30,7 +30,7 @@ nola run src/main.ts                 # offline: answers come from the ledger
 
 `record(inner, path)` wraps a provider and appends each exchange to a JSONL file. Each line contains a request fingerprint, the ask as data and the provider's response text. Review the file before committing it for tests.
 
-When `replay` loads a ledger, an unreadable file, invalid JSON or an entry missing its fingerprint or response produces [`NOLA3007`](/docs/reference/error-codes/#nola3007).
+When `replay` loads a ledger, an unreadable file, invalid JSON or an entry missing its fingerprint or response produces [`NOLA3007`](/docs/reference/error-codes/#nola3007). Ledgers live on disk: `record` and `replay` need Node (22.3 or newer) and raise the same code where there is no file system, such as a browser host.
 
 ## Replay is strict
 

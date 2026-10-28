@@ -38,7 +38,7 @@ export default defineConfig({
 | `maxOutputTokens` | `number` | — | ✓ | — | — |
 | `threshold` | `number` — plain `boolean` is `true` strictly above it | — | — | — | default `0.5` |
 
-Keys are read lazily at the first request. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`, `TypesafeOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.typesafe`, `providers.mock`.
+Keys are read lazily at the first request. With a custom `fetch`, `apiKey` and `apiKeyEnv` are optional: the fetch owns authentication, and without a key no vendor auth header is sent. The option interfaces are exported as `OpenAiOptions`, `AnthropicOptions`, `GoogleOptions`, `TypesafeOptions`. A `providers` constant maps each factory by its provider name: `providers.openai`, `providers.anthropic`, `providers.google`, `providers.typesafe`, `providers.mock`.
 
 ## typesafe
 
@@ -73,6 +73,45 @@ export default defineConfig({
 If no contextual value is in scope, the instruction text becomes the state. The API has no conversation history, so a correction attempt sends the same state again.
 
 Use `.withParams({ providerOptions: { threshold: … } })` to override the threshold for a plain `boolean` answer. This provider ignores other per-intent params.
+
+## Tool use
+
+A [tool-use ask](/docs/language/tool-use/) needs a model that can request tool calls. `openai`, `anthropic`, `google` and the platform model support it; `typesafe` does not. The request's intent carries the tools and the transcript so far, and a reply may carry `toolCalls` instead of an answer. On every vendor the answer is one more tool the model calls to finish, carrying the answer's schema: structured output and tools do not mix on Anthropic, on Gemini, or on most OpenAI-compatible hosts, and the technique stays inside the provider.
+
+An ask whose instruction holds [values](/docs/language/extractors/#values-in-the-instruction) adds `input.parts`: the texts and values in written order — a text, an input `{ name, type?, value? }`, one list's wire names, or the call's text. A model that renders itself prints them in order when present and falls back to `input.instruction`, the reference text, otherwise; `renderPrompt` does exactly that.
+
+A `fallback` or `roundRobin` group supports tool use if at least one member does, and skips the other members for tool-use asks. `withRetry`, `record` and `replay` keep the support of what they wrap; a replayed ledger serves recorded tool turns.
+
+How a vendor model carries a tool-use ask is its `toolUse` option, beside `structuredOutputs`. `"native"`, the default and the only strategy today, is the vendor's tool-calling API with the loop in Nola. `false` says the host offers no tool calling: the model is refused for tool-use asks before any request, with [`NOLA3019`](/docs/reference/error-codes/#nola3019), and a group skips it, so a host without tool calling can sit first in a group and still serve every other ask:
+
+```ts
+// nola.config.ts
+import { fallback, openai } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: fallback([
+    openai({ model: "local-model", baseUrl: "http://localhost:8080/v1", toolUse: false }),
+    openai("gpt-5-mini"),
+  ]),
+});
+```
+
+The members of a group must agree on the strategy; a group that mixes two is rejected when the config loads, with [`NOLA3003`](/docs/reference/error-codes/#nola3003).
+
+For tests, pass `{ tools: true }` to `mockProvider` and script the turns with `toolCalls`:
+
+```ts
+// nola.config.ts
+import { mockProvider, toolCalls } from "@nola-lang/providers";
+import { defineConfig } from "@nola-lang/runtime";
+
+export default defineConfig({
+  model: mockProvider([toolCalls([{ name: "searchFiles", args: { dir: "D:/docs" } }]), ["D:/docs/visa.pdf"]], { tools: true }),
+});
+```
+
+A custom `LanguageModel` supports tool use by carrying the `TOOL_MODEL` brand exported from `@nola-lang/core` and returning `toolCalls` — `{ id, name, args }` per call, the name as the request offered it — on `InferResult` when the model requests calls. Without the brand a tool-use ask is refused with [`NOLA3019`](/docs/reference/error-codes/#nola3019) before any request is made.
 
 ## nola
 
@@ -206,7 +245,7 @@ export function myProvider(endpoint: string): LanguageModel {
 
 Return the raw reply in `text`. The runtime parses and validates it. If validation fails, it calls `infer` again with `intent.correction` set to the failed reply and the issues; `renderPrompt` renders that as the assistant turn plus a `<correction>` block.
 
-The built-in `openai`, `anthropic` and `google` providers accept `structuredOutputs: false` for a server that cannot enforce a schema: nothing is sent on the wire and the schema is rendered into the system turn as a `<schema>` block. `DEFAULT_SYSTEM` is the default system text, exported for composing your own.
+The built-in `openai`, `anthropic` and `google` providers accept `structuredOutputs: false` for a server that cannot enforce a schema: nothing is sent on the wire and the schema is rendered into the system turn as a `<schema>` block. They also accept `toolUse`, described under [Tool use](#tool-use) above. `DEFAULT_SYSTEM` is the default system text, exported for composing your own.
 
 For provider failures, throw `NolaProviderError` from `@nola-lang/runtime`. Set `status`, `definitive` and `retryAfterMs` as appropriate so retry helpers can decide whether and when to try again.
 

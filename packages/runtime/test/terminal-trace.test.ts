@@ -31,6 +31,19 @@ describe("terminalTrace", () => {
     expect(err.lines[0]).toMatch(/req +#1 → mock$/);
   });
 
+  it("falls back to console.error where there is no process.stderr (a browser), same text", () => {
+    const saved = globalThis.process;
+    Object.defineProperty(globalThis, "process", { value: undefined, configurable: true, writable: true });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      terminalTrace({ color: false }).onProviderRequest?.({ askId: "a1", attempt: 1, provider: "mock", intent: {} } as never);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]?.[0])).toMatch(/req +#1 → mock$/);
+    } finally {
+      Object.defineProperty(globalThis, "process", { value: saved, configurable: true, writable: true });
+    }
+  });
+
   it("colours the line on request and never changes the text", () => {
     const err = spyStderr();
     terminalTrace({ level: "info", color: true }).onAskEnd?.({ askId: "a1", receipt: okReceipt });
@@ -83,6 +96,22 @@ describe("terminalTrace", () => {
     expect(err.lines).toHaveLength(2);
     expect(err.lines[0]).toMatch(/warn +#1 validation failed: expected string$/);
     expect(err.lines[1]).toMatch(/retry after #1: timeout$/);
+  });
+
+  it("tool calls print at info, like an ask, not at warn", () => {
+    const call = { askId: "a1", invocationId: "i", spanPath: ["i"], turn: 1, name: "searchFiles", args: { dir: "D:/" } };
+    const quiet = spyStderr();
+    const warn = terminalTrace({ level: "warn", color: false });
+    warn.onToolCallStart?.(call);
+    warn.onToolCallEnd?.({ ...call, result: "[]", durationMs: 2 });
+    expect(quiet.lines).toHaveLength(0);
+    const loud = spyStderr();
+    const info = terminalTrace({ level: "info", color: false });
+    info.onToolCallStart?.(call);
+    info.onToolCallEnd?.({ ...call, result: "[]", durationMs: 2 });
+    expect(loud.lines).toHaveLength(2);
+    expect(loud.lines[0]).toMatch(/tool #1 → searchFiles$/);
+    expect(loud.lines[1]).toMatch(/tool #1 ← searchFiles 2ms$/);
   });
 
   it("a failed ask prints at error; silent prints nothing", () => {

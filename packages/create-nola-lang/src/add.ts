@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Runtime } from "./package-manager.js";
 import { type ProviderId, providerById } from "./providers.js";
 import { ownVersion, providerConfigUrl } from "./scaffold.js";
 
@@ -26,6 +27,8 @@ export interface AddOptions {
    * empty template's — the nola key step rewrites it afterwards (`applyTrial`).
    */
   provider?: ProviderId;
+  /** "bun" also merges @nola-lang/bun into devDependencies; the bunfig lines are suggested by the flow's outro, never written */
+  runtime?: Runtime;
 }
 
 type VendorId = Exclude<ProviderId, "nola" | "none">;
@@ -89,7 +92,8 @@ export async function addNola(targetDir: string, opts: AddOptions = {}): Promise
     wrote.push("nola.config.ts");
   }
 
-  for (const [section, name, fixedRange] of REQUIRED) {
+  const required = opts.runtime === "bun" ? [...REQUIRED, ["devDependencies", "@nola-lang/bun", null] as const] : REQUIRED;
+  for (const [section, name, fixedRange] of required) {
     const existing = existingRange(name);
     if (existing !== undefined) {
       skipped.push(`${name} already present (${existing}) — left untouched`);

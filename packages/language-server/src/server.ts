@@ -13,6 +13,7 @@ import { findProjectRoot } from "@nola-lang/node-loader/project-root";
 import {
   decorateHostHideShadowedDeclarations,
   decorateHostWithRuntimeStub,
+  decorateHostWithTsiModuleFormat,
   decorateHostWithViews,
 } from "@nola-lang/typescript-plugin";
 import {
@@ -59,6 +60,9 @@ connection.onInitialize((params) => {
         const host = project.typescript?.languageServiceHost;
         if (host) {
           decorateHostHideShadowedDeclarations(tsdk.typescript, host);
+          // TypeScript gives a `.tsi` no module format (it decides by
+          // extension), so `import.meta` was TS1470 where a `.ts` was clean.
+          decorateHostWithTsiModuleFormat(tsdk.typescript, host);
           decorateHostWithViews(tsdk.typescript, host, { sourceRoot });
           // Before `npm install` (or for a bare .tsi) the lowered appendix
           // import of @nola-lang/runtime has nothing to resolve to; serve the

@@ -1,11 +1,11 @@
 {
-  "examples/_playground/src/test_2/analyze.tsi": [
+  "labs/playground/src/test_2/analyze.tsi": [
     "__nola.types.boolean()",
     "__nola.types.string()",
     "__nola.types.string()",
     "__nola.types.string()"
   ],
-  "examples/_playground/src/test_3/classify.tsi": [
+  "labs/playground/src/test_3/classify.tsi": [
     "__nola.types.number()",
     "__nola.types.string()",
     "__nola.types.string()",
@@ -13,19 +13,19 @@
     "__nola.types.string()",
     "__nola.types.string()"
   ],
-  "examples/_playground/src/test_4/person.tsi": [
+  "labs/playground/src/test_4/person.tsi": [
     "__nola.types.ref(\"src/person-types#Person\", () => __nola_type_Person)",
     "__nola.types.string()"
   ],
-  "examples/_playground/src/test_5/simple.tsi": [
+  "labs/playground/src/test_5/simple.tsi": [
     "__nola.types.string()",
     "__nola.types.string()"
   ],
-  "examples/_playground/src/test_6/simple.tsi": [
+  "labs/playground/src/test_6/simple.tsi": [
     "__nola.types.ref(\"src/person-types#Person\", () => __nola_type_Person)",
     "__nola.types.string()"
   ],
-  "examples/_playground/src/test_7/triage.tsi": [
+  "labs/playground/src/test_7/triage.tsi": [
     "__nola.types.enum([\"quote\",\"order\"])",
     "__nola.types.ref(\"src/test_7/handlers#Order\", () => __nola_type_Order)",
     "__nola.types.string()"

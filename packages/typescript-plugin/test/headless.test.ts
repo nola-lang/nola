@@ -5,6 +5,7 @@ import { RUNTIME_AMBIENT_STUB } from "@nola-lang/compiler";
 import { createNolaLanguagePlugin } from "@nola-lang/language-core";
 import {
   decorateHostHideShadowedDeclarations,
+  decorateHostWithTsiModuleFormat,
   decorateHostWithViews,
   decorateLanguageServiceWithDerivationDiagnostics,
 } from "@nola-lang/typescript-plugin";
@@ -66,6 +67,9 @@ const VALUES = "export type P = { x: number };\nconst wrong: string = 1;\n";
 // Underivable types: phase-1 output is inert, so the lazy derivation pass on
 // getSemanticDiagnostics reports them (emit 15), mapped to the source ranges.
 const EXOTIC = "export infer function f(.x: Map<string, number>) {\n  return ask ..`y`<Set<string>>;\n}\n";
+// `import.meta` is legal only in a file TypeScript takes for ESM; under
+// NodeNext it decides by extension + package.json `type`, and knows no `.tsi`.
+const META = "export const here: string = import.meta.url;\n";
 
 const files = new Map<string, Entry>();
 let proxy: ts.LanguageService;
@@ -92,6 +96,9 @@ beforeAll(() => {
   setFile(`${ROOT}/schema.ts`, SCHEMA);
   setFile(`${ROOT}/values.tsi`, VALUES);
   setFile(`${ROOT}/exotic.tsi`, EXOTIC);
+  setFile(`${ROOT}/meta.tsi`, META);
+  setFile(`${ROOT}/meta-plain.ts`, META);
+  setFile(`${ROOT}/package.json`, '{ "type": "module" }\n');
   setFile("/stubs/runtime.d.ts", RUNTIME_AMBIENT_STUB);
   // A stale on-disk build artifact (the old adjacent-declaration emit). With
   // allowArbitraryExtensions TS would resolve `./report.tsi` to it FIRST,
@@ -122,6 +129,8 @@ beforeAll(() => {
       `${ROOT}/schema.ts`,
       `${ROOT}/values.tsi`,
       `${ROOT}/exotic.tsi`,
+      `${ROOT}/meta.tsi`,
+      `${ROOT}/meta-plain.ts`,
     ],
     getScriptVersion: (f) => String(files.get(norm(f))?.version ?? 0),
     getScriptSnapshot: (f) => {
@@ -156,6 +165,7 @@ beforeAll(() => {
   // the view host OUTERMOST — it answers only the `.tsi` literals Volar left
   // unresolved (no such Nola file), with the view of the plain module.
   decorateHostHideShadowedDeclarations(ts, host);
+  decorateHostWithTsiModuleFormat(ts, host);
 
   const nolaPlugin = createNolaLanguagePlugin<string>((fileName) => fileName, { sourceRoot: ROOT });
   const language = createLanguage<string>(
@@ -247,6 +257,14 @@ describe("headless editor stack (tsserver-equivalent)", () => {
     expect(at(extract)).toBe("Set<string>");
     expect(String(extract?.messageText)).toContain("NOLA2002");
     expect(at(diags.find((d) => d.code === 2008))).toBe("Map<string, number>");
+  });
+
+  it("a .tsi under a `type: module` package.json is ESM like a .ts beside it: import.meta is legal", () => {
+    expect(proxy.getSemanticDiagnostics(`${ROOT}/meta-plain.ts`).map((d) => d.code)).toEqual([]);
+    expect(proxy.getSemanticDiagnostics(`${ROOT}/meta.tsi`).map((d) => d.code)).toEqual([]);
+    // an edit re-creates the file through the document registry's update path
+    setFile(`${ROOT}/meta.tsi`, `${META}export const there: string = new URL(".", import.meta.url).href;\n`);
+    expect(proxy.getSemanticDiagnostics(`${ROOT}/meta.tsi`).map((d) => d.code)).toEqual([]);
   });
 
   it("view freshness: an unsaved edit to models.ts propagates", () => {

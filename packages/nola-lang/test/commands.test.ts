@@ -28,7 +28,7 @@ describe("nola command table", () => {
   it("scopes each flag to the commands that read it", () => {
     const flags = Object.fromEntries(COMMANDS.map((c) => [c.name, Object.keys(c.options ?? {})]));
     expect(flags).toEqual({
-      init: ["template", "add", "ide", "agents", "provider", "trial"],
+      init: ["template", "add", "ide", "runtime", "agents", "provider", "trial"],
       key: ["print"],
       login: [],
       logout: [],

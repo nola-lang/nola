@@ -46,7 +46,7 @@ export interface InvocationRecord extends RecordBase {
   errorCount: number;
 }
 
-/** One ask execution — the extract or call as its askStart/askEnd described it. */
+/** One ask execution — the extract, call or tool-use ask as its askStart/askEnd described it. */
 export interface AskRecord extends RecordBase {
   kind: AskKind;
   site?: string;
@@ -55,6 +55,8 @@ export interface AskRecord extends RecordBase {
   callee?: string;
   hint?: string;
   typeText?: string;
+  /** tool-use asks: the tools offered, by written name */
+  tools?: string[];
   provider?: string;
   profile?: string;
   attempts?: number;
@@ -98,6 +100,8 @@ export interface AskSummary {
   callee?: string;
   hint?: string;
   typeText?: string;
+  /** tool-use asks: the tools offered, by written name */
+  tools?: string[];
   provider?: string;
   profile?: string;
   status: "running" | "ok" | "error";

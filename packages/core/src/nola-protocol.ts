@@ -37,7 +37,7 @@ export interface NolaCapabilitiesResponse {
 /** Envelope version of POST /v1/ingest. */
 export const NOLA_INGEST_VERSION = 1;
 
-/** The eight runtime hook events; kind names are the NolaTelemetry method names minus the `on` prefix. */
+/** The ten runtime hook events; kind names are the NolaTelemetry method names minus the `on` prefix. The tool-call pair is additive since 2026-10-08 (tool use). */
 export const NOLA_INGEST_KINDS = [
   "askStart",
   "providerRequest",
@@ -47,6 +47,8 @@ export const NOLA_INGEST_KINDS = [
   "askEnd",
   "invocationStart",
   "invocationEnd",
+  "toolCallStart",
+  "toolCallEnd",
 ] as const;
 
 export type NolaIngestKind = (typeof NOLA_INGEST_KINDS)[number];
@@ -98,6 +100,13 @@ export interface NolaInferRequest {
 export interface NolaInferResponse {
   /** the model's raw reply; the runtime parses, validates and corrects it like any provider's */
   text: string;
+  /**
+   * Tool use (spec 2026-10-08): the calls the model requested instead of (or
+   * beside) an answer — a turn of the loop the client runs; absent or empty
+   * = the reply is the answer. The request's `intent` carries the tools and
+   * the transcript so far. Additive since 2026-10-08.
+   */
+  toolCalls?: ReadonlyArray<{ id: string; name: string; args: unknown }>;
   durationMs?: number;
 }
 

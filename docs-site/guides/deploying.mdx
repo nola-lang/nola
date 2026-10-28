@@ -58,12 +58,23 @@ For a bundled application, install the plugin for your build tool: `@nola-lang/v
 
 The plugins compile `.tsi` and include the config in the server bundle. Nola inference runs server-side; client imports are rejected with [`NOLA4001`](/docs/reference/error-codes/#nola4001) where the bundler can identify them, with a runtime check as a backstop. See the package READMEs for setup, including [@nola-lang/vite](https://www.npmjs.com/package/@nola-lang/vite) and [@nola-lang/next](https://www.npmjs.com/package/@nola-lang/next).
 
+## Bun
+
+The built output runs under Bun as it is, and compiles to a single executable:
+
+```sh
+bun dist/src/main.tsi.js
+bun build --compile dist/src/main.tsi.js --outfile my-app
+```
+
+To build from `.tsi` source in one step, or to run source under `bun`, use the [Bun plugin](/docs/tooling/bun/).
+
 ## What never ships
 
 For deployments using built output:
 
 - **`nola-lang`** stays a devDependency. Deploy `@nola-lang/runtime` and any provider packages the application imports.
-- **The loader** is unnecessary because the build has already compiled the Nola syntax. Running source through the loader requires Node; Bun and Deno are rejected with [`NOLA3015`](/docs/reference/error-codes/#nola3015).
+- **The loader** is unnecessary because the build has already compiled the Nola syntax. Running source through the loader requires Node; under Bun, source runs through the [Bun plugin](/docs/tooling/bun/), and Deno is rejected with [`NOLA3015`](/docs/reference/error-codes/#nola3015).
 - **Package versions** should match across Nola dependencies. An incompatible runtime contract or duplicate runtime can prevent startup; see [`NOLA3001`](/docs/reference/error-codes/#nola3001) and [`NOLA3002`](/docs/reference/error-codes/#nola3002).
 
 Next: [Nola compared](/docs/compare/)

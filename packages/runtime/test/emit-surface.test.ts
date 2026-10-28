@@ -18,6 +18,8 @@ describe("emit-contract bump enforcement", () => {
       context: Object.keys(__nola.context).sort(),
       intents: Object.keys(__nola.intents).sort(),
       types: Object.keys(__nola.types).sort(),
+      tools: Object.keys(__nola.tools).sort(),
+      var: Object.keys(__nola.var).sort(),
     }).toEqual({
       // emit 2: __nola.resolve gained the optional `provider` alias argument
       // (`ask with <name>` lowering) — an emit-1 runtime would silently drop it.
@@ -104,10 +106,23 @@ describe("emit-contract bump enforcement", () => {
       // takes one options object; the function init carries `moduleContext`
       // instead of `instruction`, the module init `context`. An emit-20 build
       // calls the missing tag, hence the bump.
-      emit: 21,
-      top: ["ask", "context", "ctx", "fmt", "intents", "types", "useRuntime"],
+      // emit 22: tool use (spec 2026-10-08) — an ask with a tool list lowers
+      // to `__nola.intents.ToolUseIntent({ instruction, tools: [{ name, call,
+      // args }], type, loc, def })`, each tool's `args` an appendix accessor
+      // over the function's parameters; the factory returns the
+      // `ToolUseAskable` tier (`.withMaxTurns`). An emit-21 runtime has no
+      // ToolUseIntent key, hence the bump.
+      // emit 23: tool lists by value (spec 2026-10-09) — entries lower to
+      // deferred sources, `__nola.tool` / `__nola.toolSpread`, whose verdict
+      // accessors call `__nola.tools.*`; an emit-22 runtime has none of them.
+      // emit 24: the ask sequence (spec 2026-10-12) — `var` holds the value
+      // parts of an instruction array (`obj`, `tools`, `func`) and the three
+      // intent inits take `instruction: string | InstructionPart[]`; an
+      // emit-23 runtime has no `var`.
+      emit: 24,
+      top: ["ask", "context", "ctx", "fmt", "intents", "tool", "toolSpread", "tools", "types", "useRuntime", "var"],
       context: ["module"],
-      intents: ["ExtractIntent", "FunctionCallIntent", "Intent"],
+      intents: ["ExtractIntent", "FunctionCallIntent", "Intent", "ToolUseIntent"],
       types: [
         "array",
         "boolean",
@@ -128,6 +143,8 @@ describe("emit-contract bump enforcement", () => {
         "union",
         "unsupported",
       ],
+      tools: ["array", "members", "tuple"],
+      var: ["func", "obj", "tools"],
     });
   });
 });

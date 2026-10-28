@@ -1,4 +1,4 @@
-import type { NolaIngestEnvelope, NolaTelemetry } from "@nola-lang/core";
+import { type NolaIngestEnvelope, type NolaTelemetry, readEnv } from "@nola-lang/core";
 import { envelopeObserver } from "./ingest-envelope.js";
 import { type PlatformOptions, resolvePlatformBaseUrl } from "./platform-model.js";
 
@@ -30,7 +30,7 @@ function createTransport(options: TracerOptions): (envelope: NolaIngestEnvelope)
       console.warn(`[nola] traces → ${baseUrl} — remove the tracer (or unset NOLA_TRACING_URL) to disable.`);
     }
     // Keyless on purpose: a loopback console needs no auth; send the key when we have one.
-    const apiKey = options.apiKey ?? process.env[options.apiKeyEnv ?? "NOLA_API_KEY"];
+    const apiKey = options.apiKey ?? readEnv(options.apiKeyEnv ?? "NOLA_API_KEY");
     void doFetch(`${baseUrl}/v1/ingest`, {
       method: "POST",
       headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },

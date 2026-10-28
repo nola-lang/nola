@@ -166,6 +166,18 @@ const id = ask createTicket(
 // created [p1] Blank page and double charge at checkout
 ```
 
+**Tool use — brackets offer functions.** Put functions in a list after the
+task and the model calls them as it needs before it answers; Nola runs each
+call, hands the result back and asks again, and the typed answer ends the loop.
+Parentheses run a function once, brackets offer functions. A turn cap bounds
+the loop and every call lands on the receipt.
+
+```ts
+import { readFile, searchFiles } from "./tools.js";
+
+const files = ask `the files on disc D that belong to a US visa application` [searchFiles, readFile]: string[];
+```
+
 **Routing is a keyword.** `ask with <name>` chooses who resolves an ask. The
 names are keys of the `model` map in `nola.config.ts` — OpenAI, Anthropic,
 Google, typesafe.ai, any OpenAI-compatible endpoint or the hosted Nola
@@ -226,7 +238,8 @@ npm create nola
 The scaffolder asks for a name and a template. The first menu is one template
 per feature: `feature-extraction` (the default — one `.tsi` file whose top-level
 `ask` extracts typed data), `function-calling` (the same shape, calling an async
-function from a `.ts` file next to it), `agent-loop` (a top-level `while` around
+function from a `.ts` file next to it), `tool-use` (the same shape offering two
+functions as tools the model calls before it answers), `agent-loop` (a top-level `while` around
 an ask, with a context statement read again on every pass), `typescript-interop`
 (an `infer function` imported and awaited from plain TypeScript), `triage-ticket`
 (ticket triage on typesafe.ai's non-chat model) and `empty`, plus a *More
@@ -264,6 +277,10 @@ npm create nola -- --add                              # retrofit the current pro
 `npm create nola-lang` is the same command under its full name, `pnpm create
 nola` / `yarn create nola` / `bun create nola` work the same, and `nola init`
 runs the same flow from inside a project.
+`bun create nola` scaffolds a Bun project: `.tsi` runs from source under Bun ≥ 1.3 through
+`@nola-lang/bun`'s preload (`bun src/main.tsi`), and `Bun.build` builds or compiles it in
+one step; the `nola` command line runs on Node. Built output runs under `bun` with nothing
+added. See https://nola.sh/docs/tooling/bun/.
 
 Switch on a real provider whenever you like — edit `nola.config.ts`:
 
@@ -368,7 +385,7 @@ read them on the site rather than here, but edit them there.
 | | |
 |---|---|
 | **Start** | [Quick start](https://nola.sh/docs/start/quick-start/) · [Why Nola](https://nola.sh/docs/start/why-nola/) · [Project anatomy](https://nola.sh/docs/start/project-anatomy/) · [Add to an existing project](https://nola.sh/docs/start/add-to-existing-project/) · [Editor setup](https://nola.sh/docs/start/editor-setup/) |
-| **Language** | [Mental model](https://nola.sh/docs/language/mental-model/) · [infer functions](https://nola.sh/docs/language/infer-functions/) · [Contextual parameters](https://nola.sh/docs/language/contextual-parameters/) · [Extractors](https://nola.sh/docs/language/extractors/) · [ask](https://nola.sh/docs/language/ask/) · [Call intents](https://nola.sh/docs/language/call-intents/) · [Decision types](https://nola.sh/docs/language/decision-types/) · [Types as values](https://nola.sh/docs/language/types-as-values/) · [Intent](https://nola.sh/docs/language/intent/) · [Intent methods](https://nola.sh/docs/language/intent-methods/) · [TypeScript interop](https://nola.sh/docs/language/typescript-interop/) · [Restrictions](https://nola.sh/docs/language/restrictions/) |
+| **Language** | [Mental model](https://nola.sh/docs/language/mental-model/) · [infer functions](https://nola.sh/docs/language/infer-functions/) · [Contextual parameters](https://nola.sh/docs/language/contextual-parameters/) · [Extractors](https://nola.sh/docs/language/extractors/) · [ask](https://nola.sh/docs/language/ask/) · [Call intents](https://nola.sh/docs/language/call-intents/) · [Tool use](https://nola.sh/docs/language/tool-use/) · [Decision types](https://nola.sh/docs/language/decision-types/) · [Types as values](https://nola.sh/docs/language/types-as-values/) · [Intent](https://nola.sh/docs/language/intent/) · [Intent methods](https://nola.sh/docs/language/intent-methods/) · [TypeScript interop](https://nola.sh/docs/language/typescript-interop/) · [Restrictions](https://nola.sh/docs/language/restrictions/) |
 | **Configuration** | [nola.config.ts](https://nola.sh/docs/config/nola-config/) · [Providers](https://nola.sh/docs/config/providers/) · [Resilience](https://nola.sh/docs/config/resilience/) · [Ask options](https://nola.sh/docs/config/ask-options/) · [Observability](https://nola.sh/docs/config/observability/) · [Record and replay](https://nola.sh/docs/config/record-and-replay/) · [Environments and secrets](https://nola.sh/docs/config/environments-and-secrets/) |
 | **Guides** | [Typed extraction](https://nola.sh/docs/guides/typed-extraction/) · [Classification](https://nola.sh/docs/guides/classification/) · [Function calling](https://nola.sh/docs/guides/function-calling/) · [Types without a model](https://nola.sh/docs/guides/types-without-a-model/) · [Error handling](https://nola.sh/docs/guides/error-handling/) · [Testing without a network](https://nola.sh/docs/guides/testing/) · [Deploying](https://nola.sh/docs/guides/deploying/) |
 | **Tooling** | [The nola CLI](https://nola.sh/docs/tooling/cli/) · [The Node loader](https://nola.sh/docs/tooling/node-loader/) · [VS Code extension](https://nola.sh/docs/tooling/vscode/) |

@@ -115,7 +115,7 @@ describe("redactSecrets", () => {
 });
 
 describe("console wire types", () => {
-  it("pins the ingest envelope version and the eight hook-event kinds", async () => {
+  it("pins the ingest envelope version and the ten hook-event kinds", async () => {
     const { NOLA_INGEST_KINDS, NOLA_INGEST_VERSION } = await import("@nola-lang/core");
     expect(NOLA_INGEST_VERSION).toBe(1);
     expect(NOLA_INGEST_KINDS).toEqual([
@@ -127,6 +127,9 @@ describe("console wire types", () => {
       "askEnd",
       "invocationStart",
       "invocationEnd",
+      // tool use (spec 2026-10-08): additive
+      "toolCallStart",
+      "toolCallEnd",
     ]);
   });
 

@@ -26,7 +26,7 @@ import {
  * deleted and recreated. Bump the stamp on every pre-release schema rewrite;
  * the migration-runner pattern returns at first release.
  */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8; // 8: asks.tools_json (tool use, 2026-10-08)
 
 const SCHEMA = `
   CREATE TABLE projects (
@@ -65,6 +65,7 @@ const SCHEMA = `
     callee TEXT,
     hint TEXT,
     type_text TEXT,
+    tools_json TEXT,
     provider TEXT,
     profile TEXT,
     status TEXT NOT NULL,
@@ -142,6 +143,8 @@ type StartEvent = {
   callee?: string;
   hint?: string;
   typeText?: string;
+  /** tool-use asks: the tools offered, by written name */
+  tools?: readonly string[];
 };
 type AttemptEvent = { askId?: string; attempt?: number; provider?: string; durationMs?: number };
 type EndEvent = {
@@ -177,7 +180,7 @@ type InvocationEndEvent = {
 };
 
 const siteText = (site?: SiteShape): string | null => (site?.file && site.loc ? `${site.file}:${site.loc}` : null);
-const askKind = (raw: string | null | undefined): AskKind => (raw === "call" ? "call" : "extract");
+const askKind = (raw: string | null | undefined): AskKind => (raw === "call" || raw === "tool-use" ? raw : "extract");
 
 /** Every invocation on a path, root first: `[id, parentId | null, depth]`. */
 function pathRows(spanPath: readonly string[]): Array<[string, string | null, number]> {
@@ -303,8 +306,8 @@ export class SqliteConsoleStorage implements ConsoleStorage {
       const { traceId, invocationId } = this.#touchPath(e.spanPath, envelope);
       this.#db
         .prepare(
-          `INSERT INTO asks (ask_id, trace_id, invocation_id, def, kind, site, instruction, callee, hint, type_text, provider, status, started_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)
+          `INSERT INTO asks (ask_id, trace_id, invocation_id, def, kind, site, instruction, callee, hint, type_text, tools_json, provider, status, started_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)
            ON CONFLICT (ask_id) DO UPDATE SET
              trace_id = excluded.trace_id,
              invocation_id = excluded.invocation_id,
@@ -315,6 +318,7 @@ export class SqliteConsoleStorage implements ConsoleStorage {
              callee = COALESCE(excluded.callee, asks.callee),
              hint = COALESCE(excluded.hint, asks.hint),
              type_text = COALESCE(excluded.type_text, asks.type_text),
+             tools_json = COALESCE(excluded.tools_json, asks.tools_json),
              provider = COALESCE(excluded.provider, asks.provider),
              started_at = MIN(asks.started_at, excluded.started_at)`,
         )
@@ -329,6 +333,7 @@ export class SqliteConsoleStorage implements ConsoleStorage {
           e.callee ?? null,
           e.hint ?? null,
           e.typeText ?? null,
+          Array.isArray(e.tools) ? JSON.stringify(e.tools) : null,
           e.provider ?? null,
           envelope.at,
         );
@@ -767,6 +772,7 @@ type AskRow = {
   callee: string | null;
   hint: string | null;
   type_text: string | null;
+  tools_json: string | null;
   provider: string | null;
   profile: string | null;
   status: string;
@@ -794,11 +800,23 @@ type AskFields = {
   callee?: string;
   hint?: string;
   typeText?: string;
+  tools?: string[];
   provider?: string;
   profile?: string;
   attempts?: number;
   error?: string;
 };
+
+/** The tool list as stored (`tools_json`), or nothing for a row without one or an unreadable one. */
+function toolsOf(json: string | null): string[] | undefined {
+  if (json === null) return undefined;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed) && parsed.every((t) => typeof t === "string") ? (parsed as string[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function toInvocationRecord(row: InvocationRow): InvocationRecord {
   return {
@@ -832,6 +850,10 @@ function askFields(row: AskRow): AskFields {
     ...(row.callee !== null ? { callee: row.callee } : {}),
     ...(row.hint !== null ? { hint: row.hint } : {}),
     ...(row.type_text !== null ? { typeText: row.type_text } : {}),
+    ...(() => {
+      const tools = toolsOf(row.tools_json);
+      return tools ? { tools } : {};
+    })(),
     ...(row.provider !== null ? { provider: row.provider } : {}),
     ...(row.profile !== null ? { profile: row.profile } : {}),
     ...(row.attempts !== null ? { attempts: row.attempts } : {}),

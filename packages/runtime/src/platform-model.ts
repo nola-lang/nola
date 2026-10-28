@@ -1,5 +1,14 @@
 import type { InferRequest, InferResult, NolaErrorResponse, NolaInferRequest, NolaInferResponse, PlatformModel } from "@nola-lang/core";
-import { NOLA_API_URL, NOLA_PROTOCOL, NOLA_USAGE_HEADERS, NolaProviderError, PLATFORM_MODEL, parseRetryAfter } from "@nola-lang/core";
+import {
+  NOLA_API_URL,
+  NOLA_PROTOCOL,
+  NOLA_USAGE_HEADERS,
+  NolaProviderError,
+  PLATFORM_MODEL,
+  parseRetryAfter,
+  readEnv,
+  TOOL_MODEL,
+} from "@nola-lang/core";
 import { NOLA_VERSION } from "./version.js";
 
 
@@ -24,7 +33,7 @@ export const LOW_RUNS_NOTICE = 5;
 
 /** The base URL rule shared by the model client and the platform tracer (an empty string counts as absent). */
 export function resolvePlatformBaseUrl(options: { baseUrl?: string }): string {
-  return (options.baseUrl || process.env.NOLA_API_URL || NOLA_API_URL).replace(/\/$/, "");
+  return (options.baseUrl || readEnv("NOLA_API_URL") || NOLA_API_URL).replace(/\/$/, "");
 }
 
 /** 4xx other than 408/429 cannot be fixed by retrying the same request. */
@@ -94,7 +103,7 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
   const attemptOnce = async (req: InferRequest): Promise<InferResult> => {
     const requestedAt = Date.now();
     const envName = options.apiKeyEnv ?? "NOLA_API_KEY";
-    const apiKey = options.apiKey ?? process.env[envName];
+    const apiKey = options.apiKey ?? readEnv(envName);
     if (!apiKey) {
       throw new NolaProviderError(
         `Nola API key not found: environment variable ${envName} is not set (checked process.env, including the project .env applied by the Nola loader) and the config passes no \`apiKey\`. Fix: set ${envName} — \`model: "nola"\` reads NOLA_API_KEY; nola.infer({ apiKeyEnv: "MY_VAR" }) or nola.infer({ apiKey }) in nola.config.ts name another source. Get a free key with \`npx nola-lang key\` (or \`npm create nola\` for a new project), or bring your own model in nola.config.ts (https://nola.sh/docs/reference/providers-api/).`,
@@ -139,7 +148,9 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
     noticeUsage(res.headers);
     const data = (await res.json()) as Partial<NolaInferResponse>;
     if (typeof data.text !== "string") throw new NolaProviderError("Nola API response had no text.");
-    return { text: data.text, durationMs: Date.now() - requestedAt };
+    // a tool turn (spec 2026-10-08): the server's calls ride through as they are; the runtime runs the loop
+    const toolCalls = Array.isArray(data.toolCalls) && data.toolCalls.length > 0 ? data.toolCalls.map((c) => ({ ...c })) : undefined;
+    return { text: data.text, ...(toolCalls ? { toolCalls } : {}), durationMs: Date.now() - requestedAt };
   };
 
   const infer = async (req: InferRequest): Promise<InferResult> => {
@@ -160,5 +171,6 @@ export function platformModel(options: PlatformOptions & { model?: string }): Pl
     throw lastError; // unreachable; satisfies control-flow analysis
   };
 
-  return { name: "nola", infer, [PLATFORM_MODEL]: true };
+  // the platform serves tool use (handoff 2026-10-08): the intent carries the tools, the reply may carry calls
+  return { name: "nola", infer, [PLATFORM_MODEL]: true, ...{ [TOOL_MODEL]: true as const } };
 }

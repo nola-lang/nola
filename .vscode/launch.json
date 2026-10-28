@@ -12,7 +12,7 @@
 			"sourceMaps": true,
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}/packages/vscode",
-				"${workspaceFolder}/examples/_playground"
+				"${workspaceFolder}/labs/playground"
 			],
 			"outFiles": ["${workspaceFolder}/packages/vscode/dist/**/*.cjs"]
 		},
@@ -84,7 +84,7 @@
 			"name": "Debug Playground",
 			"program": "${workspaceFolder}/packages/nola-lang/dist/main.js",
 			"args": ["run", "src/main.js"],
-			"cwd": "${workspaceFolder}/examples/_playground",
+			"cwd": "${workspaceFolder}/labs/playground",
 			"console": "integratedTerminal",
 			"runtimeArgs": ["--enable-source-maps"],
 			"sourceMaps": true,
@@ -100,6 +100,20 @@
 				"${workspaceFolder}/examples/**/*.js"
 			],
 			"skipFiles": ["<node_internals>/**"]
+		},
+		{
+			// The TypeScript language-service sandbox (labs/ts-experiment). Node runs
+			// main.ts directly — native type stripping keeps line/column layout, so no
+			// source map is involved and breakpoints bind by path. node_modules is NOT
+			// skipped on purpose: F11 into typescript.js is half the point here.
+			"type": "node",
+			"request": "launch",
+			"name": "Debug ts-experiment",
+			"program": "${workspaceFolder}/labs/ts-experiment/src/main.ts",
+			"cwd": "${workspaceFolder}/labs/ts-experiment",
+			"console": "integratedTerminal",
+			"skipFiles": ["<node_internals>/**"],
+			"sourceMaps": true,
 		},
 		{
 			// The public inbox-triage comparison (comparisons/inbox-triage/nola).

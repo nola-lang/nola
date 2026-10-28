@@ -72,6 +72,7 @@ Everything below is highlighted, type-checked and completable in `.tsi` files.
 | **`ask` operator** | `ask <intent>` | Resolves an intent the way `await` resolves a promise — same precedence. Legal only directly inside an infer function body or the module body; `ask` is a reserved word in `.tsi`. |
 | **Model routing** | `ask with <name> <intent>` | Resolves one ask through a named model from `nola.config.ts` (static identifier; `.withModel()` is the dynamic form). |
 | **Call intent** | `` fn`hint`(…) `` or a plain call with an extractor argument, `` fn(`x`: T, …) `` (the slot's `..` is implied) | The model fills the extractor-shaped arguments, then the function is called; async results are awaited. Only the hint form carries instruction text. |
+| **Tool use** | `` ask `instruction` [fn, g.h]: T `` — a list of functions between the template and the type | The model may call the listed functions, as often as it needs, before it answers; the typed answer ends the loop. Parentheses run a function, brackets offer functions. `.withMaxTurns(n)` caps the turns. |
 | **Prompt template** | `${.member}` inside any instruction literal | Reads the intent's prompt scope (`.default`, `.next`, `.type`, `.args`, …); the literal then replaces that intent's built-in prompt block. |
 | **Intent methods** | `.withRetry(n)` · `.withModel()` · `.withParams()` · `.withTimeout()` · `.detached()` | Per-intent knobs; each clones the intent. `.detached()` exists only on the `Intent` an infer function returns. |
 
@@ -135,6 +136,7 @@ family appears in completion alongside the language server's suggestions.
 | `askfree` | `` ask ..`instruction` `` — free text, kept in the invocation's history |
 | `askwith` | `` ask with provider ..`instruction`: Type `` — routed through a named provider |
 | `calli` | `` callee``(`instruction`: Type) `` — a call intent (the model fills the argument) |
+| `tooli` | `` ask `instruction` [tool]: Type `` — a tool-use ask (the model may call the tools before it answers) |
 | `extract` | `` ..`instruction`: Type `` — a bare extractor to resolve later |
 
 ## Other editors

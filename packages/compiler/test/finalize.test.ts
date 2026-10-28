@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { typecheckLowered } from "./helpers/typecheck.js";
 
 describe("finalizeDerivations", () => {
+  it("a value request answered ok:false keeps an optional undefined-returning accessor and no diagnostic", () => {
+    const fail = (accessor: string, reason: string) => ({ accessor, ok: false as const, reason, accessors: [], deps: [] });
+    const src = "declare const m: Map<string, number>;\nconst r = ask `use` m `go`: string;\n";
+    const p1 = compileNola(src, "/proj/src/m.tsi", { sourceRoot: "/proj" });
+    expect(p1.meta.derivations.map((d) => [d.kind, d.accessor])).toEqual([
+      ["extract", "__nola_type_$1"],
+      ["value", "__nola_type_$2"],
+    ]);
+    const done = finalizeDerivations(p1, [
+      { accessor: "__nola_type_$1", ok: true, expr: "__nola.types.string()", accessors: [], imports: [], deps: [] },
+      fail("__nola_type_$2", "Map is not derivable"),
+    ]);
+    expect(done.diagnostics).toEqual([]);
+    expect(done.code).toContain(
+      'function __nola_type_$2(): import("@nola-lang/runtime").InferType<unknown> | undefined { return undefined; }',
+    );
+    expect(typecheckLowered({ "m.ts": done.code })).toEqual([]);
+  });
+
   it("replaces inert bodies, emits transitive accessors, view imports, UnsupportedType accessors; recomputes meta.views", () => {
     const src =
       'import type { Address } from "./geo.js";\nexport type User = { id: string; home: Address };\nexport type Weird = Map<string, number>;\nconst i = ..`x`<User>;\n';

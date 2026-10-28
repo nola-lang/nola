@@ -1,4 +1,4 @@
-import type { AskKind, AskReceipt, AskSpanTrace, AttemptRecord, JsonSchema, Site } from "@nola-lang/core";
+import type { AskKind, AskReceipt, AskSpanTrace, AttemptRecord, JsonSchema, Site, ToolUseTurnReceipt } from "@nola-lang/core";
 
 export interface AskSpanInit {
   askId: string;
@@ -25,8 +25,10 @@ export class AskSpan {
   profile?: string;
   /** compiler-stamped source identity of the authored ask (emit 13) */
   def?: string;
-  /** what the ask executed — extract or call */
+  /** what the ask executed — extract, call or tool-use */
   askKind?: AskKind;
+  /** tool-use: the tool turns run so far, written by the strategy as they happen */
+  readonly turns: ToolUseTurnReceipt[] = [];
   private readonly startedAt = Date.now();
   durationMs = 0;
 
@@ -57,6 +59,7 @@ export class AskSpan {
       profile: this.profile,
       ...(this.def !== undefined ? { def: this.def } : {}),
       ...(this.askKind !== undefined ? { kind: this.askKind } : {}),
+      ...(this.turns.length > 0 ? { turns: this.turns.map((t) => ({ ...t, calls: [...t.calls] })) } : {}),
     };
   }
 

@@ -1,6 +1,7 @@
 import { Codes, type Diagnostic } from "@nola-lang/ast";
-import { accessorDecl, unsupportedAccessorDeclFor, viewImportDecl } from "./lower/templates.js";
+import { accessorDecl, toolAccessorDecl, unsupportedAccessorDeclFor, viewImportDecl } from "./lower/templates.js";
 import { accessorNameFor } from "./schema-expr.js";
+import { toolNameCollisions } from "./tool-names.js";
 import type { CompileResult, DerivationAnswer, DerivationRequest, NamedAccessor } from "./types.js";
 import type { ViewResult } from "./view.js";
 import { viewSpecifierFor } from "./view-name.js";
@@ -25,7 +26,8 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
   const appendixStart = "meta" in result ? result.meta.appendixStart : result.appendixStart;
   if (appendixStart < 0 || derivations.length === 0) return result;
 
-  const byAccessor = new Map(answers.map((a) => [a.accessor, a]));
+  // the names a tool list's entries declare are checked for collisions per ask (spec 2026-10-09 §3.4) — the same pass the editor runs
+  const byAccessor = new Map(toolNameCollisions(derivations, answers).map((a) => [a.accessor, a]));
   const named = new Map<string, NamedAccessor>();
   const imports = new Map<string, { specifier: string; importedName: string }>();
   const diagnostics: Diagnostic[] = [...result.diagnostics];
@@ -37,16 +39,25 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
     for (const acc of a.accessors) if (!named.has(acc.name)) named.set(acc.name, acc);
     if (a.ok) {
       for (const imp of a.imports) imports.set(imp.localBinding, imp);
-      out += accessorDecl(req.accessor, a.expr, req.kind === "context");
+      out +=
+        req.kind === "tool"
+          ? toolAccessorDecl(req.accessor, a.expr)
+          : accessorDecl(req.accessor, a.expr, req.kind === "context" || req.kind === "value");
       continue;
     }
-    if (a.code === Codes.ViewUnavailable || a.code === Codes.InvalidConstraint || a.code === Codes.InvalidDecisionCriteria) {
+    if (
+      a.code === Codes.ViewUnavailable ||
+      a.code === Codes.InvalidConstraint ||
+      a.code === Codes.InvalidDecisionCriteria ||
+      a.code === Codes.ToolEntryInvalid
+    ) {
       // a dangling `.tsi` view import (the module the type lives in does not
-      // exist), a malformed JSDoc constraint tag or malformed decision criteria
-      // (NOLA2015) is an error at every kind of site — an authoring mistake,
-      // never a policy question
+      // exist), a malformed JSDoc constraint tag, malformed decision criteria
+      // (NOLA2015) or a tool list entry that is not callable (NOLA2018) is an
+      // error at every kind of site — an authoring mistake, never a policy
+      // question
       diagnostics.push(diag(a.code, a.reason, req, file));
-      out += req.kind === "context" ? accessorDecl(req.accessor, "undefined", true) : accessorDecl(req.accessor, "__nola.types.string()");
+      out += fallbackAccessorDecl(req);
       continue;
     }
     switch (req.kind) {
@@ -54,9 +65,12 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
         out += unsupportedAccessorDeclFor(req.accessor, a.reason);
         break;
       case "extract":
+      case "tool":
+        // an underivable answer type, or an underivable tool parameter: the
+        // contract fails at the site (never a policy question)
         diagnostics.push(diag(Codes.UnsupportedIntentType, a.reason, req, file));
         // keep the module evaluable; the diagnostic fails the build
-        out += accessorDecl(req.accessor, "__nola.types.string()");
+        out += fallbackAccessorDecl(req);
         break;
       case "context":
         if (req.policy === "error") {
@@ -70,6 +84,10 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
             ),
           );
         }
+        out += accessorDecl(req.accessor, "undefined", true);
+        break;
+      case "value":
+        // a bare value's type is a courtesy to the model (spec 2026-10-12 §3.5): underivable → undefined, never a diagnostic
         out += accessorDecl(req.accessor, "undefined", true);
         break;
     }
@@ -99,4 +117,11 @@ export function finalizeDerivations<T extends CompileResult | ViewResult>(
 
 function diag(code: string, message: string, req: DerivationRequest, file: string): Diagnostic {
   return { code, message, file, start: req.source.start, end: req.source.end, loc: req.source.loc };
+}
+
+/** The evaluable body a failed request's accessor keeps: the diagnostic fails the build, the module still loads. */
+function fallbackAccessorDecl(req: DerivationRequest): string {
+  if (req.kind === "context" || req.kind === "value") return accessorDecl(req.accessor, "undefined", true);
+  if (req.kind === "tool") return toolAccessorDecl(req.accessor, req.tool?.spread ? "__nola.tools.tuple([])" : "__nola.types.object({})");
+  return accessorDecl(req.accessor, "__nola.types.string()");
 }

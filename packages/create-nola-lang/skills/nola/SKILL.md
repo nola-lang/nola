@@ -45,8 +45,8 @@ infer function extractPerson(.text: string) {
   one dot marks a value flowing INTO the model (`.name`); a template after
   `ask` is a value coming OUT.
 - `` ask `prompt`: T `` — an extractor: asks the LLM for a `T`. The colon
-  is glued to the closing backtick; `` ask `prompt`<T> `` is the same
-  construct (write `: T` unless a page shows otherwise).
+  is on the closing backtick's line (glued or spaced); `` ask `prompt`<T> ``
+  is the same construct (write `: T` unless a page shows otherwise).
   `${...}` interpolation works inside the backticks. The `..` is implied
   directly after `ask` and in a call's argument list — a typed template
   that starts an argument, or a value nested in a plain object/array
@@ -59,6 +59,24 @@ infer function extractPerson(.text: string) {
   extractor — is a call intent (the LLM fills the extractor-shaped
   arguments, then the function runs). Only `` fn`hint`(...) `` carries
   instruction text.
+- `` ask `use` admin `and` cfg.defaults `go`: T `` — an ASK SEQUENCE: a
+  bare value between texts is named data the model sees where it stands
+  (`${x}` stays your words); `` ask `words` fn(`slot`: T) `` is a call
+  intent with words; several `[lists]` union with your words between them;
+  the type glues to the last part. The kind follows the parts: texts and
+  data → extract, one call → function calling, lists → tool use; a list
+  beside a call is reserved (NOLA2019).
+- `` ask `task` [searchFiles, fs.readFile]: T `` — a TOOL-USE ask: the
+  functions in brackets between the template and the type are tools the
+  model may call, as often as it needs, before it answers; Nola runs each
+  call, hands the result back and asks again, the typed answer ends the
+  loop. Parentheses RUN a function once (a call intent), brackets OFFER
+  functions. Entries are names or member chains (a call written there is
+  reserved, NOLA1022); the contract derives from the signature and JSDoc;
+  `.withMaxTurns(n)` / config `ask.maxTurns` (10) cap the turns (NOLA3020);
+  a tool that throws ends the ask (NOLA3021); the model must support tool
+  calls — openai/anthropic/google/"nola", or `mockProvider(…, { tools:
+  true })` (NOLA3019 otherwise).
 - `ask with <modelName> <intent>` — routes one ask through a named model
   from `nola.config.ts`. The name must be a static identifier. When the
   platform serves inference (`model: "nola"`) any unconfigured
@@ -96,6 +114,11 @@ infer function extractPerson(.text: string) {
   `import { f } from "./x.tsi"`. Imports of plain TS use NodeNext style:
   `import { g } from "./y.js"` (the `.js` extension, even though the source
   file is `.ts`).
+- `.tsi` runs from source through the Node loader (`nola run`, Node ≥ 22.18)
+  or, on Bun, through `@nola-lang/bun`'s preload — `preload =
+  ["@nola-lang/bun/preload"]` in `bunfig.toml`, then `bun src/main.tsi`;
+  `nola check` / `nola build` stay on Node (`references/config.md`, "Running
+  on Bun").
 - Every `export type` / `export interface` in a `.tsi` is ALSO a runtime
   value (`User.toJsonSchema()`, `User.validate(v)`, `User.parse(v)`,
   `User["~standard"]` — Standard Schema AND Standard JSON Schema, so
@@ -124,5 +147,5 @@ Read these before non-trivial work:
 
 - `references/syntax.md` — full grammar and semantics of every construct
 - `references/patterns.md` — worked examples (extraction, call intents)
-- `references/config.md` — `nola.config.ts`, providers, project layout
+- `references/config.md` — `nola.config.ts`, providers, project layout, running on Bun
 - `references/pitfalls.md` — common errors (NOLA codes) and their fixes

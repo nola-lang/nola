@@ -223,11 +223,35 @@ export interface NolaExtractExpression extends BaseNode {
    */
   typeArgs: TSTypeParameterInstantiationNode | null;
   /**
+   * The ask sequence (spec 2026-10-12 §3.2), in source order: `parts[0]` is
+   * the first text (= `quasi`); after it, texts (TemplateLiteral), bare
+   * values (any expression nolaParseContextValue admitted, carrying
+   * `nolaValueSpan`) and lists (`NolaToolList`). One element for a plain
+   * extractor; empty on a tolerant placeholder. The lowerer classifies by
+   * the parts (§3.3): data never changes the kind, lists and typed-slot calls do.
+   */
+  parts: BaseNode[];
+  /** The type was written `: T` (set by the parser; the ternary rule, NOLA1023, reads it). */
+  colonType?: boolean;
+  /**
    * Set by the parser's tolerant-mode recovery: the construct was broken and a
    * diagnostic was recorded, so the lowering replaces its span with an inert
    * stand-in (its own bytes would leave a dot where the editor maps the cursor).
    */
   nolaError?: boolean;
+}
+
+/**
+ * A tool list part, `[fn, group, ...more]` (specs 2026-10-08, 2026-10-09, a
+ * part since 2026-10-12): the entries as written, in source order — any
+ * expression the parser did not refuse (a literal shape is NOLA1021, a call
+ * or tagged template is reserved, NOLA1022), a `SpreadElement` for
+ * `...group`; empty after a tolerant recovery dropped every entry. The
+ * checker decides in phase two whether an entry is one function or a group.
+ */
+export interface NolaToolListNode extends BaseNode {
+  type: "NolaToolList";
+  entries: BaseNode[];
 }
 
 export interface NolaAskExpression extends BaseNode {
@@ -352,6 +376,9 @@ export const Codes = {
   ExpectedExtractorType: "NOLA1018",
   MarkerReserved: "NOLA1019",
   ContextValueTail: "NOLA1020",
+  ToolListEntry: "NOLA1021",
+  ToolListEntryReserved: "NOLA1022",
+  TypedExtractorInConditional: "NOLA1023",
   AskOutsideNolaFunction: "NOLA2001",
   UnsupportedIntentType: "NOLA2002",
   NolaFnNotTopLevel: "NOLA2003",
@@ -368,6 +395,13 @@ export const Codes = {
   InvalidDecisionCriteria: "NOLA2015",
   // NOLA2016 (LexicalHoleInInstruction) retired (2026-09-28, instruction-interpolation spec): a lexical hole is legal in every instruction literal.
   ContextOutsideScopeBody: "NOLA2017",
+  ToolEntryInvalid: "NOLA2018",
+  /** A shape the ask sequence reserves (spec 2026-10-12 §3.11): a list beside a call part; a `..` sequence inside a call slot. */
+  AskSequenceReserved: "NOLA2019",
+  /** An ask sequence that cannot mean anything (spec 2026-10-12 §3.11): two call parts; `: T` beside a call part; text after a bare call; a call intent inside a data value. */
+  AskSequenceInvalid: "NOLA2020",
+  /** The compiler threw while lowering a file — a Nola bug, reported by the editor on the root document instead of ending the language server (2026-10-13). */
+  CompilerInternalError: "NOLA2021",
   // NOLA3xxx: runtime diagnostics
   EmitContractMismatch: "NOLA3001",
   DuplicateRuntimeConflict: "NOLA3002",
@@ -387,6 +421,13 @@ export const Codes = {
   ValidationFailed: "NOLA3016",
   SchemaTargetUnsupported: "NOLA3017",
   DecisionModelRequired: "NOLA3018",
+  ToolModelRequired: "NOLA3019",
+  ToolUseTurnsExceeded: "NOLA3020",
+  ToolCallFailed: "NOLA3021",
+  /** The tool list could not be built from its sources at run time (spec 2026-10-09 §3.5): a value that disagrees with the verdict, an unnamed tool, two tools with one wire name. Before the network, definitive. */
+  ToolListInvalid: "NOLA3022",
+  /** Bun below 1.3 (spec 2026-10-14-bun-support): `process.getBuiltinModule` — the libraries' only route to Node builtins — is missing. Raised by @nola-lang/bun before anything else. */
+  BunVersionUnsupported: "NOLA3023",
   // NOLA4xxx: bundler-integration errors (build-time, raised by @nola-lang/unplugin and friends)
   TsiInClientBundle: "NOLA4001",
 } as const;
@@ -402,13 +443,21 @@ export function isNode(v: unknown): v is BaseNode {
 
 export function children(node: BaseNode): BaseNode[] {
   const out: BaseNode[] = [];
+  // a node reached under two keys is one child — an extractor's first text is
+  // both its `quasi` and `parts[0]` (spec 2026-10-12 §3.2)
+  const seen = new Set<BaseNode>();
+  const add = (child: BaseNode) => {
+    if (seen.has(child)) return;
+    seen.add(child);
+    out.push(child);
+  };
   for (const key of Object.keys(node)) {
     if (key === "loc") continue;
     const value = node[key];
     if (Array.isArray(value)) {
-      for (const item of value) if (isNode(item)) out.push(item);
+      for (const item of value) if (isNode(item)) add(item);
     } else if (isNode(value)) {
-      out.push(value);
+      add(value);
     }
   }
   out.sort((a, b) => a.start - b.start);

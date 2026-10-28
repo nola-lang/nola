@@ -8,6 +8,7 @@
     { "path": "packages/console" },
     { "path": "packages/compiler" },
     { "path": "packages/derive" },
+    { "path": "packages/browser" },
     { "path": "packages/runtime" },
     { "path": "packages/language-core" },
     { "path": "packages/node-loader" },
@@ -23,6 +24,7 @@
     { "path": "packages/rolldown" },
     { "path": "packages/esbuild" },
     { "path": "packages/rspack" },
+    { "path": "packages/bun" },
     { "path": "packages/vscode" }
   ]
 }

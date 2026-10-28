@@ -236,16 +236,22 @@ export infer function lookup(text: string) {
 - With no type, the extractor asks for free text: the wire schema is a plain
   string and the static TS type is `any`. Give every extractor an explicit
   type unless you deliberately want unconstrained prose.
-- TWO SPELLINGS OF THE TYPE, one construct. `: T` — a colon GLUED to the
-  closing backtick, like an annotation — is the taught form and what every
-  example writes. `<T>` — a type argument after the backtick — is the same
-  construct: `` ask `the ticket id`<string> ``, `` ..`x`<T> ``,
+- TWO SPELLINGS OF THE TYPE, one construct. `: T` — a colon after the
+  closing backtick on the same line, glued like an annotation or spaced
+  (`` `p`: T `` and `` `p` : T `` are the same ask) — is the taught form and
+  what every example writes. `<T>` — a type argument after the backtick — is
+  the same construct: `` ask `the ticket id`<string> ``, `` ..`x`<T> ``,
   `` fn(`x`<T>) ``, `` ask `q`<Choice<C>> `` — same AST, same emit, same
   definition, same ledger entries; legal everywhere `: T` is. Rules for the
-  colon: a colon after whitespace is never the extractor's (so
-  `` cond ? ask `p` : fallback `` stays a ternary over an untyped ask, and
-  `` cond ? ask `p`: number : fallback `` asks for a number); the type starts
-  on the colon's line (NOLA1018 otherwise); a type NAME followed by `.`
+  colon: it may follow glued, spaced, or on the next line (a line break
+  alone never ends an ask); an ask directly
+  in a ternary's consequent is parenthesized, on one line or three,
+  `` cond ? (ask `p`: number) : fallback `` — bare it is NOLA1023, because
+  the colon after the ask is its type and `` cond ? ask `p` : fallback ``
+  would read `fallback` as that type (a call intent and the `<T>` form need
+  no parentheses, and the alternate position is free:
+  `` cond ? y : ask `p`: number ``); the
+  type starts on the colon's line (NOLA1018 otherwise); a type NAME followed by `.`
   continues the type (`` `p`: User.withRetry(2) `` is the type
   `User.withRetry` called with 2) — chain intent methods after a
   parenthesized extractor (`` ask (..`p`: User).withRetry(2) ``), a
@@ -256,7 +262,7 @@ export infer function lookup(text: string) {
   starts an argument, or a property value / element of a plain object or
   array literal written in the arguments: `` fn(`x`: T) ``,
   `` api.save({ note: `x`: T }) ``, `` fn([`x`: T]) ``. Everywhere else it is
-  required: `` const i = ..`x`: T ``, `` fn(cond ? ..`x`: T : y) ``,
+  required: `` const i = ..`x`: T ``, `` fn(cond ? (..`x`: T) : y) ``,
   `` fn(...[..`x`: T]) ``, `` new Foo(..`x`: T) ``,
   `` ask (..`x`: T).withRetry(2) `` (parenthesized: the template is no longer
   a first token — `` fn((`x`: T)) `` is a syntax error too). A `` `x`<T> ``
@@ -440,6 +446,125 @@ Two consequences to keep in mind:
 - The invocation timeout (`ask.timeoutMs` / `.withTimeout`) bounds provider
   round trips only. Once the arguments are filled, the callee's own promise
   runs to completion, the same as a plain `await fn()` in your code.
+
+## Tool use
+
+A tool-use ask offers the model functions it may call before it answers —
+a bracketed list of function names between the task and the type:
+
+```tsi
+import { readFile, searchFiles } from "./tools.js";
+
+export infer function find(.query: string) {
+  return ask `the files on disc D that belong to a US visa application` [searchFiles, readFile]: string[];
+}
+```
+
+```tsi
+import * as fileTools from "./tools.js";
+import { dbTools } from "./db.js";
+
+const report = ask `analyze this report` [fileTools, dbTools]: Report;   // the model sees fileTools.search, dbTools.search, …
+const files = ask `the matching files` [...fileTools]: string[];          // flat: search, readFile
+```
+
+Brackets OFFER, parentheses RUN: `` ask getUser(`id`: string) `` is a call
+intent (getUser runs exactly once, the value is what it returned);
+`` ask `the user's name` [getUser]: string `` offers getUser (the model
+calls it zero or more times, the value is the model's answer). Reach for
+the call when you want the function's own result, for the list when the
+answer needs lookups first.
+
+- Each provider call is a TURN: the model answers or requests tool calls;
+  Nola validates the arguments against the function's parameters, runs
+  the calls in the reply's order, renders each result (`fmt`: a string
+  verbatim, anything else JSON) and asks again with the transcript. An
+  unknown tool name or invalid arguments never reach the function — they
+  go back as that call's result. The answer then gets the usual validation
+  and single correction turn (not counted against the cap).
+- Entries are VALUES, judged by the type checker: a name or dotted chain
+  names one function (`searchFiles`, `fs.readFile`) or a GROUP — a module
+  namespace, an object of functions, an array of them — whose functions
+  the model sees as `group.member`; `[...group]` offers them flat by their
+  own names; any other expression that is one function (`tools[0]`) is
+  named by the function. Group tools by what they are for: two groups
+  sharing a `search` never collide, a flat list with two does (NOLA2018).
+  The contract derives from each signature: one object over the
+  parameters, by name in order; optional/defaulted parameters optional; the
+  JSDoc summary is the description, `@param` tags describe the properties.
+  A member chain keeps its receiver (its object must be a plain chain —
+  a name, `this`, dotted / indexed / optional access; `api.client().search`
+  is NOLA2018, name the object first); a group's functions are called on
+  the group. One declared signature per tool: a union of functions, `any`,
+  `unknown`, a class, a group with nothing callable, a group reached
+  through an expression (name it or spread it): NOLA2018. An underivable
+  parameter (a rest parameter, a Map): NOLA2002 at the entry; a group
+  member it cannot use fails the group, naming the member. At run time a
+  list whose values do not match their types, an unnamed function or a
+  name collision is NOLA3022 before the network.
+- The cap: `.withMaxTurns(n)` on the intent, else config `ask.maxTurns`
+  (10); past it NOLA3020, definitive, transcript attached. A throwing tool
+  is NOLA3021 with the error as `cause`; return a failure as a value when
+  the model should recover from it. `.withRetry(n)` re-runs the WHOLE
+  loop, tools included; `.withTimeout` bounds provider calls only.
+- The model must support tool calls: `openai`, `anthropic`, `google`,
+  `model: "nola"`; `mockProvider(…, { tools: true })` with `toolCalls([{
+  name, args }])` values scripting tool turns; `replay()` of a recorded
+  ledger. Anything else is NOLA3019 before the network; `fallback` /
+  `roundRobin` skip members without support on a tool-use ask. A vendor
+  factory's `toolUse` option, beside `structuredOutputs`, names the
+  strategy (`"native"`, the default and the only one today) or marks a
+  host without tool calling (`toolUse: false` — unbranded, NOLA3019,
+  skipped by a group); a group mixing strategies is NOLA3003.
+- Where the list is legal: directly after the template at the ask site
+  (`ask`, `ask with <name>`) and on the stored form (`` ..`p` [fn]: T ``);
+  the type follows the list (`]: T` — or `] : T` — or `]<T>`). Never in a call's
+  slots. A call-shaped entry (`` [getUser(`id`: string)] ``) is reserved
+  (NOLA1022); a literal or an empty list is NOLA1021. In a ternary's
+  consequent, parenthesize the typed ask (NOLA1023), as always.
+- Receipts carry `turns` (each call's arguments, result or error,
+  duration); telemetry fires `onToolCallStart` / `onToolCallEnd`; the
+  terminal trace and `nola console` show the calls under the ask.
+
+## The ask sequence
+
+After the first text, texts and values alternate (spec 2026-10-12):
+
+```tsi
+const owner = ask `the person responsible for` project `given this policy` policy: Person;
+const user = ask `register the applicant` createUser(`user id`: string, `email`: string);
+const files = ask `find` [searchFiles, readFile] `or, when stale,` [readDir] `and return paths`: string[];
+```
+
+- A bare value (a name, a member chain, a literal, `new X()`, a plain call,
+  a parenthesized expression) is DATA: the model reads an `<input name>`
+  block where you wrote it, named by what you wrote, with its type on the
+  wire; `${x}` inside a text stays your words. Prefer a hole for a literal.
+- A call with a typed slot is the ACTION: the kind is function calling, the
+  call's result is the value, no `: T`. A `[list]` offers tools; several
+  lists union (the same entry in two lists is one tool), and the words
+  between them are guidance, nothing enforces "or".
+- The kind follows the parts: texts and data → extract; one call → function
+  calling; one or more lists → tool use; a list beside a call is reserved
+  (NOLA2019); two calls, `: T` beside a call, text after a bare call
+  (`` ask f(`x`: T) `more` `` — put the words first), or a call with typed
+  slots inside a data value: NOLA2020.
+- Two values never touch (`user [x]` is an index, `user (x)` a call); text
+  first; `: T` follows the last part (a backtick, `]` or the value) — glued,
+  spaced, or on its own line; `<T>` only after a text or a list. `this`,
+  `await`, `ask`, an unparenthesized function and a value ending in a
+  template are NOLA1020.
+- An ask may span lines, one part per line: a line break alone never ends
+  it. After a text the next part may start on the next line, and the type
+  may stand on its own line; the ask ends at `;`, a closer, an operator, a
+  statement keyword (`const`, `return`, `type X`, `let x`, …) or its type.
+  After a VALUE a name on the next line is a new statement, as in JS. The
+  one trap: semicolon-free code after a call sequence that ends on a text —
+  `` …`done`\nnotify(files) `` takes `notify(files)` as a value; end the ask
+  with `;`.
+  A call's slot stays one text (a `..` sequence there is NOLA2019). A
+  sequence lowers to an instruction ARRAY of parts; a one-text ask lowers
+  as before.
 
 ## Values in an instruction: `.x` and `${x}`
 

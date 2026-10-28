@@ -30,6 +30,16 @@ export type {
   ProviderResponseEvent,
   RenderedPrompt,
   RetryEvent,
+  ToolCall,
+  ToolCallEndEvent,
+  ToolCallReceipt,
+  ToolCallRecord,
+  ToolCallStartEvent,
+  ToolDescription,
+  ToolUseAskable,
+  ToolUseMode,
+  ToolUseTurn,
+  ToolUseTurnReceipt,
   ValidationFailedEvent,
   ValidationIssue,
 } from "@nola-lang/core";
@@ -78,6 +88,7 @@ export {
 } from "./ask/index.js";
 export { memoryCacheStore } from "./cache.js";
 export {
+  DEFAULT_MAX_TURNS,
   defineConfig,
   type ResolvedBuildConfig,
   type ResolvedCompilerConfig,
@@ -104,6 +115,16 @@ export {
   isIntent,
   ModuleContext,
   type ModuleScopeInit,
+  type ToolEntry,
+  type ToolGroupVerdict,
+  type ToolSource,
+  ToolUseContext,
+  ToolUseIntent,
+  type ToolUseIntentInit,
+  type ToolVerdict,
+  toolSource,
+  toolSpreadSource,
+  toolVerdicts,
 } from "./intents/index.js";
 export { type InferOptions, nola } from "./nola.js";
 export { LOW_RUNS_NOTICE, NOLA_PROTOCOL, NOLA_VERSION, type PlatformOptions } from "./platform-model.js";

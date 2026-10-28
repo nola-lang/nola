@@ -11,7 +11,12 @@ import type { Anchor, Span } from "./spans.js";
 export interface DerivationRequest {
   /** the accessor the appendix declares: `__nola_type_<Name>` or a site accessor `__nola_type_$N` */
   accessor: string;
-  kind: "exported" | "extract" | "context";
+  /**
+   * "tool": a tool list entry (spec 2026-10-08) — the contract derives from the function's signature at `lowered`;
+   * "value": a bare value of an ask sequence (spec 2026-10-12 §3.5) — the checker's type of the expression at
+   * `lowered`, always under the omit policy (an optional accessor, silent when underivable)
+   */
+  kind: "exported" | "extract" | "context" | "tool" | "value";
   /** the declared name for kind "exported" */
   name?: string;
   /** the type node in the .tsi source (diagnostic anchor) */
@@ -20,6 +25,8 @@ export interface DerivationRequest {
   lowered: { start: number; end: number };
   /** kind "context" only: compiler.underivableContextType ("omit" for plain params) */
   policy?: UnderivableContextTypeMode;
+  /** kind "tool" only (spec 2026-10-09 §3.3): the ask the entry belongs to (its loc text), whether it was spread, and the written text of a name or dotted chain — the group prefix */
+  tool?: { ask: string; spread?: true; written?: string };
 }
 
 /** A `.tsi` value import an answer reached: `import { <importedName> as __nola_type_<localBinding> } from "<specifier>"`. */
@@ -33,7 +40,16 @@ export interface ViewImport {
 export type NamedAccessor = { name: string; expr: string } | { name: string; unsupported: string };
 
 export type DerivationAnswer =
-  | { accessor: string; ok: true; expr: string; accessors: NamedAccessor[]; imports: ViewImport[]; deps: string[] }
+  | {
+      accessor: string;
+      ok: true;
+      expr: string;
+      /** kind "tool" (spec 2026-10-09 §3.4): the wire-visible names the walk could declare — written single names, `<written>.<key>` for a bare group, keys or element names for a spread; finalize checks them for collisions per ask */
+      names?: string[];
+      accessors: NamedAccessor[];
+      imports: ViewImport[];
+      deps: string[];
+    }
   | {
       accessor: string;
       ok: false;

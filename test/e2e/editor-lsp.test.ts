@@ -151,6 +151,17 @@ describe("LSP over examples/cross-file-types", () => {
     expect(watcherGlobs.some((g) => g.includes("tsi"))).toBe(true);
   });
 
+  it("a .tsi is ESM like the .ts beside it (type: module, NodeNext): import.meta is no TS1470", async () => {
+    const content = ["export const here: string = import.meta.url;", 'const n: number = "x";', "console.log(n);", ""].join(
+      "\n",
+    );
+    const uri = pathToFileURL(join(FIXTURE, "src", "meta.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", content);
+    // 2322 proves the TS semantic pass ran on this document.
+    const diags = await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 2322));
+    expect(diags.map((d) => d.code)).not.toContain(1470);
+  });
+
   it("maps a TS type error into .tsi coordinates", async () => {
     const content = [
       "export infer function go(q: string) {",
@@ -323,6 +334,18 @@ describe("LSP over examples/cross-file-types", () => {
     const hover = await server.sendHoverRequest(doc.uri, positionOf(text, "const person", "const ".length));
     const rendered = JSON.stringify(hover?.contents ?? "");
     expect(rendered).toContain("Person");
+  });
+
+  // The ask sequence (spec 2026-10-12 §3.12): a bare value keeps its bytes
+  // verbatim in the lowered text, so the editor's features map through it.
+  it("hover on a bare value of an ask sequence shows its TypeScript type", async () => {
+    const text = 'const admin = { name: "a", level: 2 };\nconst r = ask `use` admin `now`: string;\n';
+    const uri = pathToFileURL(join(FIXTURE, "src", "sequence.tsi")).href;
+    await server.openInMemoryDocument(uri, "nola", text);
+    // `r` is unused: TypeScript's 6133 hint is the sign the program holds this text
+    await waitForDiagnostics(uri, (d) => d.some((x) => x.code === 6133));
+    const hover = await server.sendHoverRequest(uri, positionOf(text, "`use` admin", "`use` ".length));
+    expect(JSON.stringify(hover?.contents ?? "")).toContain("level: number");
   });
 
   it("go-to-definition on the imported type lands in models.ts", async () => {

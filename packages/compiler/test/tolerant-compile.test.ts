@@ -266,3 +266,42 @@ describe("a context statement outside a scope body (NOLA2017)", () => {
     expect(typecheckLowered({ "x.ts": r.code })).toEqual([]);
   });
 });
+
+// An empty call argument, `f(, 1)` — the state while an argument is being
+// deleted or typed comma-first. Babel recovers it with a recoverable raise at
+// the comma and leaves a NULL in `arguments`; the lowerer's slot walks run on
+// every call in the file, so a crash here took the whole language server down
+// (2026-10-13: a restart loop). The file keeps lowering with Babel's own
+// diagnostic, the bytes stay verbatim, and a call intent keeps the hole.
+describe("an empty call argument (Babel's recovery leaves null)", () => {
+  const compile = (src: string) => compileNola(src, "x.tsi", { tolerant: true });
+
+  it("a plain call anywhere in the file lowers with the parser's diagnostic alone", () => {
+    const src = "declare function f(a: number, b: number): void;\nconst x = f(, 1);\n";
+    expect(() => compile(src)).not.toThrow();
+    const r = compile(src);
+    expect(r.meta.mode).toBe("lowered");
+    expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(r.code).toContain("const x = f(, 1);");
+  });
+
+  it("a call intent keeps the hole in its args, slot first or not", () => {
+    const slotAfter = "declare function f(a: string, b: string): void;\nconst x = ask f(, `t`: string);\n";
+    expect(() => compile(slotAfter)).not.toThrow();
+    const r = compile(slotAfter);
+    expect(r.diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    expect(r.code).toContain("args: [, __nola.intents.ExtractIntent<string>(");
+    const hinted = "declare function f(a: number, b: number): void;\nconst x = ask f`do it`(, 1);\n";
+    expect(() => compile(hinted)).not.toThrow();
+    expect(compile(hinted).code).toContain("args: [, 1] })");
+  });
+
+  it("a sequence call part and a context statement's value lower too", () => {
+    const part = "declare function f(a: string, b: string): void;\nconst x = ask `words` f(, `t`: string);\n";
+    expect(() => compile(part)).not.toThrow();
+    expect(compile(part).diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+    const value = "declare function f(a: number, b: number): void;\ninfer function go() {\n  `use` f(, 1)\n  return ask `p`: string;\n}\n";
+    expect(() => compile(value)).not.toThrow();
+    expect(compile(value).diagnostics.map((d) => d.code)).toEqual(["NOLA1001"]);
+  });
+});

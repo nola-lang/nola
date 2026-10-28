@@ -87,41 +87,124 @@ describe("extractor `: T` spelling", () => {
     expect(sliceSpan(src, e as BaseNode)).toBe("`p`<number>");
   });
 
-  // The colon is the type only when it is GLUED to the closing backtick, like
-  // an annotation; a colon after whitespace is never the extractor's (spec
-  // §Grammar). That is what keeps a ternary's separator out of the type.
-  describe("the colon must touch the closing backtick", () => {
-    it("a colon after whitespace is not a type — the ordinary syntax error stands", () => {
-      const { ast, diagnostics } = parseNola("const x = ask `p` : number;\n", "x.tsi");
-      expect(ast).toBeNull();
-      expect(diagnostics[0]?.code).toBe("NOLA1001");
-    });
-
-    it("an untyped ask in a consequent leaves a spaced colon to the ternary, even with the alternate glued to it", () => {
-      for (const src of ["const t = a ? ask `p` : b;\n", "const t = a ? ask `p` :b;\n"]) {
+  // A colon on the closing backtick's line is the type, glued or spaced
+  // (spec §Grammar, amendment 2026-10-12): an untyped extractor is never
+  // valid, so the ternary reading of `a ? ask `p` : b` was never a program —
+  // the one shape a spaced colon could have meant. No backtracking: the
+  // colon is read once, and the consequent case is NOLA1023 either way.
+  describe("the colon follows the closing backtick on its line", () => {
+    it("a colon after spaces or tabs is the type, at the ask site, after `ask with` and on the `..` form", () => {
+      for (const [src, span] of [
+        ["const x = ask `p` : number;\n", "`p` : number"],
+        ["const x = ask `p`\t: number;\n", "`p`\t: number"],
+        ["const x = ask with fast `p` : number;\n", "`p` : number"],
+        ["const i = ..`p` : number;\n", "..`p` : number"],
+      ]) {
         const { ast, diagnostics } = parseNola(src, "x.tsi");
-        expect(diagnostics).toEqual([]);
-        const [cond] = nodes(ast as BaseNode, "ConditionalExpression") as Array<BaseNode & { alternate: BaseNode }>;
-        expect(cond).toBeDefined();
-        expect(typeOf(extracts(ast as BaseNode)[0])).toBeUndefined();
-        expect(sliceSpan(src, cond?.alternate as BaseNode)).toBe("b");
+        expect(diagnostics, src).toEqual([]);
+        const [e] = extracts(ast as BaseNode);
+        expect(typeOf(e)?.type, src).toBe("TSNumberKeyword");
+        expect(e?.colonType, src).toBe(true);
+        expect(sliceSpan(src, e as BaseNode), src).toBe(span);
       }
     });
 
-    it("a typed ask in the consequent keeps its type and the ternary its colon", () => {
-      const src = "const t = a ? ask `p`: number : b;\n";
-      const { ast, diagnostics } = parseNola(src, "x.tsi");
-      expect(diagnostics).toEqual([]);
-      const [cond] = nodes(ast as BaseNode, "ConditionalExpression") as Array<BaseNode & { alternate: BaseNode }>;
-      expect(typeOf(extracts(ast as BaseNode)[0])?.type).toBe("TSNumberKeyword");
-      expect(sliceSpan(src, cond?.alternate as BaseNode)).toBe("b");
+    it("a spaced colon with nothing after it on its line is NOLA1018, like the glued one", () => {
+      const { ast, diagnostics } = parseNola("const x = ask `p` :\nconsole.log(1);\n", "x.tsi");
+      expect(ast).toBeNull();
+      expect(diagnostics[0]?.code).toBe("NOLA1018");
+      const tolerant = parseNola("const x = ask `p` :\nconsole.log(1);\n", "x.tsi", { tolerant: true });
+      expect(tolerant.diagnostics.map((d) => d.code)).toEqual(["NOLA1018"]);
+      expect(extracts(tolerant.ast as BaseNode)[0]?.typeArgs).toBeNull();
+      expect(nodes(tolerant.ast as BaseNode, "ExpressionStatement")).toHaveLength(1);
+    });
+
+    it("an ask in a consequent takes a spaced colon as its type: NOLA1023 at the colon, glued alternate or not", () => {
+      for (const src of ["const t = a ? ask `p` : b;\n", "const t = a ? ask `p` :b;\n"]) {
+        const { ast, diagnostics } = parseNola(src, "x.tsi");
+        expect(ast, src).toBeNull();
+        expect(diagnostics[0]?.code, src).toBe("NOLA1023");
+        expect(diagnostics[0]?.loc.start, src).toEqual({ line: 1, column: 22 });
+      }
+    });
+
+    it("tolerant: the type swallowed the alternate — NOLA1023 alone, the type kept, a placeholder alternate, no bail", () => {
+      const src = "const t = a ? ask `p` : b;\nconsole.log(t);\n";
+      const { ast, diagnostics } = parseNola(src, "x.tsi", { tolerant: true });
+      expect(ast).not.toBeNull();
+      expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1023"]);
+      const [cond] = nodes(ast as BaseNode, "ConditionalExpression") as Array<BaseNode & { alternate: BaseNode & { nolaError?: boolean } }>;
+      expect(typeOf(extracts(ast as BaseNode)[0])?.type).toBe("TSTypeReference");
+      expect(cond?.alternate.nolaError).toBe(true);
+      expect(nodes(ast as BaseNode, "ExpressionStatement")).toHaveLength(1);
+    });
+
+    // Spec 2026-10-08 §1.5: a colon-typed extractor directly in a ternary's
+    // consequent is parenthesized — two adjacent colons with different
+    // meanings are hard on a reader, and the message beats Babel's "expected :"
+    // when the type swallowed the alternate.
+    describe("NOLA1023 — a typed ask directly in a ternary's consequent", () => {
+      it("strict: the bare form is an error at the extractor's colon, even with the ternary's colon spaced", () => {
+        const { ast, diagnostics } = parseNola("const t = a ? ask `p`: number : b;\n", "x.tsi");
+        expect(ast).toBeNull();
+        expect(diagnostics[0]?.code).toBe("NOLA1023");
+        expect(diagnostics[0]?.loc.start).toEqual({ line: 1, column: 21 });
+      });
+
+      it("strict: the case the rule exists for — the type swallowed the alternate — gets this message, not \"expected :\"", () => {
+        const { ast, diagnostics } = parseNola("const t = a ? ask `p`: b;\n", "x.tsi");
+        expect(ast).toBeNull();
+        expect(diagnostics[0]?.code).toBe("NOLA1023");
+      });
+
+      it("applies to the `..` form and to a `..` extractor in a slot's ternary", () => {
+        for (const src of ["const i = c ? ..`p`: number : y;\n", "f(c ? ..`x`: string : y);\n", "const t = c ? ask ..`p`: number : y;\n"]) {
+          const { ast, diagnostics } = parseNola(src, "x.tsi");
+          expect(ast, src).toBeNull();
+          expect(diagnostics[0]?.code, src).toBe("NOLA1023");
+        }
+      });
+
+      it("tolerant: recorded, the extractor keeps its type and the ternary its colon", () => {
+        const src = "const t = a ? ask `p`: number : b;\n";
+        const { ast, diagnostics } = parseNola(src, "x.tsi", { tolerant: true });
+        expect(diagnostics.map((d) => d.code)).toEqual(["NOLA1023"]);
+        const [cond] = nodes(ast as BaseNode, "ConditionalExpression") as Array<BaseNode & { alternate: BaseNode }>;
+        expect(typeOf(extracts(ast as BaseNode)[0])?.type).toBe("TSNumberKeyword");
+        expect(sliceSpan(src, cond?.alternate as BaseNode)).toBe("b");
+      });
+
+      it("the parenthesized ask, a parenthesized `..` operand, a call intent, the `<T>` form and the alternate position are legal", () => {
+        const src = [
+          "const a = c ? (ask `p`: number) : y;",
+          "const b = c ? ask (..`p`: number) : y;",
+          "const e = c ? ask createTicket(`t`: string) : y;",
+          "const f = c ? ask `p`<number> : y;",
+          "const g = c ? y : ask `p`: number;",
+          "const h = c ? ask `p`: number[].withRetry(1) : y;",
+          "const k = c ? y : ask `p` : number;",
+          "",
+        ].join("\n");
+        const { ast, diagnostics } = parseNola(src, "x.tsi");
+        expect(diagnostics).toEqual([]);
+        expect(nodes(ast as BaseNode, "ConditionalExpression")).toHaveLength(7);
+        expect(extracts(ast as BaseNode).map((e) => typeOf(e)?.type)).toEqual([
+          "TSNumberKeyword",
+          "TSNumberKeyword",
+          "TSStringKeyword",
+          "TSNumberKeyword",
+          "TSNumberKeyword",
+          "TSArrayType",
+          "TSNumberKeyword",
+        ]);
+      });
     });
 
     it("nested, parenthesized and alternate positions read as written", () => {
       const src = [
         "const t = a ? f(ask `p`: number) : b;",
         "const u = a ? (ask `q`: string) : b;",
-        "const v = a ? b ? ask `r` : c : d;",
+        "const v = a ? b ? ask `r`<number> : c : d;",
         "const w = a ? b : ask `s`: number;",
         "",
       ].join("\n");
@@ -130,18 +213,24 @@ describe("extractor `: T` spelling", () => {
       expect(extracts(ast as BaseNode).map((e) => typeOf(e)?.type)).toEqual([
         "TSNumberKeyword",
         "TSStringKeyword",
-        undefined,
+        "TSNumberKeyword",
         "TSNumberKeyword",
       ]);
       expect(nodes(ast as BaseNode, "ConditionalExpression")).toHaveLength(5);
     });
 
-    it("a multi-line ternary with the alternate's colon on its own line is unaffected", () => {
+    it("a colon on the next line is the type too (a line break never ends an ask): the multi-line ternary consequent is NOLA1023, like the one-line form", () => {
       const src = "const t = a\n  ? ask `p`\n  : b;\n";
       const { ast, diagnostics } = parseNola(src, "x.tsi");
-      expect(diagnostics).toEqual([]);
-      expect(nodes(ast as BaseNode, "ConditionalExpression")).toHaveLength(1);
-      expect(typeOf(extracts(ast as BaseNode)[0])).toBeUndefined();
+      expect(ast).toBeNull();
+      expect(diagnostics[0]?.code).toBe("NOLA1023");
+      expect(diagnostics[0]?.loc.start).toEqual({ line: 3, column: 2 });
+      const tolerant = parseNola(src, "x.tsi", { tolerant: true });
+      expect(tolerant.diagnostics.map((d) => d.code)).toEqual(["NOLA1023"]);
+      expect(typeOf(extracts(tolerant.ast as BaseNode)[0])?.type).toBe("TSTypeReference");
+      const typed = parseNola("const r = a\n  ? (ask `p`: number)\n  : b;\n", "x.tsi");
+      expect(typed.diagnostics).toEqual([]);
+      expect(nodes(typed.ast as BaseNode, "ConditionalExpression")).toHaveLength(1);
     });
   });
 

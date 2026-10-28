@@ -25,7 +25,9 @@ export type HookMethod =
   | "onRetry"
   | "onAskEnd"
   | "onInvocationStart"
-  | "onInvocationEnd";
+  | "onInvocationEnd"
+  | "onToolCallStart"
+  | "onToolCallEnd";
 
 /**
  * The central runtime entity — the value stored in the process-wide slot.

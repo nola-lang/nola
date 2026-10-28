@@ -201,7 +201,7 @@ describe("cli colours", () => {
 describe("the create bin's command", () => {
   it("declares the flow flags once, with help, for both bins", async () => {
     const { CREATE_COMMAND, FLOW_OPTIONS } = await import("../src/flow.js");
-    expect(Object.keys(FLOW_OPTIONS).sort()).toEqual(["add", "agents", "ide", "provider", "template", "trial"]);
+    expect(Object.keys(FLOW_OPTIONS).sort()).toEqual(["add", "agents", "ide", "provider", "runtime", "template", "trial"]);
     for (const opt of Object.values(FLOW_OPTIONS)) expect(opt.description).toBeTruthy();
     const help = renderCommandHelp(CREATE_COMMAND, "npm create", plain);
     expect(help).toContain("npm create nola-lang [dir]");

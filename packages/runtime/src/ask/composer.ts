@@ -1,4 +1,4 @@
-import type { AskKind, JsonSchema } from "@nola-lang/core";
+import type { AskKind, InferencePart, JsonSchema, ToolDescription } from "@nola-lang/core";
 import type { FunctionArg } from "../intents/invocation/invocation-context.js";
 import type { InferType } from "../types/infer-type.js";
 
@@ -8,6 +8,8 @@ export interface IntentInput {
   /** call intents only */
   callee?: string;
   hint?: string;
+  /** the ask sequence (spec 2026-10-12 §3.7): present only when the sequence has values */
+  parts?: readonly InferencePart[];
 }
 
 /** What one infer-function frame contributes. */
@@ -25,6 +27,8 @@ export interface ScopeDescription {
 export interface IntentComposer {
   input(init: IntentInput): this;
   output(type?: JsonSchema | InferType<unknown>): this;
+  /** tool-use only: the tools offered, in written order */
+  tools(list: readonly ToolDescription[]): this;
 }
 
 export interface ScopeComposer {
